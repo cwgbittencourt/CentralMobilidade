@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralmobilidade.local/contracts/telemetry-batch-envelope-v1.schema.json",
+  "title": "TelemetryBatchEnvelopeV1",
+  "description": "Metadata mapped to provider headers or attributes. The original gzip payload is carried separately as native message-body bytes and is never Base64 wrapped on the wire.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "batchId",
+    "traceId",
+    "producerId",
+    "receivedAt",
+    "contentType",
+    "contentEncoding",
+    "compressedBytes",
+    "payloadSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1" },
+    "batchId": { "type": "string", "format": "uuid" },
+    "traceId": { "type": "string", "minLength": 16, "maxLength": 64 },
+    "producerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "receivedAt": { "type": "string", "format": "date-time" },
+    "contractVersion": { "const": "v1" },
+    "contentType": { "const": "text/plain; charset=utf-8" },
+    "contentEncoding": { "const": "gzip" },
+    "compressedBytes": { "type": "integer", "minimum": 1, "maximum": 8388608 },
+    "payloadSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

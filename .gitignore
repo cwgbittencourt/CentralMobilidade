@@ -1,0 +1,29 @@
+# Local tooling caches
+.uv-cache/
+
+# Local secrets and overrides
+.env
+.env.*
+!.env.example
+
+# .NET build output
+bin/
+obj/
+TestResults/
+packages/
+*.user
+*.suo
+
+# Local runtime data
+data/
+artifacts/
+coverage/
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.vs/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp

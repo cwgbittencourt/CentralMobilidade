@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+**/TestResults/
+**/coverage/
+.git/
+.gitignore
+.dockerignore
+Dockerfile*
+*.log
+*.log.*
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+data/
+artifacts/

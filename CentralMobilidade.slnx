@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CentralMobilidade.Telemetry.Api/CentralMobilidade.Telemetry.Api.csproj" />
+    <Project Path="src/CentralMobilidade.Telemetry.Application/CentralMobilidade.Telemetry.Application.csproj" />
+    <Project Path="src/CentralMobilidade.Telemetry.Contracts/CentralMobilidade.Telemetry.Contracts.csproj" />
+    <Project Path="src/CentralMobilidade.Telemetry.Domain/CentralMobilidade.Telemetry.Domain.csproj" />
+    <Project Path="src/CentralMobilidade.Telemetry.Infrastructure/CentralMobilidade.Telemetry.Infrastructure.csproj" />
+    <Project Path="src/CentralMobilidade.Telemetry.Worker/CentralMobilidade.Telemetry.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CentralMobilidade.Telemetry.ArchitectureTests/CentralMobilidade.Telemetry.ArchitectureTests.csproj" />
+    <Project Path="tests/CentralMobilidade.Telemetry.ContractTests/CentralMobilidade.Telemetry.ContractTests.csproj" />
+    <Project Path="tests/CentralMobilidade.Telemetry.IntegrationTests/CentralMobilidade.Telemetry.IntegrationTests.csproj" />
+    <Project Path="tests/CentralMobilidade.Telemetry.LoadTests/CentralMobilidade.Telemetry.LoadTests.csproj" />
+    <Project Path="tests/CentralMobilidade.Telemetry.UnitTests/CentralMobilidade.Telemetry.UnitTests.csproj" />
+  </Folder>
+</Solution>

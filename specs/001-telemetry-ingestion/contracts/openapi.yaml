@@ -1,0 +1,539 @@
+openapi: 3.1.0
+info:
+  title: Centrral Mobilidade Telemetry API
+  version: 1.0.0-draft
+  description: Durable asynchronous intake of gzip-compressed InfluxDB Line Protocol.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+paths:
+  /api/v1/telemetry/batches:
+    post:
+      operationId: ingestTelemetryBatch
+      summary: Durably accept a telemetry batch
+      security:
+        - producerBearer: []
+      parameters:
+        - $ref: '#/components/parameters/TraceParent'
+        - name: X-Contract-Version
+          in: header
+          required: true
+          schema:
+            type: string
+            const: v1
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              format: binary
+            encoding:
+              '*':
+                headers:
+                  Content-Encoding:
+                    schema:
+                      type: string
+                      const: gzip
+      responses:
+        '202':
+          description: The durable queue confirmed responsibility for the batch.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                example: /api/v1/telemetry/batches/0199c55a-6200-7b65-b936-f775309a6942
+            Retry-After:
+              description: Suggested seconds before the first status check.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          description: Upload exceeded the configured duration.
+        '413':
+          description: Compressed request exceeded the configured intake limit.
+        '415':
+          description: Content type, charset, or gzip content encoding is unsupported.
+        '429':
+          description: Intake is applying backpressure.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                minimum: 1
+        '503':
+          description: Durable persistence could not be confirmed; the caller may retry.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                minimum: 1
+  /api/v1/telemetry/batches/{batchId}:
+    get:
+      operationId: getTelemetryBatch
+      summary: Get asynchronous batch processing status
+      description: The submitting producer may read its own batch. An operator needs batch.read and company scope for every company in the batch, or explicit cross_company.read.
+      security:
+        - producerBearer: []
+        - operatorBearer: []
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - $ref: '#/components/parameters/TraceParent'
+      responses:
+        '200':
+          description: Current batch status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Batch does not exist, has expired, or is not visible to the caller.
+  /api/v1/telemetry/batches/{batchId}/rejections:
+    get:
+      operationId: listTelemetryBatchRejections
+      summary: List privacy-safe rejection details
+      security:
+        - operatorBearer: []
+      x-required-permissions: [batch.read]
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: A page of rejection metadata. Raw lines require a separately audited flow.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RejectionPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Batch does not exist, has expired, or is not visible.
+  /api/v1/telemetry/batches/{batchId}/rejections/{quarantineId}/content:
+    get:
+      operationId: getQuarantinedRejectionContent
+      summary: Retrieve protected raw rejection content with mandatory audit
+      description: Restricted administrative operation. Successful, denied, missing, and expired attempts are audited.
+      security:
+        - operatorBearer: []
+      x-required-permissions: [quarantine.raw.read]
+      x-audit-mode: fail-closed
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - name: quarantineId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Original rejected Line Protocol line before its 30-day deletion deadline.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller lacks the administrative quarantine permission; the attempt is audited.
+        '404':
+          description: Content is missing, expired, deleted, or not associated with the batch; the attempt is audited.
+  /api/v1/presentation/drivers/{driverId}:
+    get:
+      operationId: getDriverPresentation
+      summary: Resolve the minimum authorized driver representation
+      security:
+        - operatorBearer: []
+      x-required-permissions: [driver.read]
+      x-audit-mode: fail-closed
+      parameters:
+        - name: driverId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+        - name: empresaId
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '200':
+          description: Masked driver presentation; access is audited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverPresentation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is not authorized for this company or identity.
+        '404':
+          description: Driver is unavailable or not found.
+  /api/v1/presentation/telemetry/latest:
+    get:
+      operationId: getLatestVehiclePositions
+      summary: Query latest vehicle positions within the caller's company scope
+      security:
+        - operatorBearer: []
+      x-required-permissions: [telemetry.read]
+      parameters:
+        - $ref: '#/components/parameters/EmpresaId'
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 500
+        - name: vehicleId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '200':
+          description: Latest authorized vehicle positions.
+          headers:
+            X-Next-Cursor:
+              description: Opaque cursor for the next page; absent on the final page.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TelemetryPosition'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Company or vehicle is unknown or not visible to the caller.
+  /api/v1/presentation/telemetry/trips/{vehicleId}:
+    get:
+      operationId: getVehicleTrip
+      summary: Query one authorized vehicle trip ordered by event time
+      security:
+        - operatorBearer: []
+      x-required-permissions: [telemetry.read]
+      parameters:
+        - $ref: '#/components/parameters/EmpresaId'
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+        - $ref: '#/components/parameters/FromUtc'
+        - $ref: '#/components/parameters/ToUtc'
+        - name: limit
+          in: query
+          required: false
+          description: Maximum returned points; the configured ceiling is 10,000.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 10000
+      responses:
+        '200':
+          description: Authorized trip points in ascending event-time order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TelemetryPosition'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Company or vehicle is unknown or not visible to the caller.
+  /api/v1/presentation/telemetry/ingestion-health:
+    get:
+      operationId: getCompanyIngestionHealth
+      summary: Query bounded ingestion health within the caller's company scope
+      security:
+        - operatorBearer: []
+      x-required-permissions: [telemetry.read]
+      parameters:
+        - $ref: '#/components/parameters/EmpresaId'
+        - $ref: '#/components/parameters/FromUtc'
+        - $ref: '#/components/parameters/ToUtc'
+        - name: granularitySeconds
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 60
+            default: 60
+        - name: limit
+          in: query
+          required: false
+          description: Maximum returned points; the configured ceiling is 10,000.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 10000
+      responses:
+        '200':
+          description: Authorized ingestion-health series.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IngestionHealthPoint'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Company is unknown or not visible to the caller.
+components:
+  securitySchemes:
+    producerBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Technical producer credential restricted to ingestion and status of its own batches.
+    operatorBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Separate internal-operator credential resolved to explicit permissions and allowed-company scopes.
+  parameters:
+    TraceParent:
+      name: traceparent
+      in: header
+      required: false
+      schema:
+        type: string
+    BatchId:
+      name: batchId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EmpresaId:
+      name: empresaId
+      in: query
+      required: true
+      schema:
+        type: string
+        maxLength: 128
+    FromUtc:
+      name: fromUtc
+      in: query
+      required: true
+      description: Inclusive UTC start. Trip endpoints allow at most 24 hours; ingestion-health endpoints allow at most seven days.
+      schema:
+        type: string
+        format: date-time
+    ToUtc:
+      name: toUtc
+      in: query
+      required: true
+      description: Exclusive UTC end. It must be later than fromUtc and within the endpoint-specific maximum range.
+      schema:
+        type: string
+        format: date-time
+  responses:
+    BadRequest:
+      description: The request metadata or body is malformed before durable acceptance.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Missing, invalid, disabled, or wrong credential type.
+  schemas:
+    BatchAccepted:
+      type: object
+      additionalProperties: false
+      required: [batchId, state, receivedAt, statusUrl]
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        state:
+          const: accepted
+        receivedAt:
+          type: string
+          format: date-time
+        statusUrl:
+          type: string
+    BatchStatus:
+      type: object
+      additionalProperties: false
+      required: [batchId, state, receivedAt, acceptedLines, rejectedLines, replayedLines]
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [accepted, processing, retrying, completed, completed_with_rejections, failed, expired]
+        receivedAt:
+          type: string
+          format: date-time
+        processingStartedAt:
+          type: [string, 'null']
+          format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        totalLines:
+          type: [integer, 'null']
+          minimum: 0
+        acceptedLines:
+          type: integer
+          minimum: 0
+        rejectedLines:
+          type: integer
+          minimum: 0
+        replayedLines:
+          type: integer
+          minimum: 0
+        errorSummary:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorCount'
+        links:
+          type: object
+          properties:
+            rejections:
+              type: string
+    ErrorCount:
+      type: object
+      additionalProperties: false
+      required: [code, count]
+      properties:
+        code:
+          type: string
+        count:
+          type: integer
+          minimum: 1
+    RejectionPage:
+      type: object
+      required: [items]
+      properties:
+        nextCursor:
+          type: [string, 'null']
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Rejection'
+    Rejection:
+      type: object
+      additionalProperties: false
+      required: [lineNumber, code, safeDigest, occurredAt]
+      properties:
+        lineNumber:
+          type: integer
+          minimum: 1
+        code:
+          type: string
+        empresaId:
+          type: [string, 'null']
+        veiculoId:
+          type: [string, 'null']
+        safeDigest:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    DriverPresentation:
+      type: object
+      additionalProperties: false
+      required: [driverId, displayName]
+      properties:
+        driverId:
+          type: string
+        displayName:
+          type: string
+        cpfLast4:
+          type: [string, 'null']
+          pattern: '^\d{4}$'
+    TelemetryPosition:
+      type: object
+      additionalProperties: false
+      required: [empresaId, vehicleId, eventTime, latitude, longitude]
+      properties:
+        empresaId:
+          type: string
+        vehicleId:
+          type: string
+        eventTime:
+          type: string
+          format: date-time
+        latitude:
+          type: number
+        longitude:
+          type: number
+        speed:
+          type: [number, 'null']
+        ignition:
+          type: [boolean, 'null']
+        driverId:
+          type: [string, 'null']
+    IngestionHealthPoint:
+      type: object
+      additionalProperties: false
+      required: [empresaId, time, accepted, rejected]
+      properties:
+        empresaId:
+          type: string
+        time:
+          type: string
+          format: date-time
+        accepted:
+          type: integer
+          minimum: 0
+        rejected:
+          type: integer
+          minimum: 0
+    Problem:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        traceId:
+          type: string
