@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Api/CentralMobilidade.Telemetry.Api.csproj" />
+    <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Application/CentralMobilidade.Telemetry.Application.csproj" />
+    <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Contracts/CentralMobilidade.Telemetry.Contracts.csproj" />
+    <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Domain/CentralMobilidade.Telemetry.Domain.csproj" />
+    <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Infrastructure/CentralMobilidade.Telemetry.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Worker/CentralMobilidade.Telemetry.Worker.csproj" />
+  </ItemGroup>
+</Project>
