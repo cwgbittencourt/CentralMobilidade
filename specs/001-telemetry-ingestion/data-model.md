@@ -20,6 +20,20 @@ Logical time-series point stored in InfluxDB.
 
 Logical identity: `(empresa_id, veiculo_id, time)`. The fingerprint is not part of identity.
 
+### Value object representation (T012)
+
+Company, vehicle, and optional driver identifiers are immutable, distinct types, bounded to 256 UTF-8
+bytes each. They reject null, whitespace-only values, control characters, and malformed Unicode.
+Decoded values preserve case, whitespace, and Unicode representation; they are never trimmed or
+case-folded. Line Protocol escaping belongs to the parser. A missing driver is represented by null,
+not an empty `DriverId`; its diagnostic string does not expose its value.
+
+`BatchId` wraps a nonempty UUID and formats/parses the hyphenated UUID representation.
+`EventTimestamp` normalizes `DateTimeOffset` values to UTC and rejects sub-millisecond precision rather
+than silently changing event identity. Unix millisecond conversion supports the representable
+`DateTimeOffset` range, including pre-epoch values; storage-specific range validation belongs to the
+Line Protocol/provider boundary. These types do not depend on infrastructure or wall-clock time.
+
 ## IngestionBatch
 
 | Attribute | Type | Rule |
