@@ -2,7 +2,8 @@
 
 Run Docker Compose from the repository root. This stack persists PostgreSQL, RabbitMQ, queryable
 InfluxDB, pending InfluxDB, Prometheus, Loki, Grafana, and rejection quarantine in separate named volumes.
-Only Grafana is published, on `127.0.0.1:3000`. Development ports and application profiles follow in T009.
+The base file publishes only Grafana, on `127.0.0.1:3000`. Load the development override explicitly
+to publish dependency ports and enable optional application/emulator profiles.
 
 Set `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, and `GRAFANA_ADMIN_PASSWORD` in the shell or an untracked
 root `.env`. Use distinct secrets. `GRAFANA_ADMIN_USER` defaults to `admin`; `GRAFANA_PORT` defaults to
@@ -25,7 +26,7 @@ docker compose -f deploy/compose.yaml ps -a
 Keep these token files private and available across restarts; do not regenerate them for an existing
 catalog. The init jobs create `telemetry` and `telemetry_pending` with 60-day retention and skip existing
 databases. They fail on connection/authentication errors. Each InfluxDB instance has its own catalog,
-WAL, Parquet files, network, and bootstrap credential. Pending storage has no host port and Grafana
+WAL, Parquet files, network, and bootstrap credential. Pending storage has no host port in the base file and Grafana
 does not join its network or receive its token. Provision scoped application/read credentials in the
 later provider and Grafana provisioning tasks; bootstrap tokens are for administration.
 
@@ -64,3 +65,71 @@ completed successfully. Quarantine permissions were `700`, owned by `1654:1654`.
 confirmed fixed image tags and no Grafana attachment to the pending network. Validation containers
 were stopped and their volumes preserved. This checks local persistence, not production HA or the
 later queue, retention, privacy, and load-test gates.
+
+## Development override and profiles
+
+The development file must be included explicitly in every start, status, logs, or shutdown command.
+It publishes ports only on IPv4 loopback and preserves authentication, named volumes, and pending
+network isolation. Use the same secret setup described above.
+
+| Service | Default host port | Override variable |
+| --- | --- | --- |
+| PostgreSQL | 5432 | `POSTGRES_PORT` |
+| RabbitMQ AMQP / management | 5672 / 15672 | `RABBITMQ_PORT` / `RABBITMQ_MANAGEMENT_PORT` |
+| InfluxDB queryable / pending | 8181 / 8182 | `INFLUXDB_QUERYABLE_PORT` / `INFLUXDB_PENDING_PORT` |
+| Prometheus | 9090 | `PROMETHEUS_PORT` |
+| Loki | 3100 | `LOKI_PORT` |
+| API (`app` profile) | 8080 | `API_PORT` |
+| Pub/Sub (`pubsub-emulator` profile) | 8085 | `PUBSUB_EMULATOR_PORT` |
+
+Dependency-only development startup excludes both optional profiles:
+
+```powershell
+docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml up -d --build --wait
+```
+
+Build and start the API and Worker in Development mode:
+
+```powershell
+docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app up -d --build
+docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app ps -a
+```
+
+The API currently serves its skeleton at `http://localhost:8080/`. The Worker currently exits with
+code zero because its hosted consumer is implemented in T053; it is not kept alive by a placeholder
+loop or restart policy. Application configuration follows in T010, dependency adapters in later tasks,
+and readiness checks in T022. An `app`-profile `up --wait` is not a valid worker-readiness check yet.
+
+Run the Pub/Sub emulator independently:
+
+```powershell
+docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile pubsub-emulator up -d --wait pubsub-emulator
+$env:PUBSUB_EMULATOR_HOST = "127.0.0.1:8085"
+$env:GOOGLE_CLOUD_PROJECT = "centralmobilidade-local"
+```
+
+The fixed Google Cloud CLI `588.0.0-emulators` image listens on port 8085 and uses the fake project
+`centralmobilidade-local` (`PUBSUB_PROJECT_ID` can override it). Host-based SDK tests use the host
+endpoint above; clients on the `backend` Docker network use `pubsub-emulator:8085`. .NET clients must
+explicitly enable emulator detection in their builders; the adapter and parity tests follow in
+T077/T080. Activating this profile does not switch the application's initial RabbitMQ provider or
+mount cloud credentials. Both profiles can be selected together by repeating `--profile`.
+
+The emulator has no persistent volume, and its state must not be treated as durable queue storage.
+Remove `PUBSUB_EMULATOR_HOST` from your shell before using real Pub/Sub. See the
+[official emulator instructions](https://docs.cloud.google.com/pubsub/docs/emulator).
+
+Stop every selected profile and preserve dependency volumes:
+
+```powershell
+docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app --profile pubsub-emulator down
+```
+
+T009 validation on 2026-10-12 confirmed that base-only commands remain unchanged, both profiles are
+disabled by default, all development port bindings use `127.0.0.1`, and the eight persistent volumes
+remain declared. Both application builds passed. The Development API returned HTTP 200; the Worker
+skeleton exited with code zero, and a separate check confirmed its UID 1654 can write to the shared
+quarantine directory. The emulator reported healthy and completed topic/subscription creation,
+publish, pull, and acknowledgement through its REST API. Validation used the isolated
+`centralmobilidade-t009` project and non-default host ports. Its containers were stopped without
+deleting dependency volumes. Provider parity and worker readiness remain later implementation gates.

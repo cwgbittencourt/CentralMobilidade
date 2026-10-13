@@ -50,7 +50,7 @@ command-line arguments.
 ```powershell
 dotnet restore CentralMobilidade.slnx
 dotnet test CentralMobilidade.slnx --filter Category=Contract
-docker compose -f deploy/compose.yaml --profile app up -d --build --wait
+docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app up -d --build --wait
 ```
 
 Expected: database migrations complete once, the API readiness check reports ready only when it can
