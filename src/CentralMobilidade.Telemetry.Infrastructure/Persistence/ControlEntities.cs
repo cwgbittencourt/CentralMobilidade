@@ -185,6 +185,10 @@ public sealed class EventIdentityGuard
     {
         get; set;
     }
+    public DateTimeOffset TelemetryExpiresAt
+    {
+        get; set;
+    }
     public Guid? PromotionOwner
     {
         get; set;

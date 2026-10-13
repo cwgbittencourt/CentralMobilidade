@@ -14,7 +14,14 @@ public sealed class OperatorAccessProfileConfiguration : IEntityTypeConfiguratio
         b.Property(e => e.Kind).HasConversion<string>().HasMaxLength(32);
 
         b.Property(e => e.RowVersion).IsConcurrencyToken();
-        b.ToTable("operator_access_profiles", t => t.HasCheckConstraint("ck_operator_kind", "(\"Kind\" = 'Human' AND \"GrafanaOrganizationId\" IS NULL) OR (\"Kind\" = 'ViewerPresentationService' AND \"GrafanaOrganizationId\" IS NOT NULL AND \"Permissions\" <@ ARRAY['telemetry.read','driver.read']::text[])"));
+        b.Property(e => e.ActorId).UseCollation("C");
+        b.HasIndex(e => e.GrafanaOrganizationId);
+        b.ToTable("operator_access_profiles", t =>
+        {
+            t.HasCheckConstraint("ck_operator_kind", "(\"Kind\" = 'Human' AND \"GrafanaOrganizationId\" IS NULL) OR (\"Kind\" = 'ViewerPresentationService' AND \"GrafanaOrganizationId\" IS NOT NULL AND length(btrim(\"GrafanaOrganizationId\")) > 0 AND cardinality(\"CompanyIds\") > 0 AND \"Permissions\" <@ ARRAY['telemetry.read','driver.read']::text[])");
+            t.HasCheckConstraint("ck_operator_permissions", "\"Permissions\" <@ ARRAY['batch.read','telemetry.read','driver.read','quarantine.raw.read','cross_company.read']::text[] AND array_position(\"Permissions\", NULL) IS NULL");
+            t.HasCheckConstraint("ck_operator_scope", "array_position(\"CompanyIds\", NULL) IS NULL AND array_position(\"CompanyIds\", '') IS NULL AND array_position(\"CredentialIds\", NULL) IS NULL AND array_position(\"CredentialIds\", '') IS NULL AND length(btrim(\"ActorId\")) > 0 AND \"RowVersion\" > 0");
+        });
     }
 }
 

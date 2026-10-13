@@ -8,7 +8,6 @@ using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace CentralMobilidade.Telemetry.IntegrationTests.Persistence;
@@ -18,18 +17,12 @@ public sealed class PostgresAuditWriterTests
     [Fact]
     public async Task PostgreSql_persists_idempotent_audit_and_rejects_collisions_and_stale_versions()
     {
-        var connection = Environment.GetEnvironmentVariable("TELEMETRY_TEST_POSTGRES");
-        await using var postgres = connection is null ? new PostgreSqlBuilder("postgres:17.11-bookworm").Build() : null;
-        if (postgres is not null)
-        {
-            await postgres.StartAsync();
-            connection = postgres.GetConnectionString();
-        }
-        var services = new ServiceCollection().AddTelemetryControlPersistence(connection!).BuildServiceProvider();
+        await using var fixture = await MigratedPostgresFixture.StartAsync();
+        var services = new ServiceCollection().AddTelemetryControlPersistence(fixture.Connection).BuildServiceProvider();
         await using var provider = services;
         var factory = services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>();
         await using (var setup = await factory.CreateDbContextAsync())
-            await setup.Database.EnsureCreatedAsync(); // Isolated test database; production uses T019 migrations.
+            await setup.Database.MigrateAsync();
         var writer = services.GetRequiredService<IAuditWriter>();
         var record = new AuditRecord(Guid.NewGuid(), new OperatorActor("operator-test", OperatorActorKind.Human),
             AuditAction.ReadQuarantineContent, AuditResourceCategory.Quarantine, Guid.NewGuid().ToString(),
@@ -50,7 +43,7 @@ public sealed class PostgresAuditWriterTests
             ProducerId = "producer",
             TraceId = "trace",
             ReceivedAt = DateTimeOffset.UtcNow,
-            ExpiresAt = DateTimeOffset.UtcNow.AddDays(30)
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(29)
         };
         db.Batches.Add(batch);
         await db.SaveChangesAsync();
@@ -91,6 +84,7 @@ public sealed class PostgresAuditWriterTests
             FencingVersion = 1,
             LeaseUntil = now.AddMinutes(1),
             GuardExpiresAt = now.AddDays(60),
+            TelemetryExpiresAt = now.AddDays(60),
             Destination = TelemetryDestination.Pending,
             StorageLocation = IdentityStorageLocation.PendingCommitted
         });

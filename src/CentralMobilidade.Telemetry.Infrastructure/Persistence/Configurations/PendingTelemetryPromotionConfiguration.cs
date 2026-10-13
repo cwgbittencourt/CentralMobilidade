@@ -13,8 +13,10 @@ public sealed class PendingTelemetryPromotionConfiguration : IEntityTypeConfigur
         b.Property(e => e.LastErrorCode).HasMaxLength(64);
         b.Property(e => e.State).HasConversion<string>().HasMaxLength(32);
         b.HasIndex(e => e.State);
+        b.HasIndex(e => new { e.CompanyId, e.State, e.UpdatedAt });
         b.Property(e => e.RowVersion).IsConcurrencyToken();
         b.ToTable("pending_telemetry_promotions", t => t.HasCheckConstraint("ck_promotion_counts", "\"RangeEnd\" >= \"RangeStart\" AND \"ExpectedPointCount\" >= 0 AND \"Attempts\" >= 0 AND (\"ConfirmedPointCount\" IS NULL OR \"ConfirmedPointCount\" >= 0)"));
+        b.ToTable("pending_telemetry_promotions", t => t.HasCheckConstraint("ck_promotion_state", "\"RowVersion\" > 0 AND \"State\" IN ('Discovered','Copying','Copied','SourceDeleted','Completed','Retrying')"));
     }
 }
 

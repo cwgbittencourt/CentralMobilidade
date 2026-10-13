@@ -11,10 +11,12 @@ public sealed class EventIdentityEvidenceConfiguration : IEntityTypeConfiguratio
         b.HasKey(e => new { e.CompanyId, e.VehicleId, e.EventTimestamp });
         b.Property(e => e.CompanyId).HasMaxLength(256);
         b.Property(e => e.VehicleId).HasMaxLength(256);
+        b.Property(e => e.CompanyId).UseCollation("C");
+        b.Property(e => e.VehicleId).UseCollation("C");
 
         b.HasIndex(e => e.EvidenceExpiresAt);
         // No cascade to the guard or batch: retention clocks are independent.
-        b.ToTable("event_identity_evidence", t => t.HasCheckConstraint("ck_evidence", "octet_length(\"CanonicalFingerprint\") = 32 AND \"EvidenceExpiresAt\" = \"FirstSeenAt\" + interval '30 days'"));
+        b.ToTable("event_identity_evidence", t => t.HasCheckConstraint("ck_evidence", "octet_length(\"CanonicalFingerprint\") = 32 AND isfinite(\"FirstSeenAt\") AND \"EvidenceExpiresAt\" = \"FirstSeenAt\" + interval '720 hours' AND date_trunc('milliseconds', \"EventTimestamp\") = \"EventTimestamp\""));
     }
 }
 

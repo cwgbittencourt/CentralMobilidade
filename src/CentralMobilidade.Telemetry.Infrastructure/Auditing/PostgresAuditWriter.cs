@@ -28,7 +28,7 @@ public sealed class PostgresAuditWriter(IDbContextFactory<TelemetryControlDbCont
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await db.Database.ExecuteSqlRawAsync("SET LOCAL synchronous_commit = on", cancellationToken);
         await db.Database.ExecuteSqlInterpolatedAsync($"""
-            INSERT INTO audit_events ("EventId", "ActorId", "ActorKind", "GrafanaOrganizationId", "Action",
+            INSERT INTO public.audit_events ("EventId", "ActorId", "ActorKind", "GrafanaOrganizationId", "Action",
                 "ResourceCategory", "OpaqueResourceId", "CompanyScope", "OccurredAt", "Outcome", "TraceId", "CommittedAt")
             VALUES ({record.EventId}, {record.Actor.ActorId}, {record.Actor.Kind.ToString()}, {record.Actor.GrafanaOrganizationId},
                 {record.Action.ToString()}, {record.ResourceCategory.ToString()}, {record.OpaqueResourceId}, {scope},
