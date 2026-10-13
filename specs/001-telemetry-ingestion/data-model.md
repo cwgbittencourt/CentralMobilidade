@@ -204,3 +204,32 @@ count reconciliation. Every transition is durable so a crash can resume without 
 - `DUPLICATE_CONFLICT`
 - `STORAGE_SCHEMA_CONFLICT`
 - `STORAGE_REJECTED`
+
+### HTTP problem catalog (T013)
+
+The 16 codes above describe asynchronous processing rejections, not HTTP responses. The separate
+HTTP catalog below defines fixed Problem Details metadata. Type identifiers are absolute URNs using
+`urn:centralmobilidade:telemetry:problem:v1:` plus the listed suffix; changing their meaning requires
+contract versioning. API adapters include the stable code as a Problem Details extension and add
+trace correlation without raw request data or exception text. HTTP response wiring follows in T035.
+
+| Code | HTTP status | Type suffix |
+| --- | --- | --- |
+| `REQUEST_INVALID` | 400 | `bad-request` |
+| `AUTHENTICATION_REQUIRED` | 401 | `unauthorized` |
+| `ACCESS_DENIED` | 403 | `forbidden` |
+| `RESOURCE_NOT_FOUND` | 404 | `not-found` |
+| `UPLOAD_TIMEOUT` | 408 | `upload-timeout` |
+| `PAYLOAD_COMPRESSED_LIMIT` | 413 | `compressed-payload-limit` |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | `unsupported-media-type` |
+| `INTAKE_BACKPRESSURE` | 429 | `intake-backpressure` |
+| `DURABILITY_UNCONFIRMED` | 503 | `durability-unconfirmed` |
+| `AUDIT_UNAVAILABLE` | 503 | `audit-unavailable` |
+| `INTERNAL_ERROR` | 500 | `internal-error` |
+
+Missing, invalid, disabled, and wrong-type credentials share the same authentication problem.
+Missing, expired, deleted, and non-visible resources share the same non-disclosing not-found problem.
+Messages do not contain identities, companies, raw lines, secrets, or dependency diagnostics. A
+durability failure never claims acceptance or proves that no message was published; retries must
+remain replay-safe. Endpoint authorization and durable audit policy determine when a response is
+permitted; the catalog alone grants no permissions and performs no audit.
