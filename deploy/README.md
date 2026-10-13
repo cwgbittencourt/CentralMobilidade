@@ -98,8 +98,10 @@ docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile 
 The API serves its skeleton at `http://localhost:8080/` and aggregate Prometheus metrics at `/metrics`.
 The Worker now remains running and serves `/metrics` on internal port 9464; no worker port is published
 on the host. Its queue consumer is implemented in T053. Application templates are described below,
-dependency adapters follow in later tasks, and readiness checks in T022. A running metrics endpoint
-does not prove queue-consumer readiness.
+dependency adapters follow in later tasks. `/health/live`, `/health/ready`, and `/health/dependencies`
+are available on both processes; the worker also exposes `/health/worker`. Liveness is independent of
+dependencies. Readiness intentionally stays unavailable while the real publication probe (T027/T080)
+or consumer heartbeat (T053) is missing. A running metrics endpoint does not prove queue-consumer readiness.
 
 Run the Pub/Sub emulator independently:
 

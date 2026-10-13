@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using CentralMobilidade.Telemetry.Application.Configuration;
 using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using CentralMobilidade.Telemetry.Infrastructure.Observability;
+using CentralMobilidade.Telemetry.Infrastructure.Health;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ public static class Program
             builder.Services.AddPrivacyLogging(TelemetryServiceRole.Worker);
             builder.Services.AddTelemetryOptions(builder.Configuration);
             builder.Services.AddTelemetryObservability(builder.Configuration, TelemetryServiceRole.Worker);
+            builder.Services.AddTelemetryHealthChecks(builder.Configuration, TelemetryServiceRole.Worker);
             var controlConnection = builder.Configuration.GetConnectionString("TelemetryControl");
             if (!string.IsNullOrWhiteSpace(controlConnection))
                 builder.Services.AddTelemetryControlPersistence(controlConnection);

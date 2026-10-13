@@ -60,7 +60,7 @@ every user story.
 - [X] T019 Create the initial PostgreSQL migration with atomic unique event-identity reservation state, owner/lease/fencing concurrency, telemetry-lifetime guard retention, 30-day fingerprint/status/quarantine deletion indexes, scoped human/service operator profiles, and optimistic concurrency in `src/CentralMobilidade.Telemetry.Infrastructure/Persistence/Migrations/`
 - [X] T020 [P] Configure OpenTelemetry tracing/metrics, Prometheus export, trace/batch enrichment, and forbidden-label policy in `src/CentralMobilidade.Telemetry.Infrastructure/Observability/TelemetryObservability.cs`
 - [X] T021 [P] Configure structured Serilog output with destructuring filters that remove payload, plate, coordinates, driver identity, CPF, and secrets in `src/CentralMobilidade.Telemetry.Infrastructure/Observability/PrivacyLoggingPolicy.cs`
-- [ ] T022 Implement liveness/readiness checks for PostgreSQL, durable queue publication, InfluxDB, and worker freshness in `src/CentralMobilidade.Telemetry.Infrastructure/Health/TelemetryHealthChecks.cs`
+- [X] T022 Implement liveness/readiness checks for PostgreSQL, durable queue publication, InfluxDB, and worker freshness in `src/CentralMobilidade.Telemetry.Infrastructure/Health/TelemetryHealthChecks.cs`
 - [ ] T023 Add architecture tests enforcing dependency direction and prohibiting infrastructure references from Domain/Application in `tests/CentralMobilidade.Telemetry.ArchitectureTests/LayerDependencyTests.cs`
 
 **Checkpoint**: Configuration fails fast, migrations apply, authentication works, health checks are

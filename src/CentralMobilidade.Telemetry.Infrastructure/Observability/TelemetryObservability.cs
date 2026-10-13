@@ -122,7 +122,7 @@ public static class TelemetryObservabilityRegistration
                     tracing.AddAspNetCoreInstrumentation(o =>
                     {
                         o.RecordException = false;
-                        o.Filter = context => context.Request.Path != "/metrics";
+                        o.Filter = context => context.Request.Path != "/metrics" && !context.Request.Path.StartsWithSegments("/health");
                     });
                 if (options.OtlpTraceEndpoint is not null)
                     tracing.AddOtlpExporter(o =>

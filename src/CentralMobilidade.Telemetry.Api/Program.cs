@@ -3,6 +3,7 @@ using CentralMobilidade.Telemetry.Api.Security;
 using CentralMobilidade.Telemetry.Application.Configuration;
 using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using CentralMobilidade.Telemetry.Infrastructure.Observability;
+using CentralMobilidade.Telemetry.Infrastructure.Health;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,7 @@ try
     builder.Services.AddTelemetryOptions(builder.Configuration);
     builder.Services.AddTelemetrySecurity(builder.Configuration);
     builder.Services.AddTelemetryObservability(builder.Configuration, TelemetryServiceRole.Api);
+    builder.Services.AddTelemetryHealthChecks(builder.Configuration, TelemetryServiceRole.Api);
     var controlConnection = builder.Configuration.GetConnectionString("TelemetryControl");
     if (!string.IsNullOrWhiteSpace(controlConnection))
         builder.Services.AddTelemetryControlPersistence(controlConnection);
@@ -25,6 +27,7 @@ try
 
     app.MapGet("/", () => "Central Mobilidade Telemetry API");
     app.MapTelemetryMetrics();
+    app.MapTelemetryHealthEndpoints();
 
     await app.RunAsync();
 }
