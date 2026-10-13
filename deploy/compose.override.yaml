@@ -71,7 +71,7 @@ services:
         condition: service_completed_successfully
       quarantine-init:
         condition: service_completed_successfully
-    # The current worker skeleton exits successfully; its hosted service follows in T053.
+    # The worker keeps its internal metrics endpoint alive; queue consumption follows in T053.
     restart: "no"
 
   pubsub-emulator:

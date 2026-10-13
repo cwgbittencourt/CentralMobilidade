@@ -95,10 +95,11 @@ docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile 
 docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app ps -a
 ```
 
-The API currently serves its skeleton at `http://localhost:8080/`. The Worker currently exits with
-code zero because its hosted consumer is implemented in T053; it is not kept alive by a placeholder
-loop or restart policy. Application templates are described below, dependency adapters follow in later tasks,
-and readiness checks in T022. An `app`-profile `up --wait` is not a valid worker-readiness check yet.
+The API serves its skeleton at `http://localhost:8080/` and aggregate Prometheus metrics at `/metrics`.
+The Worker now remains running and serves `/metrics` on internal port 9464; no worker port is published
+on the host. Its queue consumer is implemented in T053. Application templates are described below,
+dependency adapters follow in later tasks, and readiness checks in T022. A running metrics endpoint
+does not prove queue-consumer readiness.
 
 Run the Pub/Sub emulator independently:
 
