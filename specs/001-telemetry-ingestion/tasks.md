@@ -82,7 +82,8 @@ return non-success.
 - [X] T024 [P] [US1] Add OpenAPI contract tests for `POST /api/v1/telemetry/batches`, including 202, 400, 401, 408, 413, 415, 429, and 503 responses, in `tests/CentralMobilidade.Telemetry.ContractTests/Api/V1/IngestBatchContractTests.cs`
 - [X] T025 [P] [US1] Add boundary tests for compressed-size, duration, content type, charset, gzip header, empty body, request cancellation, trusted proxies, and spoofed forwarded headers in `tests/CentralMobilidade.Telemetry.IntegrationTests/Ingestion/IntakeBoundaryTests.cs`
   - TDD validation: 35 executable boundary scenarios currently fail with 404 until T029/T033/T034/T035 implement intake; the 233 preceding tests pass. See `tests/CentralMobilidade.Telemetry.IntegrationTests/Ingestion/README.md`.
-- [ ] T026 [P] [US1] Add RabbitMQ provider contract tests for durable topology, mandatory routing, native gzip body bytes, metadata attributes, publisher confirm/nack, timeout, and envelope integrity in `tests/CentralMobilidade.Telemetry.IntegrationTests/Queue/RabbitMqPublisherContractTests.cs`
+- [X] T026 [P] [US1] Add RabbitMQ provider contract tests for durable topology, mandatory routing, native gzip body bytes, metadata attributes, publisher confirm/nack, timeout, and envelope integrity in `tests/CentralMobilidade.Telemetry.IntegrationTests/Queue/RabbitMqPublisherContractTests.cs`
+  - TDD validation: real RabbitMQ connectivity/confirm probe passes; ten provider scenarios fail until T030/T031 supply the adapter. Full suite: 234 pass, 35 expected T025 failures and ten expected T026 failures. See `tests/CentralMobilidade.Telemetry.IntegrationTests/Queue/README.md`.
 - [ ] T027 [US1] Add crash-boundary test that kills the API after publisher confirmation and verifies the accepted envelope remains available in `tests/CentralMobilidade.Telemetry.IntegrationTests/Recovery/AcceptedBatchSurvivalTests.cs`
 
 ### Implementation for User Story 1
