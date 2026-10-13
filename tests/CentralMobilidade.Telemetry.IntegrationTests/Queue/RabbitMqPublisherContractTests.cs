@@ -367,6 +367,7 @@ public sealed class RabbitMqPublisherContractTests : IClassFixture<RabbitMqContr
 public sealed class RabbitMqContractBroker : IAsyncLifetime
 {
     private RabbitMqContainer? container;
+    internal Uri Endpoint => new(ConnectionUri!);
     private string? ConnectionUri
     {
         get; set;
