@@ -15,7 +15,7 @@ public interface IOperatorAuthorizer
 }
 public enum OperatorActorKind
 {
-    Human, ViewerPresentationService
+    Human, ViewerPresentationService, Unidentified
 }
 public enum OperatorPermission
 {
