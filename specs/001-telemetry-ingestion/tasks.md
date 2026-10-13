@@ -31,7 +31,7 @@ test project skeletons.
 - [X] T003 Create test project files under `tests/CentralMobilidade.Telemetry.UnitTests/`, `tests/CentralMobilidade.Telemetry.ContractTests/`, `tests/CentralMobilidade.Telemetry.IntegrationTests/`, `tests/CentralMobilidade.Telemetry.ArchitectureTests/`, and `tests/CentralMobilidade.Telemetry.LoadTests/`
 - [X] T004 [P] Configure nullable reference types, analyzers, warnings-as-errors, deterministic builds, and C# 14 in `Directory.Build.props`
 - [X] T005 [P] Configure centrally pinned ASP.NET Core, EF Core, Npgsql, RabbitMQ, Pub/Sub, OpenTelemetry, Serilog, FluentValidation, xUnit, Testcontainers, and test assertion packages in `Directory.Packages.props`
-- [ ] T006 [P] Add repository formatting and line-ending rules in `.editorconfig`
+- [X] T006 [P] Add repository formatting and line-ending rules in `.editorconfig`
 - [ ] T007 [P] Create multi-stage non-root container builds in `deploy/containers/api.Dockerfile` and `deploy/containers/worker.Dockerfile`
 - [ ] T008 Create persistent local service topology with named volumes for PostgreSQL, RabbitMQ, both queryable and pending InfluxDB databases, Prometheus, Loki, and quarantine; build Grafana from `deploy/grafana/Dockerfile` with explicitly pinned compatible Grafana OSS and signed Infinity plugin versions and no `latest` tags in `deploy/compose.yaml`
 - [ ] T009 [P] Create development-only overrides and optional application/Pub/Sub-emulator profiles in `deploy/compose.override.yaml`
