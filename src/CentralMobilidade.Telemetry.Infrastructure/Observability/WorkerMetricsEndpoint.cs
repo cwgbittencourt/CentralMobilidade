@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Metrics;
 
@@ -16,6 +17,7 @@ public sealed class WorkerMetricsEndpoint(MeterProvider provider, ObservabilityO
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
+        builder.Services.AddPrivacyLogging(TelemetryServiceRole.Worker);
         app = builder.Build();
         app.Urls.Add(options.WorkerMetricsUrl);
         app.MapPrometheusScrapingEndpoint("/metrics", provider, null, null);

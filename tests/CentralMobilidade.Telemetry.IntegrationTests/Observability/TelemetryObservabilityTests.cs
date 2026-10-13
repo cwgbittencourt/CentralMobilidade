@@ -11,6 +11,7 @@ using Xunit;
 
 namespace CentralMobilidade.Telemetry.IntegrationTests.Observability;
 
+[Collection("Observability")]
 public sealed partial class TelemetryObservabilityTests
 {
     [Fact]

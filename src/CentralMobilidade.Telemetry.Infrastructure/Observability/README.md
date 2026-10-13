@@ -21,7 +21,7 @@ and fragments are rejected. No collector is silently added to Compose. Trace exp
 bounded batch processor and a five-second exporter timeout; export failure does not participate in
 batch durability or authorization decisions. `WorkerMetricsUrl` controls the worker's listen origin.
 Unknown configuration keys and invalid values fail during startup registration. Logs are configured
-separately by T021; this task does not claim log sanitization.
+separately by [the T021 privacy logging policy](PrivacyLogging.md).
 
 ## Correlation and privacy
 
