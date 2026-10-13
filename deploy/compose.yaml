@@ -1,0 +1,203 @@
+name: centralmobilidade
+
+# Supply secrets through the shell or an untracked .env. There are no default passwords.
+# Paths to offline InfluxDB admin-token JSON files must be absolute.
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_DB: telemetry_control
+      POSTGRES_USER: telemetry
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U telemetry -d telemetry_control"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4.3.6-management-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: telemetry
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: telemetry
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks: [backend]
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  influxdb-queryable:
+    image: influxdb:3.11.6-core
+    command: [influxdb3, serve, --node-id, queryable, --object-store, file, --data-dir, /var/lib/influxdb3/data, --admin-token-file, /run/secrets/influxdb_admin_token, --disable-authz, "health,ping"]
+    secrets:
+      - source: influxdb_queryable_admin_token
+        target: influxdb_admin_token
+    volumes:
+      - influxdb_queryable_data:/var/lib/influxdb3
+    networks: [backend]
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:8181/health]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  influxdb-pending:
+    image: influxdb:3.11.6-core
+    command: [influxdb3, serve, --node-id, pending, --object-store, file, --data-dir, /var/lib/influxdb3/data, --admin-token-file, /run/secrets/influxdb_admin_token, --disable-authz, "health,ping"]
+    secrets:
+      - source: influxdb_pending_admin_token
+        target: influxdb_admin_token
+    volumes:
+      - influxdb_pending_data:/var/lib/influxdb3
+    # Grafana never joins this network; pending storage has no published port.
+    networks: [pending]
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:8181/health]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  influxdb-queryable-init:
+    image: influxdb:3.11.6-core
+    entrypoint: [sh, /init-database.sh]
+    environment:
+      INFLUXDB3_HOST_URL: http://influxdb-queryable:8181
+      INFLUXDB3_DATABASE_NAME: telemetry
+    secrets:
+      - source: influxdb_queryable_admin_token
+        target: influxdb_admin_token
+    volumes:
+      - ./influxdb/init-database.sh:/init-database.sh:ro
+    networks: [backend]
+    depends_on:
+      influxdb-queryable:
+        condition: service_healthy
+    restart: "no"
+
+  influxdb-pending-init:
+    image: influxdb:3.11.6-core
+    entrypoint: [sh, /init-database.sh]
+    environment:
+      INFLUXDB3_HOST_URL: http://influxdb-pending:8181
+      INFLUXDB3_DATABASE_NAME: telemetry_pending
+    secrets:
+      - source: influxdb_pending_admin_token
+        target: influxdb_admin_token
+    volumes:
+      - ./influxdb/init-database.sh:/init-database.sh:ro
+    networks: [pending]
+    depends_on:
+      influxdb-pending:
+        condition: service_healthy
+    restart: "no"
+
+  prometheus:
+    image: prom/prometheus:v3.15.0-busybox
+    command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=30d]
+    volumes:
+      - ./prometheus/bootstrap.yaml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks: [backend]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://localhost:9090/-/ready]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  loki:
+    image: centralmobilidade-loki:3.7.0-busybox-1.37.0
+    build:
+      context: ..
+      dockerfile: deploy/loki/Dockerfile
+    command: [-config.file=/etc/loki/bootstrap.yaml]
+    volumes:
+      - ./loki/bootstrap.yaml:/etc/loki/bootstrap.yaml:ro
+      - loki_data:/loki
+    networks: [backend]
+    healthcheck:
+      test: [CMD, /bin/busybox, wget, -q, -O, /dev/null, http://localhost:3100/ready]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  grafana:
+    image: centralmobilidade-grafana:12.2.5-infinity-4.1.1
+    build:
+      context: ..
+      dockerfile: deploy/grafana/Dockerfile
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    secrets: [grafana_admin_password]
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks: [backend]
+    depends_on:
+      influxdb-queryable-init:
+        condition: service_completed_successfully
+      influxdb-pending-init:
+        condition: service_completed_successfully
+      quarantine-init:
+        condition: service_completed_successfully
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://localhost:3000/api/health]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  quarantine-init:
+    image: alpine:3.23.4
+    # API/Worker images use UID 1654. Mount this same volume in the app profile (T009).
+    command: [sh, -ec, "mkdir -p /quarantine/rejections; chown 1654:1654 /quarantine/rejections; chmod 700 /quarantine/rejections"]
+    volumes:
+      - quarantine_data:/quarantine
+    network_mode: none
+    restart: "no"
+
+secrets:
+  postgres_password:
+    environment: POSTGRES_PASSWORD
+  grafana_admin_password:
+    environment: GRAFANA_ADMIN_PASSWORD
+  influxdb_queryable_admin_token:
+    file: ${INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE:?Set the absolute offline token JSON path}
+  influxdb_pending_admin_token:
+    file: ${INFLUXDB_PENDING_ADMIN_TOKEN_FILE:?Set the absolute offline token JSON path}
+
+networks:
+  backend:
+  pending:
+    internal: true
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  influxdb_queryable_data:
+  influxdb_pending_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+  quarantine_data:
