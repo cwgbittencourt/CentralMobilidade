@@ -29,7 +29,7 @@ test project skeletons.
 - [X] T001 Create `CentralMobilidade.slnx` and add the six source projects and five test projects defined in `specs/001-telemetry-ingestion/plan.md`
 - [X] T002 Create .NET 10 project files under `src/CentralMobilidade.Telemetry.Api/`, `src/CentralMobilidade.Telemetry.Worker/`, `src/CentralMobilidade.Telemetry.Domain/`, `src/CentralMobilidade.Telemetry.Application/`, `src/CentralMobilidade.Telemetry.Infrastructure/`, and `src/CentralMobilidade.Telemetry.Contracts/`
 - [X] T003 Create test project files under `tests/CentralMobilidade.Telemetry.UnitTests/`, `tests/CentralMobilidade.Telemetry.ContractTests/`, `tests/CentralMobilidade.Telemetry.IntegrationTests/`, `tests/CentralMobilidade.Telemetry.ArchitectureTests/`, and `tests/CentralMobilidade.Telemetry.LoadTests/`
-- [ ] T004 [P] Configure nullable reference types, analyzers, warnings-as-errors, deterministic builds, and C# 14 in `Directory.Build.props`
+- [X] T004 [P] Configure nullable reference types, analyzers, warnings-as-errors, deterministic builds, and C# 14 in `Directory.Build.props`
 - [ ] T005 [P] Configure centrally pinned ASP.NET Core, EF Core, Npgsql, RabbitMQ, Pub/Sub, OpenTelemetry, Serilog, FluentValidation, xUnit, Testcontainers, and test assertion packages in `Directory.Packages.props`
 - [ ] T006 [P] Add repository formatting and line-ending rules in `.editorconfig`
 - [ ] T007 [P] Create multi-stage non-root container builds in `deploy/containers/api.Dockerfile` and `deploy/containers/worker.Dockerfile`
