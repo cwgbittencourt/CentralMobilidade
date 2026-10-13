@@ -35,7 +35,7 @@ test project skeletons.
 - [X] T007 [P] Create multi-stage non-root container builds in `deploy/containers/api.Dockerfile` and `deploy/containers/worker.Dockerfile`
 - [X] T008 Create persistent local service topology with named volumes for PostgreSQL, RabbitMQ, both queryable and pending InfluxDB databases, Prometheus, Loki, and quarantine; build Grafana from `deploy/grafana/Dockerfile` with explicitly pinned compatible Grafana OSS and signed Infinity plugin versions and no `latest` tags in `deploy/compose.yaml`
 - [X] T009 [P] Create development-only overrides and optional application/Pub/Sub-emulator profiles in `deploy/compose.override.yaml`
-- [ ] T010 [P] Create secret-free configuration templates in `.env.example`, `src/CentralMobilidade.Telemetry.Api/appsettings.json`, and `src/CentralMobilidade.Telemetry.Worker/appsettings.json`
+- [X] T010 [P] Create secret-free configuration templates in `.env.example`, `src/CentralMobilidade.Telemetry.Api/appsettings.json`, and `src/CentralMobilidade.Telemetry.Worker/appsettings.json`
 
 **Checkpoint**: The solution restores and the dependency containers can be started without application
 functionality.

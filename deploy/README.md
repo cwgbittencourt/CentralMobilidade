@@ -97,7 +97,7 @@ docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile 
 
 The API currently serves its skeleton at `http://localhost:8080/`. The Worker currently exits with
 code zero because its hosted consumer is implemented in T053; it is not kept alive by a placeholder
-loop or restart policy. Application configuration follows in T010, dependency adapters in later tasks,
+loop or restart policy. Application templates are described below, dependency adapters follow in later tasks,
 and readiness checks in T022. An `app`-profile `up --wait` is not a valid worker-readiness check yet.
 
 Run the Pub/Sub emulator independently:
@@ -133,3 +133,36 @@ quarantine directory. The emulator reported healthy and completed topic/subscrip
 publish, pull, and acknowledgement through its REST API. Validation used the isolated
 `centralmobilidade-t009` project and non-default host ports. Its containers were stopped without
 deleting dependency volumes. Provider parity and worker readiness remain later implementation gates.
+
+## Configuration templates
+
+Copy `.env.example` to an untracked root `.env` and fill in its blank secret values and absolute token
+file paths. The example intentionally cannot start the stack with working credentials. Compose reads
+this file for interpolation; it does not automatically export every key into API/Worker containers.
+
+Both application `appsettings.json` files contain the same `Telemetry` limit defaults from the plan:
+8 MiB compressed, 64 MiB decompressed, 100:1 expansion, 16 KiB per line, 50,000 lines, 30-second
+upload, 5,000-point/2 MiB/1-second write batches, seven-day queue retention, 30-day status/quarantine/
+fingerprint evidence, and 60-day local telemetry retention. Durations use .NET `TimeSpan` strings.
+Viewer limits are 500 vehicles, a 24-hour/10,000-point trip, and seven-day/one-minute/10,000-point health
+queries. Startup binding and validation follow in T011; these templates alone do not enforce limits.
+
+Application PostgreSQL connection strings, RabbitMQ passwords, and InfluxDB tokens are blank. Supply
+them through the application process environment or a deployment secret provider using .NET keys
+such as `ConnectionStrings__TelemetryControl`, `Queue__RabbitMq__Password`,
+`InfluxDb__Queryable__Token`, and, for the Worker only, `InfluxDb__Pending__Token`. Use least-privilege
+application credentials rather than the InfluxDB bootstrap admin token files. Credential loading and
+provider registration are implemented in the subsequent security/infrastructure tasks. Do not store
+producer or operator bearer tokens in these files; their separate credential stores follow in T017.
+
+Service URLs in the JSON templates use Docker DNS names. For a host-based development process,
+override `Queue__RabbitMq__Host` to `localhost`, its port to the development AMQP port, and
+`InfluxDb__Queryable__Url` / `InfluxDb__Pending__Url` to the corresponding loopback URLs. Set the
+PostgreSQL connection string to the published PostgreSQL endpoint. Override `Quarantine__Path` to
+a protected local directory and `AllowedHosts` for any additional API hostname. Pub/Sub fields are
+inactive while `Queue:Provider` is `RabbitMq`; emulator configuration must be selected explicitly.
+
+T010 validation confirmed valid JSON, matching limits in both applications, blank credential fields,
+coverage of the Compose interpolation variables in `.env.example`, and inclusion of each JSON file
+in its Release publish output. Compose configuration passes with supplied validation secrets and
+rejects the untouched example. The real `.env` and token-file directory remain ignored by Git.
