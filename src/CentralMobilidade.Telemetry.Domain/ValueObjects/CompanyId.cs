@@ -11,7 +11,10 @@ public sealed record CompanyId
         Value = IdentifierValidation.Validate(value);
     }
 
-    public string Value { get; }
+    public string Value
+    {
+        get;
+    }
 
     public override string ToString() => Value;
 }

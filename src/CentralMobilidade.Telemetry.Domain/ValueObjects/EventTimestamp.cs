@@ -15,7 +15,10 @@ public sealed record EventTimestamp
         Value = value.ToUniversalTime();
     }
 
-    public DateTimeOffset Value { get; }
+    public DateTimeOffset Value
+    {
+        get;
+    }
 
     public long UnixMilliseconds => Value.ToUnixTimeMilliseconds();
 

@@ -14,7 +14,10 @@ public sealed record BatchId
         Value = value;
     }
 
-    public Guid Value { get; }
+    public Guid Value
+    {
+        get;
+    }
 
     public static BatchId New() => new(Guid.NewGuid());
 
