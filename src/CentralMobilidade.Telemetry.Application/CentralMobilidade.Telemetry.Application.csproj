@@ -7,4 +7,9 @@
     <ProjectReference Include="../CentralMobilidade.Telemetry.Contracts/CentralMobilidade.Telemetry.Contracts.csproj" />
     <ProjectReference Include="../CentralMobilidade.Telemetry.Domain/CentralMobilidade.Telemetry.Domain.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+  </ItemGroup>
 </Project>
