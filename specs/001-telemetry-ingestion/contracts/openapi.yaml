@@ -21,20 +21,20 @@ paths:
           schema:
             type: string
             const: v1
+        - name: Content-Encoding
+          in: header
+          required: true
+          schema:
+            type: string
+            const: gzip
       requestBody:
+        description: Original gzip bytes containing UTF-8 Line Protocol; send Content-Type text/plain; charset=utf-8. Acceptance confirms durable handoff, not parsing or telemetry persistence.
         required: true
         content:
           text/plain:
             schema:
               type: string
               format: binary
-            encoding:
-              '*':
-                headers:
-                  Content-Encoding:
-                    schema:
-                      type: string
-                      const: gzip
       responses:
         '202':
           description: The durable queue confirmed responsibility for the batch.
@@ -59,24 +59,46 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '408':
           description: Upload exceeded the configured duration.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '413':
           description: Compressed request exceeded the configured intake limit.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '415':
           description: Content type, charset, or gzip content encoding is unsupported.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '429':
           description: Intake is applying backpressure.
           headers:
             Retry-After:
+              required: true
               schema:
                 type: integer
                 minimum: 1
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '503':
           description: Durable persistence could not be confirmed; the caller may retry.
           headers:
             Retry-After:
+              required: true
               schema:
                 type: integer
                 minimum: 1
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /api/v1/telemetry/batches/{batchId}:
     get:
       operationId: getTelemetryBatch
@@ -378,6 +400,16 @@ components:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
       description: Missing, invalid, disabled, or wrong credential type.
+      headers:
+        WWW-Authenticate:
+          required: true
+          schema:
+            type: string
+            const: Bearer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
   schemas:
     BatchAccepted:
       type: object
@@ -526,6 +558,8 @@ components:
           minimum: 0
     Problem:
       type: object
+      additionalProperties: false
+      required: [code, type, title, status, detail, traceId]
       properties:
         code:
           type: string

@@ -79,7 +79,7 @@ return non-success.
 
 ### Tests for User Story 1
 
-- [ ] T024 [P] [US1] Add OpenAPI contract tests for `POST /api/v1/telemetry/batches`, including 202, 400, 401, 408, 413, 415, 429, and 503 responses, in `tests/CentralMobilidade.Telemetry.ContractTests/Api/V1/IngestBatchContractTests.cs`
+- [X] T024 [P] [US1] Add OpenAPI contract tests for `POST /api/v1/telemetry/batches`, including 202, 400, 401, 408, 413, 415, 429, and 503 responses, in `tests/CentralMobilidade.Telemetry.ContractTests/Api/V1/IngestBatchContractTests.cs`
 - [ ] T025 [P] [US1] Add boundary tests for compressed-size, duration, content type, charset, gzip header, empty body, request cancellation, trusted proxies, and spoofed forwarded headers in `tests/CentralMobilidade.Telemetry.IntegrationTests/Ingestion/IntakeBoundaryTests.cs`
 - [ ] T026 [P] [US1] Add RabbitMQ provider contract tests for durable topology, mandatory routing, native gzip body bytes, metadata attributes, publisher confirm/nack, timeout, and envelope integrity in `tests/CentralMobilidade.Telemetry.IntegrationTests/Queue/RabbitMqPublisherContractTests.cs`
 - [ ] T027 [US1] Add crash-boundary test that kills the API after publisher confirmation and verifies the accepted envelope remains available in `tests/CentralMobilidade.Telemetry.IntegrationTests/Recovery/AcceptedBatchSurvivalTests.cs`
