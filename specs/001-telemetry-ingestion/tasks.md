@@ -49,7 +49,7 @@ every user story.
 
 **⚠️ CRITICAL**: No user story implementation begins until this phase passes its tests.
 
-- [ ] T011 Implement strongly typed, startup-validated limits for compressed bytes, decompressed bytes, expansion ratio, line length/count, upload duration, queue retention, write batch count/bytes/time, status/quarantine retention, and viewer defaults of 500 latest vehicles, 24-hour/10,000-point trip, and seven-day/one-minute/10,000-point health query in `src/CentralMobilidade.Telemetry.Application/Configuration/TelemetryOptions.cs`
+- [X] T011 Implement strongly typed, startup-validated limits for compressed bytes, decompressed bytes, expansion ratio, line length/count, upload duration, queue retention, write batch count/bytes/time, status/quarantine retention, and viewer defaults of 500 latest vehicles, 24-hour/10,000-point trip, and seven-day/one-minute/10,000-point health query in `src/CentralMobilidade.Telemetry.Application/Configuration/TelemetryOptions.cs`
 - [ ] T012 [P] Implement domain identifiers and UTC time value objects in `src/CentralMobilidade.Telemetry.Domain/ValueObjects/BatchId.cs`, `CompanyId.cs`, `VehicleId.cs`, `DriverId.cs`, and `EventTimestamp.cs`
 - [ ] T013 [P] Define stable problem details and rejection-code catalogs from `data-model.md` in `src/CentralMobilidade.Telemetry.Contracts/Errors/TelemetryErrorCodes.cs`
 - [ ] T014 [P] Define versioned request, batch-status, rejection-page, driver-presentation, latest-position, trip, and ingestion-health DTOs matching `contracts/openapi.yaml` in `src/CentralMobilidade.Telemetry.Contracts/Api/V1/`

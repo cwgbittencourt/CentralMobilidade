@@ -145,7 +145,13 @@ Both application `appsettings.json` files contain the same `Telemetry` limit def
 upload, 5,000-point/2 MiB/1-second write batches, seven-day queue retention, 30-day status/quarantine/
 fingerprint evidence, and 60-day local telemetry retention. Durations use .NET `TimeSpan` strings.
 Viewer limits are 500 vehicles, a 24-hour/10,000-point trip, and seven-day/one-minute/10,000-point health
-queries. Startup binding and validation follow in T011; these templates alone do not enforce limits.
+queries. API and Worker bind the `Telemetry` section to shared options and validate it before host
+startup. Unknown keys, malformed values, nonpositive sizes/counts/durations, nonfinite expansion
+ratios, and inconsistent byte limits fail startup. Viewer limits may be reduced, but cannot exceed
+the documented maxima or use health granularity below one minute. Quarantine retention may be reduced
+but cannot exceed 30 days; queue retention must cover seven days. Batch status and fingerprint evidence
+must remain at 30 days, and local telemetry retention must match the databases' fixed 60-day policy.
+Request/stream enforcement and retention cleanup are implemented in the later processing tasks.
 
 Application PostgreSQL connection strings, RabbitMQ passwords, and InfluxDB tokens are blank. Supply
 them through the application process environment or a deployment secret provider using .NET keys
