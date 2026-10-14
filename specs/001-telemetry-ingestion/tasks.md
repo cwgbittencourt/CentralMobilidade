@@ -139,7 +139,8 @@ rejection is inspectable.
 
 ### Implementation for User Story 2
 
-- [ ] T043 [P] [US2] Implement `TelemetryEvent` validation with required `empresa_id`, `veiculo_id`, latitude -90..90, longitude -180..180, non-negative speed/RPM, boolean ignition, optional pseudonymous `motorista_id`, and optional plate in `src/CentralMobilidade.Telemetry.Domain/Telemetry/TelemetryEvent.cs`
+- [X] T043 [P] [US2] Implement `TelemetryEvent` validation with required `empresa_id`, `veiculo_id`, latitude -90..90, longitude -180..180, non-negative speed/RPM, boolean ignition, optional pseudonymous `motorista_id`, and optional plate in `src/CentralMobilidade.Telemetry.Domain/Telemetry/TelemetryEvent.cs`
+  - Validation: 27 new domain tests pass; unit suite has 128 pass and the same 74 expected T036/T037 failures. Immutable validated event, finite coordinate/speed limits, typed identity/timestamp, optional pseudonymous driver, invariant uppercase Unicode-safe plate and private diagnostics. Parser/canonical fingerprint remain T046. Architecture tests pass; see `src/CentralMobilidade.Telemetry.Domain/Telemetry/README.md`.
 - [ ] T044 [P] [US2] Implement stable `LineProcessingResult` and protected `QuarantinedRejection` entities from `data-model.md` in `src/CentralMobilidade.Telemetry.Domain/Processing/LineProcessingResult.cs` and `QuarantinedRejection.cs`
 - [ ] T045 [US2] Implement bounded streaming gzip decompression with independent byte/ratio/line/time cancellation in `src/CentralMobilidade.Telemetry.Infrastructure/Streaming/BoundedGzipLineReader.cs`
 - [ ] T046 [US2] Implement closed-schema incremental parser and canonical fingerprinting for `contracts/line-protocol-v1.md` in `src/CentralMobilidade.Telemetry.Application/LineProtocol/TelemetryLineProtocolV1Parser.cs`
