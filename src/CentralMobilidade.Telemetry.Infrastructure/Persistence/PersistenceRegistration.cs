@@ -14,6 +14,7 @@ public static class PersistenceRegistration
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         services.AddDbContextFactory<TelemetryControlDbContext>(options => options.UseNpgsql(connectionString));
         services.TryAddSingleton<IAuditWriter, PostgresAuditWriter>();
+        services.TryAddSingleton<IBatchStateStore, PostgresBatchStateStore>();
         return services;
     }
 }

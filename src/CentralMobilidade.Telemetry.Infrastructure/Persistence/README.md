@@ -21,6 +21,17 @@ evidence have independent expiry indexes and no cascading dependency on batches 
 No telemetry-lifetime reservation algorithm or target-scale performance is claimed: T041/ADR-001
 must approve the physical strategy before T047 implements the identity port.
 
+`PostgresBatchStateStore` creates ingestion batches with `INSERT ... ON CONFLICT` inside a database
+transaction. Reusing a `BatchId` with identical persisted metadata returns the existing batch; a
+metadata collision is rejected. Lifecycle changes use a single version-checked SQL update, so legal
+transitions increment `RowVersion` exactly once. An exact retry succeeds without a second mutation,
+including concurrent retries of `Publishing -> Accepted`; a different timestamp, stale version,
+illegal source state, or backward timestamp is rejected without changing the row.
+
+Acceptance records `DurableAt` in the same atomic update. The intake orchestrator supplies that
+transition only after the durable queue publisher confirms the matching batch. PostgreSQL timestamp
+precision is normalized before comparisons, and creation requires the exact 30-day retention boundary.
+
 `PostgresAuditWriter` uses a new context and transaction per append, parameterized SQL and
 `INSERT ... ON CONFLICT DO NOTHING`. An identical event ID/content returns its original receipt;
 the same ID with different content fails. Company scopes are sorted and deduplicated and occurrence
