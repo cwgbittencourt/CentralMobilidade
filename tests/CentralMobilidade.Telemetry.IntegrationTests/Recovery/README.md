@@ -1,5 +1,9 @@
 # Sobrevivência do lote após encerramento da API — T027
 
+Testes de recuperação do worker e fronteiras de acknowledgement da T042 são descritos
+em [WorkerAcknowledgementBoundaryTests.md](WorkerAcknowledgementBoundaryTests.md).
+São cenários TDD distintos desta prova de encerramento real do processo da API.
+
 ```powershell
 dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter FullyQualifiedName~AcceptedBatchSurvivalTests
 ```
