@@ -1,5 +1,10 @@
 # Golden tests de Line Protocol v1 — T036
 
+Atualização T046: parser de produção implementado; os 45 cenários originais e dez
+adicionais passam. Suíte unitária completa: 241 aprovações; arquitetura: 47 aprovações.
+Validação final em Linux Docker após bloqueio da DLL pelo Application Control Windows.
+Evidência: `artifacts/validation/T046/unit-linux.txt`. O resultado TDD abaixo é histórico.
+
 `LineProtocolV1GoldenTests` exercita o parser de produção planejado na T046,
 conforme `specs/001-telemetry-ingestion/contracts/line-protocol-v1.md` e `data-model.md`.
 

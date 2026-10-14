@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using CentralMobilidade.Telemetry.Application.Ingestion;
+using CentralMobilidade.Telemetry.Application.LineProtocol;
 using CentralMobilidade.Telemetry.Contracts.Errors;
 using Shouldly;
 using Xunit;
@@ -141,6 +143,70 @@ public sealed class LineProtocolV1GoldenTests
         return Property(result, "Event").ShouldNotBeNull();
     }
 
+    [Theory]
+    [InlineData(",empresa_id=second", true)]
+    [InlineData(",latitude=1", false)]
+    public void Duplicate_columns_are_rejected(string extra, bool tag)
+    {
+        var input = tag ? Tags + extra + " " + Fields + " " + Timestamp : Tags + " " + Fields + extra + " " + Timestamp;
+        var result = new TelemetryLineProtocolV1Parser().Parse(Encoding.UTF8.GetBytes(input));
+        result.Event.ShouldBeNull();
+        result.ErrorCode.ShouldBe(TelemetryErrorCodes.LpInvalidSyntax);
+    }
+
+    [Fact]
+    public void Optional_driver_and_plate_participate_in_canonical_content()
+    {
+        var parser = new TelemetryLineProtocolV1Parser();
+        var plain = parser.Parse(Encoding.UTF8.GetBytes(Baseline)).Event.ShouldNotBeNull();
+        var driver = parser.Parse(Encoding.UTF8.GetBytes(Tags + ",motorista_id=driver " + Fields + " " + Timestamp)).Event.ShouldNotBeNull();
+        var plate = parser.Parse(Encoding.UTF8.GetBytes(Tags + " " + Fields + ",placa=\"abc1234\" " + Timestamp)).Event.ShouldNotBeNull();
+        driver.Fingerprint.ShouldNotBe(plain.Fingerprint);
+        plate.Fingerprint.ShouldNotBe(plain.Fingerprint);
+        parser.Parse(Encoding.UTF8.GetBytes(Tags + " " + Fields + ",placa=\"ABC1234\" " + Timestamp)).Event!.Fingerprint.ShouldBe(plate.Fingerprint);
+        parser.Parse(Encoding.UTF8.GetBytes(Tags + " " + Fields + ",placa=\"\" " + Timestamp)).Event!.Fingerprint.ShouldNotBe(plain.Fingerprint);
+    }
+
+    [Fact]
+    public void Signed_zero_whitespace_and_culture_do_not_change_fingerprint()
+    {
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pt-BR");
+            var parser = new TelemetryLineProtocolV1Parser();
+            var zero = Baseline.Replace("velocidade=82.5", "velocidade=0");
+            var point = parser.Parse(Encoding.UTF8.GetBytes(zero)).Event.ShouldNotBeNull();
+            parser.Parse(Encoding.UTF8.GetBytes("  " + zero.Replace("velocidade=0", "velocidade=-0.0").Replace(" latitude=", "   latitude=") + "  ")).Event!.Fingerprint.ShouldBe(point.Fingerprint);
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            parser.Parse(Encoding.UTF8.GetBytes(zero)).Event!.Fingerprint.ShouldBe(point.Fingerprint);
+            point.ToString().ShouldBe("[ParsedTelemetryEvent]");
+        }
+        finally { CultureInfo.CurrentCulture = previous; }
+    }
+
+    [Theory]
+    [InlineData("latitude=1i", TelemetryErrorCodes.LpInvalidFieldType)]
+    [InlineData("ignicao=True", TelemetryErrorCodes.LpInvalidFieldType)]
+    [InlineData("placa=\"unterminated", TelemetryErrorCodes.LpInvalidSyntax)]
+    public void Malformed_fields_return_private_stable_errors(string field, string code)
+    {
+        var fields = field.StartsWith("latitude", StringComparison.Ordinal) ? Fields.Replace("latitude=-23.55052", field)
+            : field.StartsWith("ignicao", StringComparison.Ordinal) ? Fields.Replace("ignicao=true", field) : Fields + "," + field;
+        var result = new TelemetryLineProtocolV1Parser().Parse(Encoding.UTF8.GetBytes(Tags + " " + fields + " " + Timestamp));
+        result.Event.ShouldBeNull();
+        result.ErrorCode.ShouldBe(code);
+        result.ToString().ShouldBe("[LineProtocolParseResult]");
+    }
+
+    [Fact]
+    public void Parser_applies_byte_limit_before_decoding_or_allocating_line_text()
+    {
+        var result = new TelemetryLineProtocolV1Parser().Parse(new byte[16 * 1024 + 1]);
+        result.Event.ShouldBeNull();
+        result.ErrorCode.ShouldBe(TelemetryErrorCodes.LpLineTooLarge);
+    }
+
     private static string Fingerprint(string line)
     {
         var point = Accepted(line);
@@ -148,6 +214,17 @@ public sealed class LineProtocolV1GoldenTests
         digest.Length.ShouldBe(64);
         Convert.FromHexString(digest).Length.ShouldBe(32);
         return digest;
+    }
+
+    [Theory]
+    [InlineData("company\"quoted", "company\"quoted")]
+    [InlineData("company\\literal", "company\\literal")]
+    public void Literal_tag_quotes_and_non_special_backslashes_are_preserved(string encoded, string decoded)
+    {
+        var input = Baseline.Replace("empresa-42", encoded, StringComparison.Ordinal);
+        var result = new TelemetryLineProtocolV1Parser().Parse(Encoding.UTF8.GetBytes(input));
+        result.ErrorCode.ShouldBeNull();
+        result.Event!.CompanyId.Value.ShouldBe(decoded);
     }
 
     // Reflection keeps the test-first commit compilable while T043/T046 do not yet exist.
