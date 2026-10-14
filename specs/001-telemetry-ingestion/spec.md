@@ -6,6 +6,12 @@
 
 **Status**: Draft
 
+**Foundation amendment (2026-10-14)**: Constitution 2.0.0. A valid `empresa_id`
+(business `idEmpresa`) supplied by the internal producer is authoritative for company existence.
+One shared ingestion credential covers every company. No company registry lookup, pending telemetry
+store, or promotion is required. Existing schema validation and presentation permissions still apply.
+Adequation tasks T104-T112 MUST complete before T050; no implementation completion is implied.
+
 **Input**: Build a durable, multi-company vehicle telemetry ingestion platform that accepts gzip-compressed InfluxDB Line Protocol, supports delayed delivery and partial acceptance, makes data available for Grafana, and can move from a local containerized environment to Google Cloud.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -85,7 +91,7 @@ health by company without exposing unauthorized driver details.
 **Why this priority**: The ingested data must become operationally useful and demonstrably trustworthy.
 
 **Independent Test**: Ingest representative data for multiple companies and verify the three initial
-views, including an old single-vehicle trip and an unknown company that must not be displayed.
+views, including an old single-vehicle trip and a valid company ID absent from the cadastral source.
 
 **Acceptance Scenarios**:
 
@@ -93,9 +99,9 @@ views, including an old single-vehicle trip and an unknown company that must not
    **Then** the latest available position is shown for each selected vehicle.
 2. **Given** a vehicle and trip time range, **When** a user requests its trajectory, **Then** events are
    ordered by event timestamp even when they arrived late or out of order.
-3. **Given** an event for an unknown company, **When** dashboards are queried, **Then** it remains stored
-   in a pending telemetry area that is inaccessible to dashboards until the company exists in the
-   cadastral source and the event is promoted to the queryable telemetry area.
+3. **Given** an event with a valid company ID absent from the cadastral source, **When** processing
+   completes, **Then** it is stored in the single telemetry database and available to authorized
+   dashboards without registration, lookup, or promotion.
 4. **Given** a driver identifier and an authorized user, **When** identity is requested, **Then** only the
    permitted display name and masked CPF suffix are returned and the access is audited.
 
@@ -132,7 +138,8 @@ failures, then run the same contract suite against an alternative queue adapter.
 - Events contain timestamps far in the past or future, invalid coordinates, or incompatible field types.
 - A vehicle reconnects and sends hours of accumulated events while normal traffic continues.
 - The same batch is submitted concurrently, partially retried, or redelivered after consumer failure.
-- A company identifier is new, removed, or temporarily unavailable in the cadastral source.
+- A valid company identifier is absent from the cadastral source; it is still accepted as existing.
+- A company identifier is missing or malformed; the existing validation rejects the line.
 - Telemetry storage accepts only part of a write or becomes unavailable after a partial response.
 - The durable queue reaches capacity or its oldest message approaches the retention limit.
 - A cleanup job runs while a batch status or quarantined rejection is being inspected.
@@ -144,7 +151,8 @@ failures, then run the same contract suite against an alternative queue adapter.
 ### Functional Requirements
 
 - **FR-001**: The system MUST expose a versioned endpoint that accepts only authenticated, gzip-encoded,
-  UTF-8 InfluxDB Line Protocol batches from the internal telemetry producer.
+  UTF-8 InfluxDB Line Protocol batches from the internal telemetry producer, using one shared
+  rotatable ingestion credential for all companies without per-company ingestion allowlists.
 - **FR-002**: The system MUST validate authentication, encoding, compressed size, decompressed size,
   line length, line count, and processing time using configurable limits.
 - **FR-003**: The system MUST return `202 Accepted` only after durable persistence is confirmed and MUST
@@ -170,8 +178,6 @@ failures, then run the same contract suite against an alternative queue adapter.
   prevent any second committed write for the same company, stable vehicle identifier, and event
   timestamp. A reservation MUST be recoverable by its owning batch after process or dependency failure
   and MUST become permanently blocking only after the corresponding telemetry write is confirmed.
-  Promotion from pending to queryable storage is an authorized relocation of the same logical event,
-  tracked by the guard's storage location, and MUST NOT be classified as a duplicate.
   Within 30 days of first acceptance, an identical replay MUST additionally be classified as a replay;
   after 30 days it MAY be reported only as an already-existing identity.
 - **FR-014**: Throughout the configured telemetry-retention period, a second write for an existing
@@ -184,13 +190,14 @@ failures, then run the same contract suite against an alternative queue adapter.
 - **FR-017**: The system MUST expose an authenticated batch-status endpoint returning state, total lines,
   accepted lines, rejected lines, timestamps, and categorized error summaries.
 - **FR-018**: Batch status MUST be retained for 30 days and then deleted automatically.
-- **FR-019**: The system MUST accept telemetry for a previously unknown company into a separate pending
-  telemetry area that dashboards cannot access, and MUST promote it idempotently to the queryable
-  telemetry area only after the cadastral source recognizes the company. An unavailable, timed-out, or
-  inconclusive cadastral lookup MUST be treated conservatively as pending and MUST NOT block durable
-  ingestion or expose the event in a dashboard.
-- **FR-020**: The cadastral dependency MUST be replaceable without changing ingestion or telemetry
-  storage contracts.
+- **FR-019**: The system MUST recognize every syntactically valid `empresa_id` supplied by the
+  authenticated internal producer as an existing company and write all accepted telemetry to one
+  queryable database on one InfluxDB server. It MUST NOT consult a company registry for eligibility,
+  route data to unknown-company pending storage, or require promotion. Missing or malformed company
+  identifiers remain invalid under FR-006; company existence does not bypass presentation authorization.
+- **FR-020**: The cadastral dependency for optional vehicle/driver enrichment MUST be replaceable
+  without changing ingestion or telemetry storage contracts. Its absence or failure MUST NOT gate
+  company recognition, telemetry persistence, or authorized telemetry visibility.
 - **FR-021**: Driver identity MUST be resolved outside telemetry storage from `motorista_id` and MUST
   disclose only authorized fields, including at most name and the last four CPF digits.
 - **FR-022**: Access to driver identity, raw quarantine content, and cross-company information MUST be
@@ -299,8 +306,10 @@ failures, then run the same contract suite against an alternative queue adapter.
   seconds for 95% of requests under normal load.
 - **SC-007**: Internal users can display a vehicle's latest position and a single historical trip in
   under five seconds for 95% of requests within the validated query envelope.
-- **SC-008**: Unknown-company telemetry remains exclusively in the pending telemetry area and appears
-  in no user dashboard until an idempotent promotion completes after cadastral validation.
+- **SC-008**: With company lookup absent or unavailable, events for valid company IDs not listed in
+  any registry are persisted in the single telemetry database and queryable within authorized scope.
+  The same producer credential accepts multiple company IDs; missing/invalid IDs are rejected and
+  no pending-storage or promotion dependency is needed.
 - **SC-009**: Automated privacy checks find no raw payload, plate, coordinate, driver name, CPF, token,
   or secret in general logs, metrics, and traces.
 - **SC-010**: Recovery exercises prove seven-day unprocessed-message retention, 30-day status and
@@ -316,7 +325,8 @@ failures, then run the same contract suite against an alternative queue adapter.
 ## Assumptions
 
 - The initial producer is a single internal telemetry center authenticated with a rotatable technical
-  credential; per-company producer credentials are outside the MVP.
+  credential shared by all companies; per-company producer credentials and ingestion company
+  allowlists MUST NOT be introduced.
 - Duplicate replay/conflict classification is guaranteed for the 30-day operational window. Throughout
   telemetry retention, an immutable identity guard prevents an additional write or mutation of the
   original point; beyond 30 days, detailed classification and rejection evidence are not guaranteed.
@@ -330,6 +340,6 @@ failures, then run the same contract suite against an alternative queue adapter.
   dashboard access and self-service credentials are outside the MVP.
 - Mobile-phone GPS ingestion, vehicle commands, and bidirectional protocols are future features.
 - The cadastral source exists but its technology and interface can change; temporary unavailability
-  must not prevent durable telemetry ingestion.
+  must not prevent durable telemetry ingestion, storage, or authorized telemetry visibility.
 - Five-year retention and long-range query performance require representative capacity tests and an
   external durable storage design before production commitment.

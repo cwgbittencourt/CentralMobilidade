@@ -162,3 +162,11 @@ dotnet test tests/CentralMobilidade.Telemetry.LoadTests --filter FullyQualifiedN
 The test retains JSON even if throughput fails and requires at least one candidate to
 meet 5,000 measured events/s. The corpus and benchmark are synthetic and isolated;
 containers are disposed and no Compose volumes are modified.
+
+## Amendment 2026-10-14: Single telemetry destination
+
+Constitution 2.0.0 and FR-019 supersede promotion/dual-location decisions above. Earlier measurements
+and implementation reports are historical evidence, not instructions to retain promotion. T104-T112
+remove promotion APIs/leases and pending destinations through a safe forward migration. Keep
+Reserved/Writing/Committed, owner recovery, fencing, retention and immutable logical identity.
+This simplification does not resolve the recorded throughput shortfall or approve target capacity.

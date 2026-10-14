@@ -29,7 +29,7 @@ telemetria,empresa_id=empresa-42,veiculo_id=veiculo-900,motorista_id=motorista-7
 
 | Name | Required | Notes |
 |---|---:|---|
-| `empresa_id` | yes | Tenant identifier; presentation requires cadastral validity |
+| `empresa_id` | yes | Company identifier; valid producer-supplied IDs are recognized without cadastral lookup |
 | `veiculo_id` | yes | Stable vehicle identifier |
 | `motorista_id` | no | Pseudonymous identifier only |
 
@@ -59,3 +59,10 @@ canonicalized before the event fingerprint is calculated.
 
 Adding or changing a tag, field, unit, type, measurement, or identity rule requires a reviewed contract
 revision. Breaking changes require a new API/schema version and coexistence window.
+
+## Company recognition (2026-10-14)
+
+`empresa_id` is the wire name for business `idEmpresa`; no tag rename or schema expansion is implied.
+One shared internal producer credential accepts all valid company IDs. No company registration,
+lookup, pending store, or promotion is required. Missing/invalid IDs follow existing validation;
+all other schema, replay, privacy, and presentation authorization rules remain in force.

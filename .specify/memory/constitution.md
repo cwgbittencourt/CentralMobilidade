@@ -1,11 +1,14 @@
 <!--
 Sync Impact Report
-- Version change: template -> 1.0.0
-- Added principles: Durable Acceptance; Bounded Streaming; Privacy; Versioned Contracts;
-  Observable and Portable Operations.
-- Added sections: Technical and Operational Constraints; Delivery Workflow and Quality Gates.
-- Removed sections: none; template placeholders were replaced.
-- Follow-up TODOs: none.
+- Version change: 1.0.0 -> 2.0.0 (incompatible company-recognition rule).
+- Modified principles: III. Tenant Isolation and Privacy by Design; IV. Explicit, Versioned,
+  Idempotent Contracts; Technical and Operational Constraints.
+- Added sections: none. Removed sections: none.
+- Rationale: internal telemetry producer is authoritative for company existence; remove cadastral
+  eligibility, pending storage and promotion. One shared ingestion credential covers all companies.
+- Migration: reconcile any existing pending telemetry and identity guards before retiring storage;
+  never discard acknowledged data or reset existing volumes. Adequation tasks block T050.
+- Follow-up TODOs: none. Remove this review report before committing the amendment.
 -->
 # Centrral Mobilidade Constitution
 
@@ -35,7 +38,10 @@ adversarial gzip payloads.
 
 ### III. Tenant Isolation and Privacy by Design
 Every telemetry point MUST carry a tenant identifier and a stable vehicle identifier. Tenant scope
-MUST be enforced when data is presented, even when ingestion accepts a previously unknown tenant.
+MUST be enforced when data is presented. Every syntactically valid company identifier supplied by
+the authenticated internal producer MUST be recognized as existing without a cadastral existence check.
+The producer MUST use one shared ingestion credential across companies; per-company ingestion
+credentials or company allowlists MUST NOT be required. Presentation permissions remain independent.
 Telemetry MUST contain only a pseudonymous driver identifier; driver name and CPF MUST NOT be stored
 in InfluxDB, logs, metrics, traces, or ordinary dead-letter metadata. Identity resolution MUST occur
 through an authorized cadastral adapter and expose only the minimum required representation. Access
@@ -52,7 +58,9 @@ The accepted InfluxDB Line Protocol schema MUST be closed, documented, versioned
 tenant, stable vehicle identifier, and event timestamp. An identical replay MUST be safe; a conflicting
 second event MUST preserve the original and record a diagnosable rejection. Partial success MUST be
 represented by a durable batch status containing accepted and rejected counts and stable error codes.
-Breaking contract changes MUST use a new version and a documented migration window.
+The wire company tag remains `empresa_id` (the business identifier called `idEmpresa`); this
+amendment MUST NOT silently rename it. Missing or invalid company identifiers MUST be rejected by
+the existing validation contract. Breaking contract changes MUST use a new version and a documented migration window.
 
 Rationale: producers can retry safely only when identity, validation, and evolution rules are
 deterministic.
@@ -79,6 +87,9 @@ scale or migrate.
   integration tests MUST preserve migration without changing domain rules.
 - InfluxDB 3 Core MUST be treated as a single-node dependency. Development retention is 60 days;
   target production retention is five years and requires independent capacity validation.
+- Telemetry MUST use one InfluxDB server and one queryable telemetry database. Unknown-company
+  pending storage and promotion MUST NOT be part of the processing model. Cadastral enrichment
+  MUST NOT gate telemetry ingestion, storage, or visibility within an authorized presentation scope.
 - PostgreSQL MUST hold batch lifecycle, validation results, configuration, idempotency metadata, and
   audit records; it MUST NOT become the primary telemetry store.
 - Raw rejected lines MAY exist only in protected quarantine for at most 30 days. Batch status MAY be
@@ -119,4 +130,4 @@ for new or materially expanded principles, and PATCH for non-semantic clarificat
 MUST update the Sync Impact Report, version, and amendment date. Unjustified complexity or a silent
 exception is non-compliant; when a simpler design cannot meet a principle, the plan MUST document why.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-11
+**Version**: 2.0.0 | **Ratified**: 2026-10-11 | **Last Amended**: 2026-10-14

@@ -33,6 +33,31 @@ public sealed class WorkerAcknowledgementBoundaryTests
     private static readonly EventIdentity Identity = new(new CompanyId("company"), new VehicleId("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(Now.ToUnixTimeMilliseconds()));
     private static readonly string Fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("original")));
 
+    [Theory]
+    [Trait("Feature", "FoundationSingleInflux")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Processing_valid_company_ids_needs_no_registry_or_pending_destination(bool omitResolver)
+    {
+        // Remains red for absent T051; this task must not implement the processing handler.
+        await using var fixture = await Fixture.Create(true, forbidCompanyLookup: true, omitCompanyLookup: omitResolver);
+        var raw = RawLine.Replace("empresa_id=company", "empresa_id=not-in-registry-a", StringComparison.Ordinal) +
+            RawLine.Replace("empresa_id=company", "empresa_id=not-in-registry-b", StringComparison.Ordinal);
+        var metadata = await fixture.Accepted(raw);
+        await using var delivery = new Delivery(metadata, fixture.Probe, raw: raw);
+        await fixture.Run(delivery);
+        delivery.Completed.ShouldBeTrue();
+        fixture.Probe.CompanyLookupCalls.ShouldBe(0);
+        fixture.Writer.Points.Keys.Select(identity => identity.CompanyId.Value).OrderBy(id => id)
+            .ShouldBe(new[] { "not-in-registry-a", "not-in-registry-b" });
+        fixture.Writer.Destinations.ShouldNotBeEmpty();
+        fixture.Writer.Destinations.ShouldAllBe(destination => destination == TelemetryDestination.Queryable);
+        var snapshot = (await fixture.RealStore.GetAsync(new(metadata.BatchId), default)).ShouldNotBeNull();
+        snapshot.State.ShouldBe(BatchLifecycle.Completed);
+        snapshot.Counters.Accepted.ShouldBe(2);
+        snapshot.Counters.Rejected.ShouldBe(0);
+    }
+
     [Fact]
     public async Task Concurrent_reservation_has_one_winner_and_conflicting_contender_cannot_replace_it()
     {
@@ -296,6 +321,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
     {
         internal string? FailAt;
         internal bool Triggered;
+        internal int CompanyLookupCalls;
         internal ConcurrentQueue<string> Events { get; } = new();
         internal void Hit(string stage)
         {
@@ -334,7 +360,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
         }
         internal Clock Clock { get; } = new();
         private readonly Type? handlerType;
-        private Fixture(MigratedPostgresFixture database, Type guardType, Type? handlerType)
+        private Fixture(MigratedPostgresFixture database, Type guardType, Type? handlerType, bool forbidCompanyLookup, bool omitCompanyLookup)
         {
             Database = database;
             var collection = new ServiceCollection();
@@ -348,7 +374,8 @@ public sealed class WorkerAcknowledgementBoundaryTests
             collection.AddSingleton(TimeProvider.System);
             Writer = new(Probe);
             collection.AddSingleton<ITelemetryWriter>(Writer);
-            collection.AddSingleton<ICompanyVisibilityResolver>(new Visibility());
+            if (!omitCompanyLookup)
+                collection.AddSingleton<ICompanyVisibilityResolver>(new Visibility(Probe, forbidCompanyLookup));
             Quarantine = new(Probe);
             collection.AddSingleton<IQuarantineStore>(Quarantine);
             collection.AddTransient<IEventIdentityGuard>(provider => new GuardDecorator(ActivatorUtilities.CreateInstance(provider, guardType).ShouldBeAssignableTo<IEventIdentityGuard>()!, Probe));
@@ -361,7 +388,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
             RealStore = new PostgresBatchStateStore(services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>());
             this.handlerType = handlerType;
         }
-        internal static async Task<Fixture> Create(bool processing)
+        internal static async Task<Fixture> Create(bool processing, bool forbidCompanyLookup = false, bool omitCompanyLookup = false)
         {
             var handlerType = typeof(AcceptTelemetryBatchHandler).Assembly.GetType("CentralMobilidade.Telemetry.Application.Processing.ProcessTelemetryBatchHandler");
             if (processing)
@@ -371,7 +398,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
             var database = await MigratedPostgresFixture.StartAsync();
             try
             {
-                return new(database, guardType, processing ? handlerType : null);
+                return new(database, guardType, processing ? handlerType : null, forbidCompanyLookup, omitCompanyLookup);
             }
             catch { await database.DisposeAsync(); throw; }
         }
@@ -467,11 +494,13 @@ public sealed class WorkerAcknowledgementBoundaryTests
     {
         internal ConcurrentDictionary<EventIdentity, byte[]> Points { get; } = new();
         internal int Calls;
+        internal ConcurrentQueue<TelemetryDestination> Destinations { get; } = new();
         internal bool ChangedOriginal;
         internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource? Hold;
         public async ValueTask<TelemetryWriteResult> WriteAsync(TelemetryWriteRequest request, Stream body, CancellationToken token)
         {
+            Destinations.Enqueue(request.Destination);
             probe.Hit("before-influx");
             Entered.TrySetResult();
             if (Hold is not null)
@@ -525,9 +554,15 @@ public sealed class WorkerAcknowledgementBoundaryTests
     {
         public DateTimeOffset UtcNow { get; set; } = Now;
     }
-    private sealed class Visibility : ICompanyVisibilityResolver
+    private sealed class Visibility(Probe probe, bool forbidden) : ICompanyVisibilityResolver
     {
-        public ValueTask<CompanyVisibility> ResolveAsync(CompanyId company, CancellationToken token) => ValueTask.FromResult(CompanyVisibility.Visible);
+        public ValueTask<CompanyVisibility> ResolveAsync(CompanyId company, CancellationToken token)
+        {
+            Interlocked.Increment(ref probe.CompanyLookupCalls);
+            if (forbidden)
+                throw new InvalidOperationException("Company existence lookup must not gate valid internal telemetry.");
+            return ValueTask.FromResult(CompanyVisibility.Visible);
+        }
     }
     private sealed class Quarantine(Probe probe) : IQuarantineStore
     {

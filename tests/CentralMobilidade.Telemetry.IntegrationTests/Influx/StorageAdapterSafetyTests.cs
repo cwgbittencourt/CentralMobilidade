@@ -7,6 +7,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CentralMobilidade.Telemetry.Application.Abstractions;
+using CentralMobilidade.Telemetry.Application.LineProtocol;
+using CentralMobilidade.Telemetry.Contracts.Errors;
 using CentralMobilidade.Telemetry.Domain.ValueObjects;
 using CentralMobilidade.Telemetry.Infrastructure.Cadastral;
 using CentralMobilidade.Telemetry.Infrastructure.Influx;
@@ -25,6 +27,81 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Influx;
 
 public sealed class StorageAdapterSafetyTests
 {
+    [Theory]
+    [Trait("Feature", "FoundationSingleInflux")]
+    [InlineData("not-in-registry-a")]
+    [InlineData("not-in-registry-b")]
+    public void Parser_accepts_valid_company_ids_without_any_registry_dependency(string company)
+    {
+        var line = $"telemetria,empresa_id={company},veiculo_id=vehicle latitude=1.0,longitude=2.0,velocidade=0.0,rpm=0i,ignicao=false 1";
+        var result = new TelemetryLineProtocolV1Parser().Parse(Encoding.UTF8.GetBytes(line));
+        result.ErrorCode.ShouldBeNull();
+        result.Event.ShouldNotBeNull().CompanyId.Value.ShouldBe(company);
+    }
+
+    [Theory]
+    [Trait("Feature", "FoundationSingleInflux")]
+    [InlineData("", TelemetryErrorCodes.LpMissingRequiredTag)]
+    [InlineData(",empresa_id=", TelemetryErrorCodes.LpInvalidSyntax)]
+    [InlineData(",empresa_id=bad\tcompany", TelemetryErrorCodes.LpInvalidSyntax)]
+    [InlineData(",idEmpresa=company", TelemetryErrorCodes.LpUnknownColumn)]
+    public void Automatic_recognition_does_not_relax_company_tag_validation(string tag, string code)
+    {
+        var line = $"telemetria{tag},veiculo_id=vehicle latitude=1.0,longitude=2.0,velocidade=0.0,rpm=0i,ignicao=false 1";
+        var result = new TelemetryLineProtocolV1Parser().Parse(Encoding.UTF8.GetBytes(line));
+        result.Event.ShouldBeNull();
+        result.ErrorCode.ShouldBe(code);
+    }
+
+    [Fact]
+    [Trait("Feature", "FoundationSingleInflux")]
+    public void Storage_registration_does_not_require_a_company_existence_resolver()
+    {
+        var services = new ServiceCollection().AddTelemetryStorageAdapters();
+        services.ShouldNotContain(descriptor => descriptor.ServiceType.FullName ==
+            "CentralMobilidade.Telemetry.Application.Abstractions.ICompanyVisibilityResolver");
+    }
+
+    [Fact]
+    [Trait("Feature", "FoundationSingleInflux")]
+    public async Task Queryable_only_configuration_writes_multiple_unregistered_company_ids_to_one_database()
+    {
+        const string raw = "telemetria,empresa_id=not-in-registry-a,veiculo_id=vehicle latitude=1.0,longitude=2.0,velocidade=0.0,rpm=0i,ignicao=false 1\n" +
+            "telemetria,empresa_id=not-in-registry-b,veiculo_id=vehicle latitude=1.0,longitude=2.0,velocidade=0.0,rpm=0i,ignicao=false 1\n";
+        var calls = 0;
+        using var client = new HttpClient(new Handler(async (message, token) =>
+        {
+            calls++;
+            message.Method.ShouldBe(HttpMethod.Post);
+            message.RequestUri!.AbsoluteUri.ShouldBe("http://storage.test/api/v3/write_lp?db=telemetry&precision=millisecond&accept_partial=true&no_sync=false");
+            message.Headers.Authorization!.ToString().ShouldBe("Bearer test-only-token");
+            message.Content!.Headers.ContentEncoding.ShouldContain("gzip");
+            using var compressed = await message.Content.ReadAsStreamAsync(token);
+            using var decompressed = new System.IO.Compression.GZipStream(compressed, System.IO.Compression.CompressionMode.Decompress);
+            using var reader = new StreamReader(decompressed);
+            (await reader.ReadToEndAsync(token)).ShouldBe(raw);
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        }));
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["InfluxDb:Queryable:Url"] = "http://storage.test",
+            ["InfluxDb:Queryable:Database"] = "telemetry",
+            ["InfluxDb:Queryable:Token"] = "test-only-token"
+        }).Build();
+        // No pending credentials or cadastral endpoint: construction must not require either.
+        var writer = new InfluxV3TelemetryWriter(client, config);
+        var batchId = new BatchId(Guid.NewGuid());
+        var points = new[] { "not-in-registry-a", "not-in-registry-b" }.Select((company, index) =>
+            new TelemetryWritePoint(batchId, index + 1,
+                new(new(company), new("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(1)))).ToArray();
+        using var gzip = InfluxV3WriterTests.Gzip(raw);
+        var result = await writer.WriteAsync(new(TelemetryDestination.Queryable,
+            "0123456789abcdef0123456789abcdef", points, Encoding.UTF8.GetByteCount(raw)), gzip, default);
+        result.CommittedPoints.ShouldBe(2);
+        result.Rejections.ShouldBeEmpty();
+        calls.ShouldBe(1, "Only the single storage endpoint may be called");
+    }
+
     [Theory]
     [InlineData(200, "{\"companyId\":\"company\",\"visible\":true}", CompanyVisibility.Visible)]
     [InlineData(200, "{\"companyId\":\"company\",\"visible\":false}", CompanyVisibility.Unknown)]

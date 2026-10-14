@@ -140,7 +140,7 @@ the target-load experiment.
 ## 10. Prove 100,000-event ingestion and Grafana visualization
 
 Before stopping, run the final acceptance scenario from the load-test project. It must generate exactly
-100,000 deterministic valid events spanning at least 10 known companies, 1,000 vehicles, delayed and
+100,000 deterministic valid events spanning at least 10 valid producer-supplied company IDs, 1,000 vehicles, delayed and
 ordered points, and one named trip; submit them through the gzip API in contract-compliant batches,
 wait for terminal batch states, reconcile exactly 100,000 logical events in InfluxDB, and save Grafana
 API/render evidence for the latest-position, trip, and ingestion-total dashboards under
@@ -157,3 +157,13 @@ docker compose -f deploy/compose.yaml down
 
 Do not pass `--volumes` when preserving local data. Backup and destructive cleanup procedures must be
 separate, explicit runbooks.
+
+## Foundation amendment acceptance gate (before T050)
+
+Complete T104-T112 first. Using the same producer credential, submit valid events for multiple IDs
+absent from the cadastral source with company lookup disabled/unavailable. Verify single-store
+persistence and authorized visibility, unchanged invalid-ID rejection, and no pending health/network/
+configuration requirement. Test both fresh schema and populated legacy upgrade with count/identity
+reconciliation; preserve original volumes. An asynchronous batch state called pending/Accepted is
+not unknown-company storage and must not be removed. Record actual checks without implying capacity
+approval: ADR-001 throughput remains a separate unresolved gate.

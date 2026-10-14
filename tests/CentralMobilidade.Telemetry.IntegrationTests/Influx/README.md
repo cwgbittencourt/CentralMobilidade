@@ -72,3 +72,56 @@ Integração completa: 130 aprovações (129 anteriores + controle real Influx) 
 esperadas por tipos de produção ausentes: 12 aguardam T049 e três aguardam T050.
 Compilação sem avisos. Os 74 casos TDD unitários de T036/T037 não foram reexecutados
 nessa suíte. Relatório local: `artifacts/validation/T038/T038.trx` (Git ignored).
+
+## T104 — reconhecimento de empresas pela origem interna
+
+Esta etapa adiciona testes antes da refatoração, conforme constituição 2.0.0 e FR-019.
+Não altera o writer, o cadastro, o processamento, a autenticação ou o Compose.
+As evidências T038 acima descrevem a implementação histórica e não validam esta alteração.
+
+Filtro dos novos cenários:
+
+```powershell
+dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests/CentralMobilidade.Telemetry.IntegrationTests.csproj --filter "Feature=FoundationSingleInflux" --logger trx --results-directory artifacts/validation/T104
+```
+
+São 15 cenários: seis de parser (dois IDs válidos sem cadastro, ausência/formato inválido e
+preservação do nome `empresa_id`), dois de storage, quatro de negação de privilégios ao
+produtor, um de ingestão com a mesma credencial para dois IDs e dois de processamento
+(sem resolver cadastral ou com resolver que falha se chamado).
+
+Em 2026-10-14, .NET SDK 10.0.401 / runtime 10.0.13, a compilação passou e o filtro teve
+**11 aprovações e quatro falhas esperadas**, sem testes ignorados:
+
+- O registro ainda inclui `ICompanyVisibilityResolver` (adequação T105/T107).
+- O writer ainda exige configuração `InfluxDb:Pending` (adequação T107).
+- Dois cenários ainda aguardam `ProcessTelemetryBatchHandler` (T051); continuam vermelhos.
+
+A ingestão exercita o entry point real com queue/state doubles: prova autenticação comum,
+publicação confirmada e estado `Accepted`, ainda sem conclusão. Não comprova persistência final
+no InfluxDB nem durabilidade física do broker. O parser real mantém os erros estáveis para IDs
+inválidos. Os cenários de processamento usam guard/batch PostgreSQL reais e writer/quarentena
+controlados quando T051 existir; o writer registra destinos e qualquer consulta de existência
+falha explicitamente. Não implementamos T050/T051 para fazer esses testes passarem.
+
+A suíte existente de autenticação passou antes da alteração: 11/11. Os relatórios TRX ficam
+em `artifacts/validation/T104/` (ignorados pelo Git). Resultados vermelhos de T104 são evidência
+TDD para a adequação; não representam aprovação do novo desenho em produção.
+
+Regressão das cinco classes afetadas/referenciadas (storage, writer/batcher, recovery,
+autenticação e intake): **123 cenários, 96 aprovações e 27 falhas**. A classificação do
+TRX é: três T050, 21 T051 (19 anteriores + dois novos), duas adequações de storage e
+uma falha temporal do teste existente `Concurrent_reservation_has_one_winner_and_conflicting_contender_cannot_replace_it`.
+Esse teste fixa `Now` na inicialização da classe e cria leases de um minuto; a primeira
+execução incluiu obtenção da imagem PostgreSQL e durou 3m50s. Com a imagem disponível,
+a repetição isolada passou **1/1** em 13s. A sensibilidade temporal do teste existente
+não foi corrigida nesta tarefa; não apresentamos a primeira execução como totalmente aprovada.
+Relatórios locais: `t104-regression.trx` e `t104-lease-recheck.trx`, na pasta T104.
+
+Comando da regressão (requer Docker acessível para os fixtures PostgreSQL temporários):
+
+```powershell
+dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests/CentralMobilidade.Telemetry.IntegrationTests.csproj --no-build --no-restore --filter "FullyQualifiedName~StorageAdapterSafetyTests|FullyQualifiedName~WorkerAcknowledgementBoundaryTests|FullyQualifiedName~BearerSecurityTests|FullyQualifiedName~IntakeBoundaryTests|FullyQualifiedName~InfluxV3WriterTests" --logger "trx;LogFileName=t104-regression.trx" --results-directory artifacts/validation/T104
+```
+
+Somente a T104 foi executada. T105–T112 e T050/T051 continuam pendentes.

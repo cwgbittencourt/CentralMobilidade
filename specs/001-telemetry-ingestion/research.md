@@ -103,8 +103,8 @@ not an acceptable guard.
 
 Because PostgreSQL and InfluxDB cannot commit atomically, a crash after an accepted Influx write but
 before guard confirmation may cause the owner to repeat the identical physical write. The guarantee is
-one immutable logical event, not one network call. Promotion is modeled separately as a fenced guard
-location transition from pending to queryable storage and is not classified as a duplicate.
+one immutable logical event, not one network call. The 2026-10-14 foundation amendment removes
+pending storage and promotion; guard ownership, leases, fencing and replay protection remain.
 
 **Rationale**: At 5,000 events/s, even a 30-day relational ledger approaches 13 billion keys and a
 retention-lifetime guard is a major capacity commitment that is not credible without measurement.
@@ -132,7 +132,7 @@ testable.
 ## Decision 9: Grafana and identity
 
 **Decision**: Use a hybrid Grafana model. A privileged internal organization, never shared with viewers,
-uses the built-in InfluxDB 3 SQL/FlightSQL datasource and may view all known companies. Restricted
+uses the built-in InfluxDB 3 SQL/FlightSQL datasource and may view all valid producer-supplied company IDs. Restricted
 viewers are placed in separate Grafana organizations with no InfluxDB datasource and use the
 Grafana-maintained Infinity JSON datasource against bounded presentation endpoints. Each viewer
 organization receives a distinct non-human service credential scoped to exactly its companies. Resolve
@@ -183,3 +183,15 @@ protected quarantine supplies the required diagnostic path.
 - [Pub/Sub emulator](https://docs.cloud.google.com/pubsub/docs/emulator)
 - [Pub/Sub quotas](https://docs.cloud.google.com/pubsub/quotas)
 - [Grafana InfluxDB data source](https://grafana.com/docs/grafana/latest/datasources/influxdb/)
+
+## Decision 2026-10-14: Producer-authoritative companies and single telemetry store
+
+The internal producer supplies authoritative company IDs using one credential shared by all companies.
+Keep the existing `empresa_id` schema and company-scoped presentation; remove existence lookup,
+unknown-company pending storage and promotion. Use one InfluxDB server/database and one init job.
+Alternatives rejected: dual servers or two databases retain an obsolete business distinction;
+per-company ingestion credentials add an unwanted requirement. A registry cannot improve eligibility
+because every valid supplied ID is recognized by definition. Incorrect but valid IDs are accepted.
+Optional driver/vehicle enrichment remains independent. Before T050, reconcile built interfaces,
+PostgreSQL schema/guard triggers, writer, health, Compose and tests through T104-T112. Existing pending
+data must be reconciled with preserved guards and counts; do not delete volumes or rewrite migrations.

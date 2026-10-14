@@ -128,7 +128,7 @@ only after the target-load benchmark.
 | owner_line_number | integer | Stable source line |
 | lease_until | timestamp/null | Takeover boundary for incomplete work |
 | fencing_version | integer | Rejects stale owners after takeover |
-| storage_location | enum | `PendingCommitted`, `Promoting`, or `QueryableCommitted` |
+| storage_location | enum | `QueryableCommitted` only; no company-routing or promotion state |
 | guard_expires_at | timestamp | No earlier than telemetry expiration |
 | evidence_expires_at | timestamp | First seen plus 30 days |
 
@@ -140,10 +140,9 @@ may take over only after lease expiry and must receive a new fencing version. St
 While evidence exists, its fingerprint determines identical replay versus conflict; after evidence
 expiry, a committed identity returns `AlreadyExistsUnclassified`.
 
-Promotion is the only authorized second physical placement. It atomically changes guard location from
-`PendingCommitted` to `Promoting`, writes the identical fingerprint to queryable storage, reconciles it,
-advances to `QueryableCommitted`, and only then permits deletion from pending storage. Fencing prevents
-a stale promotion worker from completing after takeover.
+All new writes target the single telemetry database. Processing lease/fencing and immutable identity
+protection remain required; promotion leases and relocation APIs are removed. Existing pending
+identities/data require an explicit reconciled upgrade before obsolete fields or storage are removed.
 
 ## OperatorAccessProfile
 
@@ -170,21 +169,25 @@ coordinates, plate, name, CPF, bearer tokens, or quarantine content.
 
 The system depends on interfaces rather than owning these records:
 
-- `CompanyVisibility`: determines whether an `empresa_id` may appear in user-facing results.
+- Company existence is authoritative from valid producer-supplied `empresa_id`; no
+  `CompanyVisibility` projection or company lookup is required. Presentation scopes still apply.
 - `VehicleIdentity`: resolves stable `veiculo_id` to authorized presentation attributes.
 - `DriverIdentity`: resolves `motorista_id` and returns only display name plus optional CPF suffix.
 
 Cache entries MUST be short-lived, tenant-scoped, and invalidatable. Cache failure cannot block durable
-ingestion; it can delay presentation.
+ingestion, storage or authorized telemetry visibility; missing enrichment may omit display attributes.
 
-## PendingTelemetryPromotion
+## Internal producer identity
 
-Tracks idempotent movement from the dashboard-inaccessible pending InfluxDB database to the queryable
-telemetry database after a company becomes valid. It contains company ID, source batch/range, state,
-attempt count, timestamps, and safe error code. Grafana credentials have no access to pending storage.
-States are `Discovered`, `Copying`, `Copied`, `SourceDeleted`, `Completed`, and `Retrying`. Deletion of
-pending source points is permitted only after confirmed idempotent destination write plus identity and
-count reconciliation. Every transition is durable so a crash can resume without loss or double display.
+One technical producer identity uses one rotatable ingestion credential across all company IDs.
+No per-company producer credential or ingestion allowlist is required. This does not merge producer
+and operator/viewer identities or grant the producer administrative/read privileges.
+
+## Legacy pending-storage migration
+
+`PendingTelemetryPromotion` is no longer a target entity. Existing rows, pending points and guard
+locations must be inventoried and reconciled without loss before a forward migration removes the
+obsolete table, promotion fields and triggers. An empty installation must also upgrade cleanly.
 
 ## Stable rejection codes
 

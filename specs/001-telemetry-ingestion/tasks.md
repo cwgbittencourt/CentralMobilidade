@@ -21,6 +21,17 @@ testable outcome.
 - **[Story]**: Maps the task to a user story in `spec.md`.
 - Every task identifies its expected file path.
 
+## Mandatory execution gate: foundation amendment 2026-10-14
+
+Constitution 2.0.0 and FR-019 supersede company-existence lookup, unknown-company storage and
+promotion. Completed tasks and their validation notes remain historical evidence, not the target
+architecture. Complete **T104 -> T105 -> T106 -> T107 -> T108 -> T109 -> T110 -> T111 -> T112**
+before starting **T050**, T051 or any later unfinished feature work. The numeric IDs preserve history;
+they do not override this dependency order. Do not regenerate or renumber completed tasks.
+One shared internal ingestion credential covers all company IDs. Operator/viewer identities and
+presentation permissions remain separate; `empresa_id` remains the wire name of business `idEmpresa`.
+This amendment plans changes only: no source, deployment configuration or database has been changed.
+
 ## Phase 1: Setup (Shared Infrastructure)
 
 **Purpose**: Create the solution, repeatable container environment, central dependency management, and
@@ -153,8 +164,32 @@ rejection is inspectable.
   - Validation: 16 filesystem scenarios pass on Windows and Linux Docker as non-root UID 10001 (original 11 T039 plus re-instantiation, metadata conflict, raw corruption, cancellation and early retention). Bounded single-object staging/flush/exclusive rename, raw/envelope SHA-256, restrictive ACL/0700/0600 permissions, safe errors/logs and inclusive deadline deletion. Full integration: 155 pass / 34 expected T049/T051 failures; unit 241/241, architecture 47/47. No encryption or power-loss directory durability claim; worker wiring and scheduled cleanup remain T053/T061.
 - [X] T049 [P] [US2] Implement the replaceable company-visibility adapter with conservative pending result for unavailable, timed-out, or inconclusive lookups, and the InfluxDB 3 native gzip writer with separate queryable/pending destinations, `/api/v3/write_lp`, millisecond precision, partial acceptance, durable sync, and bounded response parsing in `src/CentralMobilidade.Telemetry.Infrastructure/Cadastral/ConfiguredCadastralAdapter.cs` and `Influx/InfluxV3TelemetryWriter.cs`
   - Validation: original writer scenarios and real-server millisecond/partial schema-conflict persistence pass; 23 additional safety scenarios cover tenant-matched visibility, unavailable/inconclusive/timeout handling, bounded bodies, ambiguous outcomes, cancellation, duplicate JSON/indices, 422, destination separation and disabled redirects. Full integration: 191 pass / 22 expected failures (three T050, 19 T051); unit 241/241, architecture 47/47. Configured cadastral HTTP contract is documented, with unavailable default; no live external cadastral service is assumed. Worker wiring remains T053, no process-restart/host-loss durability claim.
-- [ ] T050 [US2] Implement count/byte/time batch assembly with default ceilings of 5,000 points, 2 MiB, and 1 second in `src/CentralMobilidade.Telemetry.Application/Processing/InfluxWriteBatcher.cs`
-- [ ] T051 [US2] Implement mixed-line processing that acquires/resumes identity leases, confirms the guard only after reconciled Influx persistence, never rewrites committed identities, performs exact 30-day replay/conflict handling, routes unavailable/inconclusive company lookups to pending storage, aggregates rejections, and safely recovers partial results in `src/CentralMobilidade.Telemetry.Application/Processing/ProcessTelemetryBatchHandler.cs`
+### Intermediate foundation adequation — MUST finish before T050
+
+**Source**: Constitution 2.0.0, FR-001/FR-006/FR-013/FR-019/FR-020, SC-008 and research decision
+2026-10-14. This targeted amendment reconciles T008/T010/T016/T018/T019/T022/T042/T047/T049.
+It is not a full-feature convergence assessment. Follow the explicit dependency chain below.
+
+- [X] T104 [US2] Establish amendment regression coverage before refactoring in `tests/CentralMobilidade.Telemetry.IntegrationTests/Influx/StorageAdapterSafetyTests.cs`, `tests/CentralMobilidade.Telemetry.IntegrationTests/Recovery/WorkerAcknowledgementBoundaryTests.cs` and `tests/CentralMobilidade.Telemetry.IntegrationTests/Security/`: the same producer credential handles multiple valid company IDs absent from a registry; no existence HTTP call or pending destination is used; missing/malformed IDs retain current validation, privileged operations remain denied to producers, and pending batch lifecycle still works. Preserve red tests for unimplemented T050/T051 rather than claiming those features now exist.
+  - TDD validation (2026-10-14): 15 new `FoundationSingleInflux` cases compile; 11 pass and four fail as intended (two legacy storage dependencies awaiting T105/T107 and two missing T051 processing cases). Existing T050/T051 red coverage remains. Focused regression: 123 cases, 96 pass, 26 expected failures and one existing one-minute lease timing failure during initial image acquisition; isolated lease recheck passes 1/1. Evidence and scope limits: `tests/CentralMobilidade.Telemetry.IntegrationTests/Influx/README.md`; TRX in ignored `artifacts/validation/T104/`. No production/deployment changes; T105 and later tasks remain unchecked.
+- [ ] T105 [US2] After T104, remove company visibility routing and promotion operations from `src/CentralMobilidade.Telemetry.Application/Abstractions/ICadastralResolvers.cs`, `ITelemetryWriter.cs`, `IEventIdentityGuard.cs` and affected Domain types; preserve `IDriverResolver`, `empresa_id` wire shape, immutable event identity and processing lease/fencing. Update all implementations/test doubles together so the solution compiles, without implementing T050/T051.
+- [ ] T106 [US2] After T105, add a forward PostgreSQL migration and revise entities/configurations/snapshot under `src/CentralMobilidade.Telemetry.Infrastructure/Persistence/` plus `src/CentralMobilidade.Telemetry.Infrastructure/Idempotency/SelectedEventIdentityGuard.cs` to eliminate promotion tables/leases/locations and pending destinations. First inventory legacy pending points, promotion rows and guards, including in-flight promotion states; reconcile points, fingerprints, identities and counts into the queryable store using an explicit bounded upgrade procedure in `docs/runbooks/single-influx-upgrade.md`. Abort on unresolved conflicts or missing evidence; retain existing storage until reconciliation is verified. Preserve accepted batches, guard/evidence retention, original provenance, leases, fencing and immutable-write protections. Never rewrite applied migrations, reset databases or delete volumes; support fresh installs and populated upgrades.
+- [ ] T107 [US2] After T106, refactor `src/CentralMobilidade.Telemetry.Infrastructure/Influx/InfluxV3TelemetryWriter.cs`, `StorageAdapterRegistration.cs` and `src/CentralMobilidade.Telemetry.Infrastructure/Cadastral/ConfiguredCadastralAdapter.cs` for one telemetry destination with no company lookup; remove the obsolete company-visibility adapter/registration while retaining independent driver enrichment if used. Preserve native gzip, millisecond timestamps, partial-result reconciliation, durable sync, bounded parsing, privacy and cancellation; adapt `tests/CentralMobilidade.Telemetry.IntegrationTests/Influx/`.
+- [ ] T108 [US2] After T107, update `src/CentralMobilidade.Telemetry.Infrastructure/Health/TelemetryHealthChecks.cs`, `.env.example`, `src/CentralMobilidade.Telemetry.Api/appsettings.json`, `src/CentralMobilidade.Telemetry.Worker/appsettings.json` and registration to require only the queryable store and no promotion table/company lookup. Keep PostgreSQL durability, queue publication and worker freshness checks. Confirm one producer credential has no company allowlist without broadening operator/viewer privileges; update health/security tests under `tests/CentralMobilidade.Telemetry.IntegrationTests/`.
+- [ ] T109 [US2] After T108 and verified T106 data reconciliation, simplify `deploy/compose.yaml`, `deploy/compose.override.yaml` and `deploy/influxdb/init-database.sh` to one InfluxDB server, one telemetry database and one terminating init job. Name the services `influxdb` (persistent telemetry server) and `influxdb-init` (one-shot database initialization), yielding default Compose container names `centralmobilidade-influxdb-1` and `centralmobilidade-influxdb-init-1`; retain project-scoped generated names rather than fixed `container_name`. Update service DNS URLs, depends_on references, scripts and documentation together while preserving the existing queryable volume identity. Remove pending service/init, token configuration, private pending network, port 8182 and obsolete dependencies. Preserve queryable volume identity and existing data; never delete the legacy pending volume automatically. Verify resolved Compose topology without exposing secrets.
+- [ ] T110 [US2] After T109, align `tests/CentralMobilidade.Telemetry.IntegrationTests/Recovery/SelectedEventIdentityGuardTests.cs`, `WorkerAcknowledgementBoundaryTests.cs`, `tests/CentralMobilidade.Telemetry.IntegrationTests/Persistence/` and affected unit/contract tests with the single destination; replace obsolete promotion assertions with fresh/populated upgrade, immutable first-write, replay/conflict, owner resume, fenced takeover and unchanged acknowledgement-boundary coverage. Do not erase valid failure/recovery tests or implement the still-pending processing handler.
+- [ ] T111 [US2] After T110, update `deploy/README.md`, relevant source/test READMEs, `.env.example` examples and `specs/001-telemetry-ingestion/quickstart.md` with single-token-file/single-store setup, shared all-company producer credential, optional driver enrichment, safe legacy migration and explicit local Compose startup. Mark historical dual-store validation as superseded without claiming it validates the new topology; remove current instructions that require pending/promotion.
+- [ ] T112 [US2] After T111, execute changed unit/contract/integration/architecture checks, fresh/populated PostgreSQL migration and Compose persistence/restart smoke validation; record commands, counts, unresolved failures and data/identity reconciliation in `artifacts/validation/foundation-single-influx/README.md`. Verify same-credential multi-company acceptance at implemented boundaries, no company existence call/pending dependency and preserved authorization/privacy/durability. Run a focused cross-artifact consistency review of `specs/001-telemetry-ingestion/` and constitution 2.0.0. Release T050 only when amendment checks pass; explicitly distinguish pre-existing T050/T051 red tests and the separate ADR-001 capacity shortfall. Do not implement T050 as part of this gate.
+
+**Adequation checkpoint**: T104-T112 are complete with recorded evidence; one InfluxDB server and
+one terminating init job remain; new valid company IDs need no registration; no acknowledged legacy
+data is lost; shared producer credential and existing presentation controls are verified. Only then
+resume T050 below. Deployment startup integration with the IDE is outside this amendment.
+
+### Resume User Story 2 implementation after the adequation gate
+
+- [ ] T050 [US2] After T104-T112 pass, implement single-destination count/byte/time batch assembly with default ceilings of 5,000 points, 2 MiB, and 1 second in `src/CentralMobilidade.Telemetry.Application/Processing/InfluxWriteBatcher.cs`
+- [ ] T051 [US2] Implement mixed-line processing that acquires/resumes identity leases, confirms the guard only after reconciled Influx persistence, never rewrites committed identities, performs exact 30-day replay/conflict handling, recognizes every valid producer-supplied company ID without lookup and writes directly to the single telemetry database, aggregates rejections, and safely recovers partial results in `src/CentralMobilidade.Telemetry.Application/Processing/ProcessTelemetryBatchHandler.cs`
 - [ ] T052 [US2] Implement RabbitMQ consumer with bounded prefetch, manual ack, retry backoff/jitter, poison routing, cancellation, and graceful drain in `src/CentralMobilidade.Telemetry.Infrastructure/Queue/RabbitMq/RabbitMqBatchConsumer.cs`
 - [ ] T053 [US2] Wire worker dependencies, concurrency limits, shutdown drain, heartbeat, and queue consumption in `src/CentralMobilidade.Telemetry.Worker/Program.cs`
 
@@ -175,7 +210,7 @@ timestamps, pagination, non-disclosure for missing/expired identifiers, and auto
 
 - [ ] T054 [P] [US3] Add OpenAPI contract tests for producer-owned status, operator permission/company-scope rules, rejection pagination, credential-type isolation, and administrative raw-quarantine lookup, including fail-closed audit and 200/401/403/non-disclosing-404 outcomes, in `tests/CentralMobilidade.Telemetry.ContractTests/Api/V1/BatchStatusContractTests.cs`
 - [ ] T055 [P] [US3] Add lifecycle concurrency tests for replay-safe counters, terminal transitions, and optimistic conflicts in `tests/CentralMobilidade.Telemetry.IntegrationTests/Batches/BatchLifecycleTests.cs`
-- [ ] T056 [P] [US3] Add retention tests proving batch/rejection metadata and quarantine content are deleted after 30 days, queryable/pending telemetry expires after 60 days locally, and aggregate metrics remain in `tests/CentralMobilidade.Telemetry.IntegrationTests/Retention/OperationalRetentionTests.cs`
+- [ ] T056 [P] [US3] Add retention tests proving batch/rejection metadata and quarantine content are deleted after 30 days, single-database telemetry expires after 60 days locally, and aggregate metrics remain in `tests/CentralMobilidade.Telemetry.IntegrationTests/Retention/OperationalRetentionTests.cs`
 
 ### Implementation for User Story 3
 
@@ -183,7 +218,7 @@ timestamps, pagination, non-disclosure for missing/expired identifiers, and auto
 - [ ] T058 [US3] Implement batch status projection with submitting-producer ownership, operator `batch.read`, all-companies-in-scope or explicit `cross_company.read`, and non-disclosing not-found behavior in `src/CentralMobilidade.Telemetry.Application/Batches/GetBatchStatusHandler.cs`
 - [ ] T059 [US3] Implement `GET /api/v1/telemetry/batches/{batchId}` matching `contracts/openapi.yaml` in `src/CentralMobilidade.Telemetry.Api/Endpoints/V1/GetBatchStatusEndpoint.cs`
 - [ ] T060 [US3] Implement rejection pagination and audited administrative raw-content endpoints with operator-only policies, company scope, explicit `quarantine.raw.read`, and producer-token denial from `contracts/openapi.yaml` in `src/CentralMobilidade.Telemetry.Api/Endpoints/V1/ListBatchRejectionsEndpoint.cs` and `GetQuarantinedRejectionContentEndpoint.cs`
-- [ ] T061 [US3] Implement leased, idempotent cleanup for 30-day batch/quarantine/fingerprint evidence while retaining each immutable identity guard until its queryable or pending telemetry expires, including 60-day local InfluxDB retention, in `src/CentralMobilidade.Telemetry.Worker/Retention/OperationalRetentionWorker.cs`
+- [ ] T061 [US3] Implement leased, idempotent cleanup for 30-day batch/quarantine/fingerprint evidence while retaining each immutable identity guard until its single-database telemetry expires, including 60-day local InfluxDB retention, in `src/CentralMobilidade.Telemetry.Worker/Retention/OperationalRetentionWorker.cs`
 - [ ] T062 [US3] Add batch-state and rejection metrics without tenant/vehicle high-cardinality labels in `src/CentralMobilidade.Telemetry.Infrastructure/Observability/BatchMetrics.cs`
 
 **Checkpoint**: Asynchronous processing is supportable through a stable API and expired operational data
@@ -194,21 +229,21 @@ is removed automatically.
 ## Phase 6: User Story 4 — Observe fleets and trips (Priority: P2)
 
 **Goal**: Provide latest-position, one-vehicle trip, and ingestion-health dashboards while keeping
-unknown companies hidden and driver disclosure minimal and audited.
+valid company IDs queryable within authorized scope and driver disclosure minimal and audited.
 
-**Independent Test**: Ingest multiple companies including an unknown company, display a known vehicle's
+**Independent Test**: Ingest multiple valid company IDs absent from the registry, display a vehicle's
 latest point and old trip in event-time order, and resolve a driver to name plus optional CPF suffix.
 
 ### Tests for User Story 4
 
-- [ ] T063 [P] [US4] Add cadastral/promotion contract tests for known/unknown company, pending invisibility, changing provider, missing driver, masked CPF suffix, timeout, cache invalidation, fenced `PendingCommitted -> Promoting -> QueryableCommitted` identity relocation, and crash recovery at every promotion boundary without loss or double display in `tests/CentralMobilidade.Telemetry.ContractTests/Cadastral/CadastralAdapterContractTests.cs`
+- [ ] T063 [P] [US4] Add optional cadastral-enrichment contract tests for changing provider, missing driver, masked CPF suffix, timeout and cache invalidation; prove absent/unavailable company registry cannot gate valid-ID persistence or authorized telemetry visibility in `tests/CentralMobilidade.Telemetry.ContractTests/Cadastral/CadastralAdapterContractTests.cs`
 - [ ] T064 [P] [US4] Add authorization tests for scoped and cross-company humans/services, producer-token denial, audited middleware denials, fail-closed audit persistence, organization/service-account audit attribution, every numeric viewer-query boundary, unauthorized-company non-disclosure, and audited driver identity disclosure in `tests/CentralMobilidade.Telemetry.IntegrationTests/Privacy/PresentationAuthorizationTests.cs`
 - [ ] T065 [P] [US4] Add old single-vehicle trip query tests proving event-time ordering and documented Core query-envelope behavior in `tests/CentralMobilidade.Telemetry.IntegrationTests/Queries/VehicleTripQueryTests.cs`
 - [ ] T066 [P] [US4] Add Grafana provisioning tests proving pinned image/plugin versions and Infinity health, internal YAML provisioning, Basic-only server-admin bootstrap, organization-local service-account reconciliation, strict three-way separation of `GrafanaBootstrapAdminCredential`, `GrafanaOrganizationServiceAccount`, and `ViewerPresentationServiceCredential`, absence of viewer Influx datasources, and rendering of all panels in `tests/CentralMobilidade.Telemetry.IntegrationTests/Grafana/GrafanaProvisioningTests.cs`
 
 ### Implementation for User Story 4
 
-- [ ] T067 [P] [US4] Extend the replaceable cadastral adapter with driver resolution and implement a durable idempotent promotion state machine that obtains a fenced identity relocation, writes the identical fingerprint to queryable storage, confirms identity/count, advances the guard to `QueryableCommitted`, deletes pending source only afterward, and resumes safely after every intermediate failure in `src/CentralMobilidade.Telemetry.Infrastructure/Cadastral/ConfiguredCadastralAdapter.cs` and `src/CentralMobilidade.Telemetry.Worker/Promotion/PendingTelemetryPromotionWorker.cs`
+- [ ] T067 [P] [US4] Implement replaceable optional driver enrichment without company existence/visibility lookup, pending storage or promotion; missing enrichment must not hide authorized telemetry in `src/CentralMobilidade.Telemetry.Infrastructure/Cadastral/ConfiguredCadastralAdapter.cs`
 - [ ] T068 [P] [US4] Extend append-only audit policies for identity and cross-company reads while excluding raw telemetry, coordinates, plate, name, CPF, token, and quarantine content in `src/CentralMobilidade.Telemetry.Infrastructure/Auditing/PostgresAuditWriter.cs`
 - [ ] T069 [US4] Implement latest-position, one-vehicle-trip, ingestion-health, and driver-presentation handlers with `telemetry.read`/`driver.read`, server-side company scope, no arbitrary SQL, non-disclosing failures, configurable 500-vehicle, 24-hour/10,000-point, and seven-day/one-minute/10,000-point limits, and durable audit-before-identity-disclosure in `src/CentralMobilidade.Telemetry.Application/Presentation/`
 - [ ] T070 [US4] Implement the operator/service-only presentation endpoints from `contracts/openapi.yaml`, including producer denial, server-side company scope, bounded query validation, and fail-closed identity audit behavior in `src/CentralMobilidade.Telemetry.Api/Endpoints/V1/Presentation/`
@@ -216,9 +251,9 @@ latest point and old trip in event-time order, and resolve a driver to name plus
 - [ ] T072 [P] [US4] Create internal-direct and viewer-API latest-position dashboards in `deploy/grafana/dashboards/internal/latest-vehicle-position.json` and `deploy/grafana/dashboards/viewer/latest-vehicle-position.json`
 - [ ] T073 [P] [US4] Create internal-direct and viewer-API single-vehicle trip dashboards with bounded time range and event-time ordering in `deploy/grafana/dashboards/internal/vehicle-trip.json` and `deploy/grafana/dashboards/viewer/vehicle-trip.json`
 - [ ] T074 [P] [US4] Create internal and viewer-API per-company ingestion-health dashboards plus a viewer masked-driver panel in `deploy/grafana/dashboards/internal/company-ingestion-health.json`, `deploy/grafana/dashboards/viewer/company-ingestion-health.json`, and `deploy/grafana/dashboards/viewer/driver-presentation.json`
-- [ ] T075 [US4] Document separate rotation, storage, and least privilege for `GrafanaBootstrapAdminCredential`, `GrafanaOrganizationServiceAccount`, and `ViewerPresentationServiceCredential`, idempotent viewer-organization reconciliation, company-scope provisioning, service-credential audit attribution and its lack of individual attribution, company visibility, identity disclosure, plugin upgrades, and audit review procedures in `docs/operations/grafana-access.md`
+- [ ] T075 [US4] Document separate rotation, storage, and least privilege for `GrafanaBootstrapAdminCredential`, `GrafanaOrganizationServiceAccount`, and `ViewerPresentationServiceCredential`, idempotent viewer-organization reconciliation, company-scope provisioning, service-credential audit attribution and its lack of individual attribution, company recognition from valid producer-supplied IDs, optional enrichment, identity disclosure, plugin upgrades, and audit review procedures in `docs/operations/grafana-access.md`
 
-**Checkpoint**: Internal users can use all three initial dashboards, unknown companies remain hidden,
+**Checkpoint**: Internal users can use all three initial dashboards for authorized company IDs,
 and every driver identity disclosure is minimized and audited.
 
 ---
@@ -261,7 +296,7 @@ that the emulator or single host offers production HA.
 **Purpose**: Complete performance evidence, retention validation, security review, and executable
 documentation across all stories.
 
-- [ ] T090 [P] Add unit coverage for option validation, authorization permissions/company scopes, fail-closed audit decisions, promotion state transitions, canonicalization, error mapping, and separate identity-guard/evidence retention clocks in `tests/CentralMobilidade.Telemetry.UnitTests/`
+- [ ] T090 [P] Add unit coverage for option validation, authorization permissions/company scopes, fail-closed audit decisions, single-store valid-ID recognition, canonicalization, error mapping, and separate identity-guard/evidence retention clocks in `tests/CentralMobilidade.Telemetry.UnitTests/`
 - [ ] T091 [P] Add steady 5,000 events/s scenario on the 8-vCPU/16-GiB reference profile with p50/p95/p99, CPU <=85%, application memory <=12 GiB, disk, bytes, backlog, and write-latency reporting in `tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/SteadyStateScenario.cs`
 - [ ] T092 [P] Add a burst of 10,000 vehicles sending one hour of 20-second backlog over ten minutes while 5,000 events/s continues, asserting no acknowledged loss and drain within 20 minutes, in `tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/ReconnectionBurstScenario.cs`
 - [ ] T093 [P] Add seven-day-backlog extrapolation, Influx outage, and recovery scenario in `tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/InfluxOutageScenario.cs`
@@ -272,7 +307,7 @@ documentation across all stories.
 - [ ] T098 Execute every scenario in `specs/001-telemetry-ingestion/quickstart.md` and record commands, versions, timestamps, and results in `artifacts/validation/quickstart-results.md`
 - [ ] T099 Reconcile implemented OpenAPI and queue/Line Protocol contracts against `specs/001-telemetry-ingestion/contracts/` and record compatibility results in `artifacts/validation/contract-conformance.md`
 - [ ] T100 Create deployment readiness checklist covering all constitution gates and unresolved single-host risks in `docs/operations/deployment-readiness.md`
-- [ ] T101 Add a deterministic final-acceptance dataset spanning at least 10 known companies, 1,000 vehicles, ordered and delayed points, and one named trip while totaling exactly 100,000 valid events; submit it through gzip, await terminal batches, reconcile exactly 100,000 logical InfluxDB events, and assert both privileged-direct and restricted-viewer query paths in `tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/Final100kGrafanaProofScenario.cs`
+- [ ] T101 Add a deterministic final-acceptance dataset spanning at least 10 valid producer-supplied company IDs absent from any company registry, 1,000 vehicles, ordered and delayed points, and one named trip while totaling exactly 100,000 valid events; submit it through gzip, await terminal batches, reconcile exactly 100,000 logical InfluxDB events, and assert both privileged-direct and restricted-viewer query paths in `tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/Final100kGrafanaProofScenario.cs`
 - [ ] T102 Execute the 100,000-event final proof and save batch reconciliation, InfluxDB count queries, Grafana API health, dashboard query results, and rendered/screenshot evidence in `artifacts/validation/100k-final-proof/README.md`
 - [ ] T103 Create a production-to-test traceability matrix proving every source project and implemented requirement has automated coverage in `artifacts/validation/implementation-test-traceability.md`
 
@@ -288,7 +323,7 @@ documentation across all stories.
 - **Phase 4 — US2**: depends on Phase 2 and consumes the durable envelopes delivered by US1.
 - **Phase 5 — US3**: depends on Phase 2; its complete lifecycle demonstration depends on US2 outcomes.
 - **Phase 6 — US4**: depends on stored telemetry from US2; identity and dashboard work can otherwise
-  proceed after Phase 2.
+  proceed after Phase 2 and the T104-T112 amendment gate.
 - **Phase 7 — US5**: depends on Phase 2; full parity/recovery demonstration depends on US1 and US2.
 - **Phase 8 — Polish**: begins after the stories included in the intended release are complete.
 

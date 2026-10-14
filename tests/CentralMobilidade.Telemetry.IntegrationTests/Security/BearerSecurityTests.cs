@@ -26,6 +26,20 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Security;
 
 public sealed class BearerSecurityTests
 {
+    [Theory]
+    [Trait("Feature", "FoundationSingleInflux")]
+    [InlineData("/telemetry/not-in-registry-a")]
+    [InlineData("/driver/not-in-registry-a")]
+    [InlineData("/raw/not-in-registry-a")]
+    [InlineData("/combined-raw/not-in-registry-a")]
+    public async Task Shared_ingestion_credential_does_not_grant_operator_or_viewer_privileges(string path)
+    {
+        await using var fixture = await Fixture.StartAsync();
+        using var response = await fixture.GetAsync(path, ProducerToken);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await response.Content.ReadAsStringAsync()).ShouldContain("Authentication is required.");
+    }
+
     private static readonly string ProducerToken = OpaqueBearerTokens.Generate(BearerCredentialKind.Producer);
     private static readonly string OperatorToken = OpaqueBearerTokens.Generate(BearerCredentialKind.HumanOperator);
     private static readonly string ViewerToken = OpaqueBearerTokens.Generate(BearerCredentialKind.ViewerPresentationService);

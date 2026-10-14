@@ -92,24 +92,29 @@ Telemetry.Worker
   - tenant/vehicle/timestamp identity and fingerprint
   - retention-lifetime immutable identity reservation
   - exact duplicate/conflict decision inside the 30-day evidence window
-  - company visibility decision before queryable/pending routing
+  - company ID schema validation; direct routing to the single telemetry database
   - groups <= 5,000 points by bytes/time/count
         |
         +--------------------> protected rejection quarantine
         +--------------------> InfluxDB 3 Core /api/v3/write_lp
         +--------------------> PostgreSQL batch results
 
-Privileged internal Grafana org --> InfluxDB SQL/FlightSQL (all known companies)
+Privileged internal Grafana org --> InfluxDB SQL/FlightSQL (all valid producer-supplied company IDs)
 Restricted viewer Grafana orgs --> Infinity datasource --> bounded presentation API
 Presentation API --> InfluxDB + cadastral adapter (scoped telemetry and masked identity)
 Prometheus/Loki <-- metrics and privacy-safe structured logs
 ```
 
-Known-company events are written to the queryable telemetry database. Unknown-company events are
-written to a separate pending database whose credentials are never provisioned to Grafana. A promotion
-worker periodically resolves company visibility and idempotently copies eligible points to the
-queryable database before deleting them from pending storage. This storage boundary, rather than a
-dashboard variable, enforces invisibility.
+Every valid `empresa_id` (business `idEmpresa`) supplied by the internal producer is recognized
+as existing without a cadastral check. All accepted points use one queryable `telemetry` database
+on one InfluxDB 3 Core server. One shared ingestion credential covers every company; company
+allowlists are not an ingestion requirement. Missing/invalid IDs follow schema validation.
+Cadastral enrichment remains optional for presentation attributes and cannot gate telemetry visibility.
+Operator/viewer authorization remains enforced independently. No pending telemetry or promotion exists.
+
+Foundation amendment 2026-10-14 (constitution 2.0.0): complete T104-T112 before T050. These
+tasks reconcile already-built dual-store code and migrate existing data safely; no source or Compose
+change is included in this design amendment.
 
 The producer credential is accepted only for submission and status of batches submitted by that
 producer. Internal operator credentials are stored separately and carry explicit action permissions and
@@ -132,7 +137,7 @@ is automated so adding companies does not require hand-editing dashboard securit
    to the queue publisher, and creates a pending batch record.
 2. The queue provider confirms durable acceptance. Only then may the API mark the batch `Accepted` and
    return `202`. If the response is lost, line-level idempotency makes producer retry safe.
-3. The worker resolves company visibility, routes the event to queryable or pending storage, and uses
+3. The worker validates the company identifier, writes to the single telemetry database, and uses
    manual consumer acknowledgement. It acknowledges only after telemetry writes,
    rejection quarantine, and batch outcome are durably recorded.
 4. A transient failure negatively acknowledges/retries with backoff. A permanent batch failure records
@@ -146,11 +151,10 @@ is automated so adding companies does not require hand-editing dashboard securit
    30 days provides exact replay/conflict classification. Because PostgreSQL and InfluxDB do not share a
    transaction, an ambiguous failure may repeat the identical physical Influx write; the guarantee is
    exactly one immutable logical event, not exactly one network write.
-7. Promotion records use `Discovered -> Copying -> Copied -> SourceDeleted -> Completed`. Queryable
-   writes are idempotent; pending source data is deleted only after the destination write is confirmed
-   and its identity/count reconciliation succeeds. The identity guard location advances
-   `PendingCommitted -> Promoting -> QueryableCommitted`; this authorized relocation is fenced and is not
-   treated as a duplicate. Recovery resumes safely from every state.
+7. No company-promotion state machine is required. Before retiring any existing pending store,
+   explicitly inventory and reconcile its points, guards and evidence into the single destination.
+   Preserve acknowledged data, retention and immutable identity protections; fail safely on conflicts.
+   Do not reset volumes or rewrite applied migrations.
 
 Viewer query limits default to 500 vehicles per latest-position page; one vehicle, 24 hours, and 10,000
 points per trip; and seven days, one-minute minimum granularity, and 10,000 points for ingestion health.
@@ -256,11 +260,11 @@ metadata schema; the payload MUST NOT be JSON/Base64 wrapped on the wire.
 2. **Durable intake**: authentication, bounded gzip upload, batch persistence, RabbitMQ publisher
    confirms, status endpoint, and restart tests.
 3. **Validation and storage**: streaming parser, schema v1, partial results, Influx v3 writer,
-   pending/queryable tenant separation, promotion worker, quarantine, retry policy, and manual queue
+   single-store persistence without cadastral eligibility, quarantine, retry policy, and manual queue
    acknowledgement.
 4. **Idempotency experiment**: benchmark alternative conflict detectors using representative 10k and
    100k vehicle data; record an ADR and implement the selected bounded strategy.
-5. **Presentation and privacy**: tenant visibility check, cadastral adapter, masked driver view, audit,
+5. **Presentation and privacy**: authorization scopes, optional cadastral enrichment, masked driver view, audit,
    and initial Grafana dashboards.
 6. **Operational readiness**: Prometheus, Loki, alerts, retention jobs, backup documentation, burst,
    soak, dependency-failure, and recovery testing.
@@ -282,7 +286,8 @@ metadata schema; the payload MUST NOT be JSON/Base64 wrapped on the wire.
   reconciles accepted and stored totals to exactly 100,000, and captures Grafana query/render evidence.
 - Soak tests measure disk growth and backlog age long enough to extrapolate 60-day and five-year needs.
 - Privacy tests scan logs, metrics, and traces for seeded plates, coordinates, names, CPF, and secrets.
-- Dashboard tests verify unknown tenants remain hidden and driver disclosure is audited.
+- Dashboard tests verify valid unregistered company IDs are visible within authorized scope,
+  unauthorized scopes remain inaccessible, and driver disclosure is audited.
 
 ## Post-Design Constitution Check
 

@@ -36,6 +36,35 @@ public sealed class IntakeBoundaryTests
 {
     private static readonly byte[] Gzip = Compress("telemetria,empresa_id=company,veiculo_id=vehicle latitude=1.0,longitude=2.0,velocidade=0.0,rpm=0i,ignicao=false 1791849600000\n");
 
+    [Fact]
+    [Trait("Feature", "FoundationSingleInflux")]
+    public async Task Same_producer_credential_durably_accepts_multiple_company_ids_without_company_lookup()
+    {
+        await using var fixture = new IntakeFixture(forbidCompanyLookup: true);
+        var bodies = new List<byte[]>();
+        foreach (var company in new[] { "not-in-registry-a", "not-in-registry-b" })
+        {
+            var body = Compress($"telemetria,empresa_id={company},veiculo_id=vehicle latitude=1.0,longitude=2.0,velocidade=0.0,rpm=0i,ignicao=false 1791849600000\n");
+            bodies.Add(body);
+            var response = await fixture.Send(new MemoryStream(body), body.Length);
+            response.Response.StatusCode.ShouldBe(202);
+        }
+        fixture.Queue.Bodies.Count.ShouldBe(2);
+        fixture.Queue.Bodies.ToArray()[0].ShouldBe(bodies[0]);
+        fixture.Queue.Bodies.ToArray()[1].ShouldBe(bodies[1]);
+        var metadata = fixture.Queue.Metadata.ToArray();
+        metadata.Length.ShouldBe(2);
+        metadata.Select(item => item.ProducerId).Distinct().ShouldHaveSingleItem().ShouldBe("boundary-producer");
+        metadata.Select(item => item.BatchId).Distinct().Count().ShouldBe(2);
+        foreach (var item in metadata)
+        {
+            var snapshot = (await fixture.Store.GetAsync(new(item.BatchId), default)).ShouldNotBeNull();
+            snapshot.State.ShouldBe(BatchLifecycle.Accepted);
+            snapshot.CompletedAt.ShouldBeNull("Durable intake is still awaiting asynchronous processing");
+        }
+        fixture.CompanyLookup.Calls.ShouldBe(0);
+    }
+
     [Theory]
     [InlineData(-1, true, 413)]
     [InlineData(0, true, 202)]
@@ -211,13 +240,14 @@ public sealed class IntakeBoundaryTests
         return result.ToArray();
     }
 
-    private sealed class IntakeFixture(long maxCompressedBytes = 1024, TimeSpan? uploadTimeout = null) : WebApplicationFactory<ProducerBearerHandler>
+    private sealed class IntakeFixture(long maxCompressedBytes = 1024, TimeSpan? uploadTimeout = null, bool forbidCompanyLookup = false) : WebApplicationFactory<ProducerBearerHandler>
     {
         private static readonly string Token = OpaqueBearerTokens.Generate(BearerCredentialKind.Producer);
         private static readonly BearerTokenHash Hash = BearerTokenHash.Create(Token);
         internal QueueSpy Queue { get; } = new();
         internal StateSpy Store { get; } = new();
         internal RequestObserver Observer { get; } = new();
+        internal ForbiddenCompanyLookup CompanyLookup { get; } = new();
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -243,6 +273,11 @@ public sealed class IntakeBoundaryTests
                 services.AddSingleton<IDurableBatchQueue>(Queue);
                 services.RemoveAll<IBatchStateStore>();
                 services.AddSingleton<IBatchStateStore>(Store);
+                if (forbidCompanyLookup)
+                {
+                    services.RemoveAll<ICompanyVisibilityResolver>();
+                    services.AddSingleton<ICompanyVisibilityResolver>(CompanyLookup);
+                }
                 services.AddSingleton<IStartupFilter>(Observer);
                 services.Configure<ForwardedHeadersOptions>(options =>
                 {
@@ -283,6 +318,16 @@ public sealed class IntakeBoundaryTests
                     context.Request.Headers["X-Forwarded-Proto"] = forwardedProto;
                 context.Request.Headers["X-Forwarded-Host"] = "spoofed.invalid";
             }, cancellationToken);
+        }
+    }
+
+    private sealed class ForbiddenCompanyLookup : ICompanyVisibilityResolver
+    {
+        internal int Calls;
+        public ValueTask<CompanyVisibility> ResolveAsync(CompanyId companyId, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref Calls);
+            throw new InvalidOperationException("Company existence lookup must not gate internal telemetry intake.");
         }
     }
 
