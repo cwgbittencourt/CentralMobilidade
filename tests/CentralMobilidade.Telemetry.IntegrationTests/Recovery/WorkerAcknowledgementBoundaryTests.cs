@@ -29,7 +29,7 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Recovery;
 [Trait("Category", "Integration")]
 public sealed class WorkerAcknowledgementBoundaryTests
 {
-    private static readonly DateTimeOffset Now = new(2026, 10, 14, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     private static readonly EventIdentity Identity = new(new CompanyId("company"), new VehicleId("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(Now.ToUnixTimeMilliseconds()));
     private static readonly string Fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("original")));
 
@@ -82,6 +82,9 @@ public sealed class WorkerAcknowledgementBoundaryTests
             Now = Now.AddSeconds(2)
         };
         (await fixture.Guard.AcquireOrResumeAsync(competing, CancellationToken.None)).ShouldBeOfType<IdentityReservationResult.Contended>();
+        // Represent real lease expiry in the isolated database: database triggers use server time.
+        await using (var db = fixture.Database.Create())
+            await db.Database.ExecuteSqlRawAsync("UPDATE event_identity_guards SET \"LeaseUntil\"=clock_timestamp()-interval '1 second' WHERE \"OwnerBatchId\"={0}", request.Owner.BatchId.Value);
         competing = competing with
         {
             Now = Now.AddMinutes(2),

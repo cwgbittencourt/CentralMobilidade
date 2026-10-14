@@ -131,6 +131,30 @@ not prove a combined transaction pipeline at that rate.
 
 ## Reproduction
 
+### T047 actual adapter revalidation (2026-10-14)
+
+The production per-identity adapter now uses the migrated hash16 table, atomic
+reservation/evidence transaction, row locks, stable batch/line owner and fenced
+leases. Writing and commit are separate compare-and-swap updates; the processing
+handler must call commit only after confirmed Influx persistence (T051). Promotion
+uses its own fenced lease and preserves the original evidence. The migration copies
+existing rows and table grants and restores invariant/truncate protections, including
+direct leaf truncation protection. It requires an exclusive lock and a full table
+copy; schedule migration downtime and capacity before deployment.
+
+Nine guard scenarios pass, including the six T042 PostgreSQL cases, promotion
+takeover and upgrading populated storage. The actual adapter short probe uses
+1,000 identities, concurrency 32, and reserve + Writing + Committed for each identity,
+with separate evidence and no Influx. Observed runs reached approximately 393–595
+events/s, p95 60–120 ms and p99 666–670 ms. This **misses 5,000 events/s** and does
+not inherit the bulk SQL prototype's throughput. The per-identity contract currently
+has no bulk operation. Bulk orchestration/adapter optimization and a repeated actual
+adapter benchmark are required before capacity approval, in addition to T091/T095.
+Passing correctness tests does not pass this performance gate.
+
+Reproduce the actual probe with `dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter FullyQualifiedName~SelectedEventIdentityGuardTests`.
+The local ignored report is `artifacts/validation/T047/adapter-benchmark.json`.
+
 ```powershell
 dotnet test tests/CentralMobilidade.Telemetry.LoadTests --filter FullyQualifiedName~IdentityGuardBenchmarkTests
 ```

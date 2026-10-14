@@ -62,6 +62,13 @@ para isolar as fronteiras de durabilidade.
 
 ## Limites da prova e resultado TDD
 
+Atualização T047: os seis cenários exclusivos do guard passaram com PostgreSQL real.
+Os 19 cenários do handler continuam aguardando T051 e suas dependências. Há mais
+três testes T047 para promoção com fencing, migração com dados e medição do adapter.
+A suíte completa passou de 130 para 139 aprovações e de 51 para 45 falhas previstas
+(15 T038, 11 T039, 19 T042). O desempenho medido do adapter ainda não atende à meta;
+consulte a revalidação T047 no ADR-001.
+
 As falhas injetadas são exceções ambíguas nos ports antes/depois de ações persistidas,
 não encerramento real de processo nem falhas do disco. Não provam WAL/restart do
 Influx, entrega real de RabbitMQ ou filesystem real de quarentena; esses adapters
