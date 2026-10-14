@@ -16,6 +16,9 @@ packages/
 
 # Local runtime data
 data/
+!tests/CentralMobilidade.Telemetry.LoadTests/Data/
+!tests/CentralMobilidade.Telemetry.LoadTests/Data/DedupCorpus/
+!tests/CentralMobilidade.Telemetry.LoadTests/Data/DedupCorpus/README.md
 artifacts/
 coverage/
 
