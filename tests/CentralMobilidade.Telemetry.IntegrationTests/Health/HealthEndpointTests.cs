@@ -27,6 +27,19 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Health;
 public sealed partial class TelemetryHealthTests
 {
     [Fact]
+    public async Task Migrated_postgres_fixture_enables_durable_disk_commits()
+    {
+        await using var fixture = await MigratedPostgresFixture.StartAsync();
+        await using var connection = new NpgsqlConnection(fixture.Connection);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("SELECT current_setting('fsync'), current_setting('synchronous_commit')", connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).ShouldBeTrue();
+        reader.GetString(0).ShouldBe("on", "The healthy fixture must use durable PostgreSQL settings");
+        reader.GetString(1).ShouldBe("on");
+    }
+
+    [Fact]
     public async Task Api_liveness_stays_healthy_when_dependencies_are_missing_and_responses_are_private()
     {
         var builder = WebApplication.CreateBuilder();

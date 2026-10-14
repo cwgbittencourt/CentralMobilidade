@@ -27,7 +27,10 @@ internal sealed class MigratedPostgresFixture : IAsyncDisposable
         PostgreSqlContainer? container = null;
         if (connection is null)
         {
-            container = new PostgreSqlBuilder("postgres:17.11-bookworm").Build();
+            // Override Testcontainers' speed-oriented fsync=off default: readiness requires durability.
+            container = new PostgreSqlBuilder("postgres:17.11-bookworm")
+                .WithCommand("-c", "fsync=on", "-c", "synchronous_commit=on")
+                .Build();
             await container.StartAsync();
             connection = container.GetConnectionString();
         }

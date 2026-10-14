@@ -61,6 +61,7 @@ every user story.
 - [X] T020 [P] Configure OpenTelemetry tracing/metrics, Prometheus export, trace/batch enrichment, and forbidden-label policy in `src/CentralMobilidade.Telemetry.Infrastructure/Observability/TelemetryObservability.cs`
 - [X] T021 [P] Configure structured Serilog output with destructuring filters that remove payload, plate, coordinates, driver identity, CPF, and secrets in `src/CentralMobilidade.Telemetry.Infrastructure/Observability/PrivacyLoggingPolicy.cs`
 - [X] T022 Implement liveness/readiness checks for PostgreSQL, durable queue publication, InfluxDB, and worker freshness in `src/CentralMobilidade.Telemetry.Infrastructure/Health/TelemetryHealthChecks.cs`
+  - Readiness correction (2026-10-14): the Testcontainers fixture used `fsync=off`, correctly rejected by the production probe. Explicit `fsync=on` and `synchronous_commit=on` restore the healthy fixture; all 18 health tests pass, including a new durable-settings regression test. The two readiness failures recorded in T035/T036 are resolved.
 - [X] T023 Add architecture tests enforcing dependency direction and prohibiting infrastructure references from Domain/Application in `tests/CentralMobilidade.Telemetry.ArchitectureTests/LayerDependencyTests.cs`
 
 **Checkpoint**: Configuration fails fast, migrations apply, authentication works, health checks are

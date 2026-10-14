@@ -64,6 +64,13 @@ claiming that a running metrics server is a working queue consumer.
 
 ## Evidence
 
+Readiness correction on 2026-10-14: Testcontainers' PostgreSQL fixture defaulted to
+`fsync=off`, so the production probe correctly returned unhealthy in the two healthy
+API/worker scenarios. `MigratedPostgresFixture` now explicitly enables `fsync=on` and
+`synchronous_commit=on`. All 18 health tests pass, including a regression check of
+these settings. The production durability checks and private responses are unchanged.
+Local evidence: `artifacts/validation/T022-readiness/T022-readiness.trx` (Git ignored).
+
 Validation on 2026-10-13: 168 tests passed in Linux (72 unit, 40 contract, 56 integration), including
 17 health cases. Coverage includes missing dependencies without liveness failure, healthy durable
 intake while downstream is unavailable, real worker listener routes, consumer heartbeat expiry and
