@@ -9,6 +9,7 @@
     <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Application/CentralMobilidade.Telemetry.Application.csproj" />
     <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Contracts/CentralMobilidade.Telemetry.Contracts.csproj" />
     <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Domain/CentralMobilidade.Telemetry.Domain.csproj" />
+    <ProjectReference Include="../../src/CentralMobilidade.Telemetry.Infrastructure/CentralMobilidade.Telemetry.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
