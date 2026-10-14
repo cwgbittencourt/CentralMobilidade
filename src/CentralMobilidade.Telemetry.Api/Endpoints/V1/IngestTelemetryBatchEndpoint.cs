@@ -70,7 +70,8 @@ public static class IngestTelemetryBatchEndpoint
             {
                 await using var spool = await spooler.ReadAsync(context.Request.Body,
                     context.Request.ContentLength, context.RequestAborted).ConfigureAwait(false);
-                var receivedAt = clock.UtcNow.ToUniversalTime();
+                var now = clock.UtcNow.ToUniversalTime();
+                var receivedAt = new DateTimeOffset(now.Ticks - now.Ticks % 10, TimeSpan.Zero);
                 var batchId = Guid.CreateVersion7(receivedAt);
                 var traceId = Activity.Current?.TraceId.ToHexString() ?? ActivityTraceId.CreateRandom().ToHexString();
                 var metadata = new TelemetryBatchEnvelope("1", batchId, traceId, producerId, receivedAt,

@@ -103,7 +103,8 @@ return non-success.
   - Validation: six orchestration tests pass, proving acceptance remains pending before the matching durable confirmation, replay skips republishing, provider/cancellation/mismatched-receipt paths never accept, and a post-confirmation state failure remains non-success. Full suite: 297 pass; only the same 35 T025 and one T027 endpoint failures remain (36 total).
 - [X] T034 [US1] Implement `POST /api/v1/telemetry/batches` with producer-only bearer authorization, required v1 headers, backpressure, `Location`, and `Retry-After` in `src/CentralMobilidade.Telemetry.Api/Endpoints/V1/IngestTelemetryBatchEndpoint.cs`
   - Validation: 32 of 35 T025 boundary scenarios now pass plus the bounded admission-gate test; headers, media type, gzip, size, timeout, cancellation, native bytes/hash, `202`, `Location`, and `Retry-After` are covered. Full suite: 330 pass and four expected T035 failures (three trusted-proxy cases and one real-process provider-composition case).
-- [ ] T035 [US1] Wire API middleware ordering, Kestrel compressed request limit, authentication, problem details, explicit trusted-proxy networks, forwarded-header symmetry/known-proxy enforcement, health checks, and endpoint mappings in `src/CentralMobilidade.Telemetry.Api/Program.cs`
+- [X] T035 [US1] Wire API middleware ordering, Kestrel compressed request limit, authentication, problem details, explicit trusted-proxy networks, forwarded-header symmetry/known-proxy enforcement, health checks, and endpoint mappings in `src/CentralMobilidade.Telemetry.Api/Program.cs`
+  - Validation: all 35 intake-boundary scenarios and both real-process recovery scenarios pass, including trusted proxy handling and durable RabbitMQ publication before `202`. The full suite has 332 passing tests and two unrelated PostgreSQL readiness failures in `TelemetryHealthTests`.
 
 **Checkpoint**: The durable intake slice is deployable as an MVP even before telemetry parsing exists.
 

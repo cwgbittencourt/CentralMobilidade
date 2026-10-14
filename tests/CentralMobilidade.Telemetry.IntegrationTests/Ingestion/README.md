@@ -35,13 +35,13 @@ O observador apenas captura o contexto; ele não interpreta os headers.
 
 ## Estado TDD
 
-A T025 adicionou os testes antes da implementação das T029/T033/T034/T035. Após a T034,
-32 dos 35 cenários passam, incluindo limites, headers, gzip, timeout, cancelamento e
-respostas duráveis com `Location`/`Retry-After`. Os três casos restantes exigem o
-processamento de forwarded headers por proxy confiável e permanecem vermelhos até a T035.
-Nenhum cenário foi desabilitado ou ignorado. A compilação local e no Docker passou sem avisos.
+A T025 adicionou os testes antes da implementação das T029/T033/T034/T035. Após a T035,
+os 35 cenários passam, incluindo limites, headers, gzip, timeout, cancelamento,
+respostas duráveis com `Location`/`Retry-After` e processamento de forwarded headers
+somente para proxies e redes explicitamente confiáveis. Nenhum cenário foi desabilitado
+ou ignorado.
 
-Os testes devem ficar verdes quando a ingestão for implementada. O TestServer simula
+O TestServer simula
 streams e cancelamento do HTTP; esta etapa não comprova limites de transporte do Kestrel,
 enquadramento de chunked HTTP, durabilidade real de RabbitMQ/PostgreSQL ou throughput.
 CRC/truncamento do conteúdo comprimido e limites de descompressão pertencem à T037/T045.

@@ -33,12 +33,10 @@ Essa prova do mecanismo não substitui a aceitação durável feita pelo endpoin
 
 ## Estado TDD
 
-A compilação local e no Docker passou sem avisos. O teste do mecanismo de crash passou;
-o cenário principal falhou na asserção 202 porque o endpoint ainda retorna 404. Ele
-aguarda a implementação e conexão das T030–T035, sem skips nem expectativas que
-aceitem essa falha. A regressão teve 235 aprovações e 46 falhas esperadas: 35 da T025,
-dez da T026 e uma da T027. Relatórios TRX estão em `artifacts/validation/T027/`, ignorado
-pelo Git.
+Após a T035, os dois cenários passam contra PostgreSQL e RabbitMQ reais: a API só retorna
+`202` após o publisher confirm, e o lote continua disponível depois do encerramento
+abrupto do processo. Não há skips nem expectativas que aceitem falhas. Relatórios TRX
+locais ficam em `artifacts/validation/T027/`, ignorado pelo Git.
 
 O crash ocorre depois do recibo HTTP, que deve depender do publisher confirm. A janela
 entre confirm e envio do recibo, reinício/perda do broker ou host, retomada do worker
