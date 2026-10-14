@@ -91,7 +91,8 @@ return non-success.
 
 - [X] T028 [P] [US1] Implement `IngestionBatch` lifecycle with `Receiving -> Publishing -> Accepted` and failure transitions in `src/CentralMobilidade.Telemetry.Domain/Batches/IngestionBatch.cs`
   - Validation: 23 lifecycle tests pass; immutable transitions, matching durable confirmation, typed failures, UTC/retention and exact replay checks. Full suite: 258 pass with the same 46 pending T025–T027 TDD failures.
-- [ ] T029 [P] [US1] Implement streaming compressed-body hashing and a bounded spool that never materializes the body as a string in `src/CentralMobilidade.Telemetry.Infrastructure/Streaming/BoundedRequestSpool.cs`
+- [X] T029 [P] [US1] Implement streaming compressed-body hashing and a bounded spool that never materializes the body as a string in `src/CentralMobilidade.Telemetry.Infrastructure/Streaming/BoundedRequestSpool.cs`
+  - Validation: 13 spool tests pass in Docker; bounded file/memory, incremental SHA-256, native gzip bytes, timeout/cancellation, read-only rewind and disposal cleanup. Full suite: 271 pass with the same 46 pending T025–T027 TDD failures.
 - [ ] T030 [P] [US1] Implement RabbitMQ connection/channel recovery and declare durable exchange, queue, retry, and dead-letter topology in `src/CentralMobilidade.Telemetry.Infrastructure/Queue/RabbitMq/RabbitMqTopology.cs`
 - [ ] T031 [US1] Implement mandatory persistent publication with correlated publisher confirms and explicit timeout/nack mapping in `src/CentralMobilidade.Telemetry.Infrastructure/Queue/RabbitMq/RabbitMqBatchPublisher.cs`
 - [ ] T032 [US1] Implement transactional batch creation and replay-safe acceptance transitions in `src/CentralMobilidade.Telemetry.Infrastructure/Persistence/PostgresBatchStateStore.cs`
