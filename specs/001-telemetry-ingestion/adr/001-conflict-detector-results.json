@@ -1,0 +1,302 @@
+[
+  {
+    "version": 1,
+    "utc": "2026-10-14T14:52:42.237989-03:00",
+    "postgres": "17.11-bookworm",
+    "durable": true,
+    "processors": 16,
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "batchSize": 100,
+    "targetEventsPerSecond": 5000,
+    "measuredEvents": 50000,
+    "results": [
+      {
+        "candidate": "plain",
+        "guard": {
+          "events": 50000,
+          "seconds": 23.6887432,
+          "achievedEventsPerSecond": 2110.707164911982,
+          "targetMet": false,
+          "batchP95Ms": 48.522,
+          "batchP99Ms": 59.1331,
+          "allocatedBytes": 37052416,
+          "bytesPerRow": 741.04832,
+          "projected30DayBytes": 9603986227200,
+          "projected60DayBytes": 19207972454400,
+          "projectedFiveYearBytes": 584242495488000
+        },
+        "evidence": {
+          "events": 50000,
+          "seconds": 9.996939,
+          "achievedEventsPerSecond": 5001.530968629498,
+          "targetMet": true,
+          "batchP95Ms": 2.8419,
+          "batchP99Ms": 3.3236,
+          "allocatedBytes": 11485184,
+          "bytesPerRow": 229.70368,
+          "projected30DayBytes": 2976959692799.9995,
+          "projected60DayBytes": 5953919385599.999,
+          "projectedFiveYearBytes": 181098381311999.97
+        }
+      },
+      {
+        "candidate": "hash16",
+        "guard": {
+          "events": 50000,
+          "seconds": 24.1636098,
+          "achievedEventsPerSecond": 2069.227255937563,
+          "targetMet": false,
+          "batchP95Ms": 51.3975,
+          "batchP99Ms": 53.5956,
+          "allocatedBytes": 24903680,
+          "bytesPerRow": 498.0736,
+          "projected30DayBytes": 6455033856000,
+          "projected60DayBytes": 12910067712000,
+          "projectedFiveYearBytes": 392681226240000
+        },
+        "evidence": {
+          "events": 50000,
+          "seconds": 9.9843918,
+          "achievedEventsPerSecond": 5007.816299837113,
+          "targetMet": true,
+          "batchP95Ms": 3.2155,
+          "batchP99Ms": 4.4177,
+          "allocatedBytes": 14671872,
+          "bytesPerRow": 293.43744,
+          "projected30DayBytes": 3802949222400,
+          "projected60DayBytes": 7605898444800,
+          "projectedFiveYearBytes": 231346077696000
+        }
+      },
+      {
+        "candidate": "range16",
+        "guard": {
+          "events": 50000,
+          "seconds": 24.1079522,
+          "achievedEventsPerSecond": 2074.0044440605784,
+          "targetMet": false,
+          "batchP95Ms": 48.8898,
+          "batchP99Ms": 62.816,
+          "allocatedBytes": 37519360,
+          "bytesPerRow": 750.3872,
+          "projected30DayBytes": 9725018112000,
+          "projected60DayBytes": 19450036224000,
+          "projectedFiveYearBytes": 591605268480000
+        },
+        "evidence": {
+          "events": 50000,
+          "seconds": 9.9835688,
+          "achievedEventsPerSecond": 5008.22912143401,
+          "targetMet": true,
+          "batchP95Ms": 2.7019,
+          "batchP99Ms": 3.0819,
+          "allocatedBytes": 11878400,
+          "bytesPerRow": 237.568,
+          "projected30DayBytes": 3078881280000,
+          "projected60DayBytes": 6157762560000,
+          "projectedFiveYearBytes": 187298611200000
+        }
+      }
+    ]
+  },
+  {
+    "version": 1,
+    "utc": "2026-10-14T14:55:17.2411439-03:00",
+    "postgres": "17.11-bookworm",
+    "durable": true,
+    "processors": 16,
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "batchSize": 1000,
+    "targetEventsPerSecond": 5000,
+    "measuredEvents": 50000,
+    "results": [
+      {
+        "candidate": "plain",
+        "guard": {
+          "events": 50000,
+          "seconds": 9.8447003,
+          "achievedEventsPerSecond": 5078.874772856214,
+          "targetMet": true,
+          "batchP95Ms": 102.494,
+          "batchP99Ms": 117.0642,
+          "allocatedBytes": 33177600,
+          "bytesPerRow": 663.552,
+          "projected30DayBytes": 8599633920000,
+          "projected60DayBytes": 17199267840000,
+          "projectedFiveYearBytes": 523144396800000
+        },
+        "evidence": {
+          "events": 50000,
+          "seconds": 9.8215652,
+          "achievedEventsPerSecond": 5090.838270869494,
+          "targetMet": true,
+          "batchP95Ms": 22.3544,
+          "batchP99Ms": 50.2456,
+          "allocatedBytes": 11419648,
+          "bytesPerRow": 228.39296,
+          "projected30DayBytes": 2959972761600,
+          "projected60DayBytes": 5919945523200,
+          "projectedFiveYearBytes": 180065009664000
+        }
+      },
+      {
+        "candidate": "hash16",
+        "guard": {
+          "events": 50000,
+          "seconds": 9.8418331,
+          "achievedEventsPerSecond": 5080.354390484431,
+          "targetMet": true,
+          "batchP95Ms": 70.9489,
+          "batchP99Ms": 81.1697,
+          "allocatedBytes": 37101568,
+          "bytesPerRow": 742.03136,
+          "projected30DayBytes": 9616726425600,
+          "projected60DayBytes": 19233452851200,
+          "projectedFiveYearBytes": 585017524224000
+        },
+        "evidence": {
+          "events": 50000,
+          "seconds": 9.8155425,
+          "achievedEventsPerSecond": 5093.961948613641,
+          "targetMet": true,
+          "batchP95Ms": 52.5137,
+          "batchP99Ms": 65.643,
+          "allocatedBytes": 12697600,
+          "bytesPerRow": 253.952,
+          "projected30DayBytes": 3291217920000,
+          "projected60DayBytes": 6582435840000,
+          "projectedFiveYearBytes": 200215756800000
+        }
+      },
+      {
+        "candidate": "range16",
+        "guard": {
+          "events": 50000,
+          "seconds": 9.9177882,
+          "achievedEventsPerSecond": 5041.446640290221,
+          "targetMet": true,
+          "batchP95Ms": 106.7193,
+          "batchP99Ms": 110.4527,
+          "allocatedBytes": 33628160,
+          "bytesPerRow": 672.5632,
+          "projected30DayBytes": 8716419072000.002,
+          "projected60DayBytes": 17432838144000.004,
+          "projectedFiveYearBytes": 530248826880000.06
+        },
+        "evidence": {
+          "events": 50000,
+          "seconds": 9.8149802,
+          "achievedEventsPerSecond": 5094.2537815817495,
+          "targetMet": true,
+          "batchP95Ms": 50.452,
+          "batchP99Ms": 52.1503,
+          "allocatedBytes": 11804672,
+          "bytesPerRow": 236.09344,
+          "projected30DayBytes": 3059770982400,
+          "projected60DayBytes": 6119541964800,
+          "projectedFiveYearBytes": 186136068096000
+        }
+      }
+    ]
+  },
+  {
+    "version": 1,
+    "utc": "2026-10-14T14:57:29.9276008-03:00",
+    "postgres": "17.11-bookworm",
+    "durable": true,
+    "processors": 16,
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "batchSize": 1000,
+    "targetEventsPerSecond": 5000,
+    "measuredEvents": 50000,
+    "results": [
+      {
+        "candidate": "plain",
+        "guard": {
+          "events": 50000,
+          "seconds": 9.8440408,
+          "achievedEventsPerSecond": 5079.215031290809,
+          "targetMet": true,
+          "batchP95Ms": 118.4136,
+          "batchP99Ms": 133.9445,
+          "allocatedBytes": 33177600,
+          "bytesPerRow": 663.552,
+          "projected30DayBytes": 8599633920000,
+          "projected60DayBytes": 17199267840000,
+          "projectedFiveYearBytes": 523144396800000
+        },
+        "evidence": {
+          "events": 50000,
+          "seconds": 9.8124137,
+          "achievedEventsPerSecond": 5095.586216467819,
+          "targetMet": true,
+          "batchP95Ms": 49.5411,
+          "batchP99Ms": 65.5416,
+          "allocatedBytes": 11411456,
+          "bytesPerRow": 228.22912,
+          "projected30DayBytes": 2957849395199.9995,
+          "projected60DayBytes": 5915698790399.999,
+          "projectedFiveYearBytes": 179935838207999.97
+        }
+      },
+      {
+        "candidate": "hash16",
+        "guard": {
+          "events": 50000,
+          "seconds": 9.8490523,
+          "achievedEventsPerSecond": 5076.630570841826,
+          "targetMet": true,
+          "batchP95Ms": 66.65,
+          "batchP99Ms": 76.3036,
+          "allocatedBytes": 37044224,
+          "bytesPerRow": 740.88448,
+          "projected30DayBytes": 9601862860800.002,
+          "projected60DayBytes": 19203725721600.004,
+          "projectedFiveYearBytes": 584113324032000.1
+        },
+        "evidence": {
+          "events": 50000,
+          "seconds": 9.823523,
+          "achievedEventsPerSecond": 5089.823681381924,
+          "targetMet": true,
+          "batchP95Ms": 11.7044,
+          "batchP99Ms": 52.608,
+          "allocatedBytes": 12697600,
+          "bytesPerRow": 253.952,
+          "projected30DayBytes": 3291217920000,
+          "projected60DayBytes": 6582435840000,
+          "projectedFiveYearBytes": 200215756800000
+        }
+      },
+      {
+        "candidate": "range16",
+        "guard": {
+          "events": 50000,
+          "seconds": 9.8415019,
+          "achievedEventsPerSecond": 5080.525361682854,
+          "targetMet": true,
+          "batchP95Ms": 62.7028,
+          "batchP99Ms": 64.9907,
+          "allocatedBytes": 33644544,
+          "bytesPerRow": 672.89088,
+          "projected30DayBytes": 8720665804800.002,
+          "projected60DayBytes": 17441331609600.004,
+          "projectedFiveYearBytes": 530507169792000.06
+        },
+        "evidence": {
+          "events": 50000,
+          "seconds": 9.814843,
+          "achievedEventsPerSecond": 5094.324993278038,
+          "targetMet": true,
+          "batchP95Ms": 25.0176,
+          "batchP99Ms": 52.5746,
+          "allocatedBytes": 11804672,
+          "bytesPerRow": 236.09344,
+          "projected30DayBytes": 3059770982400,
+          "projected60DayBytes": 6119541964800,
+          "projectedFiveYearBytes": 186136068096000
+        }
+      }
+    ]
+  }
+]
