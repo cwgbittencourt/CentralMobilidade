@@ -194,6 +194,79 @@ public sealed class QuarantineStoreTests
         (await fixture.Store.GetMetadataAsync(request.QuarantineId, CancellationToken.None)).ShouldNotBeNull();
     }
 
+    [Fact]
+    public async Task New_store_instance_recovers_published_object_and_replays_without_memory_state()
+    {
+        await using var fixture = Fixture.Create();
+        var request = Request();
+        using var input = new MemoryStream(Raw);
+        var receipt = await fixture.Store.WriteAsync(request, input, default);
+        var reopened = fixture.OpenAnotherStore();
+        (await reopened.GetMetadataAsync(request.QuarantineId, default))!.ContentSha256.ShouldBe(receipt.ContentSha256);
+        using var replay = new MemoryStream(Raw);
+        (await reopened.WriteAsync(request, replay, default)).ShouldBe(receipt);
+        Directory.GetFiles(fixture.Root).Length.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Conflicting_metadata_cannot_replace_original_even_when_bytes_match()
+    {
+        await using var fixture = Fixture.Create();
+        var request = Request();
+        using var input = new MemoryStream(Raw);
+        await fixture.Store.WriteAsync(request, input, default);
+        using var replay = new MemoryStream(Raw);
+        await Should.ThrowAsync<ProviderOperationException>(() => fixture.OpenAnotherStore()
+            .WriteAsync(request with
+            {
+                LineNumber = request.LineNumber + 1
+            }, replay, default).AsTask());
+        (await fixture.Store.GetMetadataAsync(request.QuarantineId, default))!.LineNumber.ShouldBe(request.LineNumber);
+        Directory.GetFiles(fixture.Root).Length.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Corrupt_raw_bytes_fail_closed_for_metadata_read_and_deletion()
+    {
+        await using var fixture = Fixture.Create();
+        var request = Request();
+        using var input = new MemoryStream(Raw);
+        await fixture.Store.WriteAsync(request, input, default);
+        var file = Directory.GetFiles(fixture.Root).ShouldHaveSingleItem();
+        var bytes = await File.ReadAllBytesAsync(file);
+        bytes[0] ^= 1;
+        await File.WriteAllBytesAsync(file, bytes);
+        await Should.ThrowAsync<ProviderOperationException>(() => fixture.Store.OpenReadAsync(request.QuarantineId, default).AsTask());
+        await Should.ThrowAsync<ProviderOperationException>(() => fixture.Store.GetMetadataAsync(request.QuarantineId, default).AsTask());
+        await Should.ThrowAsync<ProviderOperationException>(() => fixture.Store.DeleteExpiredAsync(request.QuarantineId, request.DeleteAfter, default).AsTask());
+    }
+
+    [Fact]
+    public async Task Cancelled_write_publishes_nothing_and_preserves_caller_stream()
+    {
+        await using var fixture = Fixture.Create();
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        using var input = new MemoryStream(Raw);
+        await Should.ThrowAsync<OperationCanceledException>(() => fixture.Store.WriteAsync(Request(), input, cancelled.Token).AsTask());
+        input.CanRead.ShouldBeTrue();
+        Directory.GetFiles(fixture.Root).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Earlier_deletion_deadline_is_honored_without_extending_retention()
+    {
+        await using var fixture = Fixture.Create();
+        var request = Request();
+        request = request with
+        {
+            DeleteAfter = request.CreatedAt.AddDays(1)
+        };
+        using var input = new MemoryStream(Raw);
+        await fixture.Store.WriteAsync(request, input, default);
+        (await fixture.Store.DeleteExpiredAsync(request.QuarantineId, request.DeleteAfter, default)).ShouldBeTrue();
+    }
+
     private static QuarantineWriteRequest Request()
     {
         var created = new DateTimeOffset(2026, 10, 14, 12, 0, 0, TimeSpan.Zero);
@@ -229,6 +302,7 @@ public sealed class QuarantineStoreTests
             type.ShouldNotBeNull("T048 must implement the production protected filesystem quarantine store");
             return new(type);
         }
+        internal IQuarantineStore OpenAnotherStore() => (IQuarantineStore)ActivatorUtilities.CreateInstance(services, Store.GetType());
         public async ValueTask DisposeAsync()
         {
             if (Store is IAsyncDisposable disposable)

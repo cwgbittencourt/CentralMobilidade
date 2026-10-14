@@ -1,5 +1,18 @@
 # Quarentena protegida — T039
 
+## Atualização T048
+
+O adapter de produção foi implementado. Os 11 cenários originais e cinco cenários
+adicionais passaram no Windows (ACL real) e em Linux Docker com UID 10001 (sem root).
+Os novos casos verificam reabertura por outra instância, conflito de metadados,
+corrupção dos bytes originais, cancelamento com limpeza e prazo inferior a 30 dias.
+Integração completa: 155 aprovações e 34 falhas TDD restantes (15 Influx/T049 e
+19 processamento/T051); unitários 241/241 e arquitetura 47/47.
+Relatórios locais: `artifacts/validation/T048/quarantine-final.trx` e
+`artifacts/validation/T048/integration.trx`. A descrição abaixo registra a origem TDD.
+Formato, permissões e limites estão em
+`src/CentralMobilidade.Telemetry.Infrastructure/Quarantine/README.md`.
+
 ```powershell
 dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter FullyQualifiedName~QuarantineStoreTests
 ```
