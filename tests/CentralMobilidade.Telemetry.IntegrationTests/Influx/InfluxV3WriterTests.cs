@@ -70,7 +70,10 @@ public sealed class InfluxV3WriterTests
         using var client = new HttpClient();
         var writer = Writer(client, server.Url);
         var payload = Line + "invalid line\n" + Line;
-        var request = Request(TelemetryDestination.Queryable, 3) with { UncompressedBytes = Encoding.UTF8.GetByteCount(payload) };
+        var request = Request(TelemetryDestination.Queryable, 3) with
+        {
+            UncompressedBytes = Encoding.UTF8.GetByteCount(payload)
+        };
         using var gzip = Gzip(payload);
         var result = await writer.WriteAsync(request, gzip, CancellationToken.None);
         result.CommittedPoints.ShouldBe(2);
@@ -259,7 +262,8 @@ public sealed class InfluxRealServerTests : IClassFixture<InfluxContractServer>
         result.Rejections.ShouldBeEmpty();
         var json = await client.GetStringAsync(server.Url + "/api/v3/query_sql?db=pending&format=json&q=" + Uri.EscapeDataString("SELECT time FROM writerproof"));
         using var document = JsonDocument.Parse(json);
-        DateTimeOffset.Parse(document.RootElement[0].GetProperty("time").GetString()!, System.Globalization.CultureInfo.InvariantCulture).ToUnixTimeMilliseconds().ShouldBe(timestamp);
+        DateTimeOffset.Parse(document.RootElement[0].GetProperty("time").GetString()!, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal).ToUnixTimeMilliseconds().ShouldBe(timestamp);
     }
 
     [Fact]
@@ -278,6 +282,32 @@ public sealed class InfluxRealServerTests : IClassFixture<InfluxContractServer>
         var json = await client.GetStringAsync("/api/v3/query_sql?db=queryable&format=json&q=" + Uri.EscapeDataString("SELECT count(*) AS total FROM telemetria"));
         using var count = JsonDocument.Parse(json);
         count.RootElement[0].GetProperty("total").GetInt32().ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Production_writer_reconciles_partial_acceptance_against_real_server()
+    {
+        using var client = new HttpClient();
+        var writer = InfluxV3WriterTests.Writer(client, server.Url);
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var batch = new BatchId(Guid.NewGuid());
+        TelemetryWritePoint Point(int line, long time) => new(batch, line,
+            new(new CompanyId("company"), new VehicleId("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(time)));
+        var seed = $"partialwriterproof,empresa_id=company,veiculo_id=vehicle rpm=1i {timestamp}\n";
+        using (var gzip = InfluxV3WriterTests.Gzip(seed))
+            (await writer.WriteAsync(new(TelemetryDestination.Pending, "0123456789abcdef0123456789abcdef", [Point(1, timestamp)], Encoding.UTF8.GetByteCount(seed)), gzip, default)).CommittedPoints.ShouldBe(1);
+        var payload = $"partialwriterproof,empresa_id=company,veiculo_id=vehicle rpm=2i {timestamp + 1}\n" +
+            $"partialwriterproof,empresa_id=company,veiculo_id=vehicle rpm=\"wrong type\" {timestamp + 2}\n";
+        using var partial = InfluxV3WriterTests.Gzip(payload);
+        var result = await writer.WriteAsync(new(TelemetryDestination.Pending, "0123456789abcdef0123456789abcdef",
+            [Point(17, timestamp + 1), Point(29, timestamp + 2)], Encoding.UTF8.GetByteCount(payload)), partial, default);
+        result.CommittedPoints.ShouldBe(1);
+        var rejected = result.Rejections.ShouldHaveSingleItem();
+        rejected.BatchId.ShouldBe(batch);
+        rejected.LineNumber.ShouldBe(29);
+        rejected.ErrorCode.ShouldBe(TelemetryErrorCodes.StorageSchemaConflict);
+        using var document = JsonDocument.Parse(await client.GetStringAsync(server.Url + "/api/v3/query_sql?db=pending&format=json&q=" + Uri.EscapeDataString("SELECT count(*) AS total FROM partialwriterproof")));
+        document.RootElement[0].GetProperty("total").GetInt32().ShouldBe(2);
     }
 }
 

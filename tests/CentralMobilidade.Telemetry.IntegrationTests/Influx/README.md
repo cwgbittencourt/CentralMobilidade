@@ -1,5 +1,24 @@
 # Writer InfluxDB v3 — T038
 
+## Atualização T049
+
+O writer e o adapter cadastral estão implementados. Os 12 cenários originais do
+writer, o controle direto e uma nova prova de escrita parcial contra InfluxDB real
+passaram. Mais 23 cenários cobrem visibilidade explícita por empresa, consultas
+inconclusivas/indisponíveis, timeout/cancelamento, limites de resposta sem tamanho
+declarado, JSON/índices duplicados, transporte privado, status não confirmatório,
+422, destinos separados e redirects bloqueados pelo registro HTTP de produção.
+O teste de timestamp passou a interpretar os horários de consulta sem fuso como UTC.
+
+Integração completa: 191 aprovações e 22 falhas previstas (três T050, 19 T051).
+Unitários 241/241 e arquitetura 47/47. Relatórios locais ignorados em
+`artifacts/validation/T049/`: `writer-final.trx`, `safety.trx`, `integration.trx`,
+`unit.trx` e `architecture.trx`.
+
+Os três testes do batcher continuam aguardando T050; 19 cenários de processamento
+aguardam T051. As seções seguintes preservam o registro TDD da T038. Formato e
+configuração estão nos READMEs de `Infrastructure/Influx` e `Infrastructure/Cadastral`.
+
 ```powershell
 dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter "FullyQualifiedName~InfluxV3WriterTests|FullyQualifiedName~InfluxRealServerTests"
 ```
