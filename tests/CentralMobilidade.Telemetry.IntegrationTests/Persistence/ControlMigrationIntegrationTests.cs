@@ -30,8 +30,8 @@ public sealed partial class ControlMigrationTests
         LeaseUntil = now.AddMinutes(10),
         TelemetryExpiresAt = now.AddDays(60),
         GuardExpiresAt = now.AddDays(60),
-        Destination = TelemetryDestination.Pending,
-        StorageLocation = IdentityStorageLocation.PendingCommitted
+        Destination = PersistedTelemetryDestination.Pending,
+        StorageLocation = PersistedIdentityStorageLocation.PendingCommitted
     };
 
     [Fact]

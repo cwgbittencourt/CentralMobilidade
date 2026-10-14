@@ -35,15 +35,13 @@ public sealed class InfluxV3WriterTests
 {
     private const string Line = "telemetria,empresa_id=company,veiculo_id=vehicle latitude=1.0,longitude=2.0,velocidade=0.0,rpm=0i,ignicao=false 1791686400123\n";
 
-    [Theory]
-    [InlineData(TelemetryDestination.Queryable, "queryable")]
-    [InlineData(TelemetryDestination.Pending, "pending")]
-    public async Task Production_writer_uses_native_gzip_and_explicit_durable_v3_parameters(TelemetryDestination destination, string database)
+    [Fact]
+    public async Task Production_writer_uses_native_gzip_and_explicit_durable_v3_parameters()
     {
         await using var server = await WriteServer.Start();
         using var client = new HttpClient();
         var writer = Writer(client, server.Url);
-        var request = Request(destination);
+        var request = Request();
         using var gzip = Gzip(Line);
         var original = gzip.ToArray();
         var result = await writer.WriteAsync(request, gzip, CancellationToken.None);
@@ -51,7 +49,7 @@ public sealed class InfluxV3WriterTests
         result.Rejections.ShouldBeEmpty();
         server.Method.ShouldBe("POST");
         server.Path.ShouldBe("/api/v3/write_lp");
-        server.Query["db"].ShouldBe(database);
+        server.Query["db"].ShouldBe("queryable");
         server.Query["precision"].ShouldBe("millisecond");
         server.Query["accept_partial"].ShouldBe("true");
         server.Query["no_sync"].ShouldBe("false");
@@ -70,7 +68,7 @@ public sealed class InfluxV3WriterTests
         using var client = new HttpClient();
         var writer = Writer(client, server.Url);
         var payload = Line + "invalid line\n" + Line;
-        var request = Request(TelemetryDestination.Queryable, 3) with
+        var request = Request(3) with
         {
             UncompressedBytes = Encoding.UTF8.GetByteCount(payload)
         };
@@ -94,7 +92,7 @@ public sealed class InfluxV3WriterTests
         using var client = new HttpClient();
         var writer = Writer(client, server.Url);
         using var gzip = Gzip(Line);
-        var error = await Should.ThrowAsync<ProviderOperationException>(() => writer.WriteAsync(Request(TelemetryDestination.Queryable), gzip, CancellationToken.None).AsTask());
+        var error = await Should.ThrowAsync<ProviderOperationException>(() => writer.WriteAsync(Request(), gzip, CancellationToken.None).AsTask());
         error.Message.ShouldNotContain("SEEDED");
         error.InnerException.ShouldBeNull();
     }
@@ -110,7 +108,7 @@ public sealed class InfluxV3WriterTests
         using var client = new HttpClient();
         var writer = Writer(client, server.Url);
         using var gzip = Gzip(Line);
-        await Should.ThrowAsync<ProviderOperationException>(() => writer.WriteAsync(Request(TelemetryDestination.Queryable), gzip, CancellationToken.None).AsTask());
+        await Should.ThrowAsync<ProviderOperationException>(() => writer.WriteAsync(Request(), gzip, CancellationToken.None).AsTask());
     }
 
     [Theory]
@@ -128,7 +126,7 @@ public sealed class InfluxV3WriterTests
         var batcher = Activator.CreateInstance(type, capture, options, TimeProvider.System).ShouldNotBeNull();
         try
         {
-            var add = type.GetMethod("AddAsync", [typeof(TelemetryWritePoint), typeof(ReadOnlyMemory<byte>), typeof(TelemetryDestination), typeof(CancellationToken)]).ShouldNotBeNull();
+            var add = type.GetMethod("AddAsync", [typeof(TelemetryWritePoint), typeof(ReadOnlyMemory<byte>), typeof(CancellationToken)]).ShouldNotBeNull();
             var line = trigger == "bytes" ? Encoding.UTF8.GetBytes(new string('x', 8191) + "\n") : Encoding.UTF8.GetBytes(Line);
             var count = trigger == "count" ? 5000 : trigger == "bytes" ? 256 : 1;
             var elapsed = Stopwatch.StartNew();
@@ -136,7 +134,7 @@ public sealed class InfluxV3WriterTests
             {
                 if (i == count - 1)
                     capture.Calls.ShouldBe(0, "No threshold has been reached before the final point");
-                var operation = add.Invoke(batcher, [Point(i), new ReadOnlyMemory<byte>(line), TelemetryDestination.Queryable, CancellationToken.None]).ShouldBeOfType<ValueTask>();
+                var operation = add.Invoke(batcher, [Point(i), new ReadOnlyMemory<byte>(line), CancellationToken.None]).ShouldBeOfType<ValueTask>();
                 await operation;
             }
             await capture.Flushed.Task.WaitAsync(TimeSpan.FromSeconds(3));
@@ -171,8 +169,8 @@ public sealed class InfluxV3WriterTests
 
     private static TelemetryWritePoint Point(int index) => new(new BatchId(Guid.NewGuid()), 100 + index * 3,
         new EventIdentity(new CompanyId("company"), new VehicleId("vehicle-" + index), EventTimestamp.FromUnixTimeMilliseconds(1791686400123 + index)));
-    private static TelemetryWriteRequest Request(TelemetryDestination destination, int count = 1) =>
-        new(destination, "0123456789abcdef0123456789abcdef", Enumerable.Range(0, count).Select(Point).ToArray(), Encoding.UTF8.GetByteCount(Line) * count);
+    private static TelemetryWriteRequest Request(int count = 1) =>
+        new("0123456789abcdef0123456789abcdef", Enumerable.Range(0, count).Select(Point).ToArray(), Encoding.UTF8.GetByteCount(Line) * count);
     internal static MemoryStream Gzip(string body)
     {
         var output = new MemoryStream();
@@ -257,10 +255,10 @@ public sealed class InfluxRealServerTests : IClassFixture<InfluxContractServer>
         var point = new TelemetryWritePoint(new BatchId(Guid.NewGuid()), 17,
             new EventIdentity(new CompanyId("company"), new VehicleId("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(timestamp)));
         using var gzip = InfluxV3WriterTests.Gzip(line);
-        var result = await writer.WriteAsync(new(TelemetryDestination.Pending, "0123456789abcdef0123456789abcdef", [point], Encoding.UTF8.GetByteCount(line)), gzip, CancellationToken.None);
+        var result = await writer.WriteAsync(new("0123456789abcdef0123456789abcdef", [point], Encoding.UTF8.GetByteCount(line)), gzip, CancellationToken.None);
         result.CommittedPoints.ShouldBe(1);
         result.Rejections.ShouldBeEmpty();
-        var json = await client.GetStringAsync(server.Url + "/api/v3/query_sql?db=pending&format=json&q=" + Uri.EscapeDataString("SELECT time FROM writerproof"));
+        var json = await client.GetStringAsync(server.Url + "/api/v3/query_sql?db=queryable&format=json&q=" + Uri.EscapeDataString("SELECT time FROM writerproof"));
         using var document = JsonDocument.Parse(json);
         DateTimeOffset.Parse(document.RootElement[0].GetProperty("time").GetString()!, System.Globalization.CultureInfo.InvariantCulture,
             System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal).ToUnixTimeMilliseconds().ShouldBe(timestamp);
@@ -295,18 +293,18 @@ public sealed class InfluxRealServerTests : IClassFixture<InfluxContractServer>
             new(new CompanyId("company"), new VehicleId("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(time)));
         var seed = $"partialwriterproof,empresa_id=company,veiculo_id=vehicle rpm=1i {timestamp}\n";
         using (var gzip = InfluxV3WriterTests.Gzip(seed))
-            (await writer.WriteAsync(new(TelemetryDestination.Pending, "0123456789abcdef0123456789abcdef", [Point(1, timestamp)], Encoding.UTF8.GetByteCount(seed)), gzip, default)).CommittedPoints.ShouldBe(1);
+            (await writer.WriteAsync(new("0123456789abcdef0123456789abcdef", [Point(1, timestamp)], Encoding.UTF8.GetByteCount(seed)), gzip, default)).CommittedPoints.ShouldBe(1);
         var payload = $"partialwriterproof,empresa_id=company,veiculo_id=vehicle rpm=2i {timestamp + 1}\n" +
             $"partialwriterproof,empresa_id=company,veiculo_id=vehicle rpm=\"wrong type\" {timestamp + 2}\n";
         using var partial = InfluxV3WriterTests.Gzip(payload);
-        var result = await writer.WriteAsync(new(TelemetryDestination.Pending, "0123456789abcdef0123456789abcdef",
+        var result = await writer.WriteAsync(new("0123456789abcdef0123456789abcdef",
             [Point(17, timestamp + 1), Point(29, timestamp + 2)], Encoding.UTF8.GetByteCount(payload)), partial, default);
         result.CommittedPoints.ShouldBe(1);
         var rejected = result.Rejections.ShouldHaveSingleItem();
         rejected.BatchId.ShouldBe(batch);
         rejected.LineNumber.ShouldBe(29);
         rejected.ErrorCode.ShouldBe(TelemetryErrorCodes.StorageSchemaConflict);
-        using var document = JsonDocument.Parse(await client.GetStringAsync(server.Url + "/api/v3/query_sql?db=pending&format=json&q=" + Uri.EscapeDataString("SELECT count(*) AS total FROM partialwriterproof")));
+        using var document = JsonDocument.Parse(await client.GetStringAsync(server.Url + "/api/v3/query_sql?db=queryable&format=json&q=" + Uri.EscapeDataString("SELECT count(*) AS total FROM partialwriterproof")));
         document.RootElement[0].GetProperty("total").GetInt32().ShouldBe(2);
     }
 }

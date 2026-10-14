@@ -13,9 +13,8 @@ or safe destructive cleanup. Raw SDK diagnostics remain inside the adapter's pri
 | `IDurableBatchQueue` | Confirmation before a publish receipt; original gzip bytes in the native body; bounded consumption; explicit completion, retry, and dead-letter actions |
 | `IBatchStateStore` | Replay-safe creation and line results; atomic version-checked legal transitions; privacy-safe paginated rejections; complete company-scope evidence |
 | `IQuarantineStore` | Protected atomic content writes, bounded streaming, integrity digest, opaque references, deadline-checked idempotent deletion |
-| `IEventIdentityGuard` | Atomic reservation/resumption, lease renewal, expired-owner takeover with fencing, durable commit protection, fenced pending-to-queryable promotion |
-| `ITelemetryWriter` | Bounded gzip writes, millisecond precision, durable sync, source-line mapping for partial rejections, explicit destination |
-| `ICompanyVisibilityResolver` | Tenant-scoped cadastral decisions; unknown/unavailable/inconclusive companies remain pending |
+| `IEventIdentityGuard` | Atomic reservation/resumption, lease renewal, expired-owner takeover with fencing, durable commit protection and retention evidence |
+| `ITelemetryWriter` | Bounded gzip writes, millisecond precision, durable sync, source-line mapping for partial rejections, one implicit queryable destination |
 | `IDriverResolver` | Tenant-scoped minimal identity projection; no full CPF |
 | `IOperatorAuthorizer` | Trusted operator identity, enabled state, permissions, server-resolved company scope and explicit cross-company authorization |
 | `IAuditWriter` | Append-only, replay-safe, durable receipt; no sensitive disclosure if audit fails |
@@ -33,9 +32,12 @@ another write; existing fingerprint evidence produces exact replay/conflict resu
 and its expiry produces `AlreadyExistsUnclassified`. Requests carry separate guard/evidence deadlines;
 the guard must outlive its telemetry. Every mutation checks identity, owner, fencing version, state,
 and lease atomically. Resume may repeat only the same physical write after ambiguous persistence.
-Promotion reserves a separate fenced owner, reconciles the identical destination event, advances the
-guard to queryable, and permits pending-source deletion only afterward. These interfaces do not select
-the physical identity store: T041/ADR-001 remains mandatory before T047 implementation.
+Company existence is authoritative from a valid producer-supplied `empresa_id`. The application
+ports expose no company lookup, destination selection, storage relocation or promotion lease.
+`IDriverResolver` remains independent of telemetry eligibility. Infrastructure temporarily decodes
+legacy persisted destinations/locations until the T106 migration; it must never grant a new write
+or report a legacy pending identity as queryable. The physical identity store remains governed by
+T041/ADR-001 and its unresolved capacity gate.
 
 Batch snapshots distinguish an incomplete company scope from an empty known scope; callers must not
 interpret unknown companies as permission to disclose a batch. Authorization targets describe the

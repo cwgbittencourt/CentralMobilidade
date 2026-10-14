@@ -23,34 +23,40 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Recovery;
 
 public sealed class SelectedEventIdentityGuardTests
 {
-    [Fact]
-    public async Task Pending_promotion_is_fenced_and_preserves_original_evidence()
+    [Theory]
+    [InlineData(PersistedIdentityStorageLocation.PendingCommitted)]
+    [InlineData(PersistedIdentityStorageLocation.Promoting)]
+    public async Task Legacy_pending_identity_is_preserved_and_cannot_be_resumed_or_presented_as_queryable(PersistedIdentityStorageLocation location)
     {
         await using var postgres = await MigratedPostgresFixture.StartAsync();
         await using var services = new ServiceCollection().AddTelemetryControlPersistence(postgres.Connection).BuildServiceProvider();
         var guard = new SelectedEventIdentityGuard(services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>(), new Clock());
-        var request = Request("promotion", TelemetryDestination.Pending);
-        var lease = (await guard.AcquireOrResumeAsync(request, default)).ShouldBeOfType<IdentityReservationResult.Granted>().Lease;
-        (await guard.TryMarkWritingAsync(lease, DateTimeOffset.UtcNow, default)).ShouldBeTrue();
-        (await guard.TryCommitAsync(lease with
+        var request = Request("legacy");
+        await using var db = postgres.Create();
+        db.IdentityGuards.Add(new EventIdentityGuard
         {
-            State = IdentityGuardState.Writing
-        }, DateTimeOffset.UtcNow, default)).ShouldBeTrue();
-        (await guard.GetCommittedAsync(request.Identity, default))!.Location.ShouldBe(IdentityStorageLocation.PendingCommitted);
-        var owner = Guid.NewGuid();
-        var promotion = (await guard.TryBeginPromotionAsync(request.Identity, owner, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), default)).ShouldNotBeNull();
-        var resumed = (await guard.TryBeginPromotionAsync(request.Identity, owner, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), default)).ShouldNotBeNull();
-        resumed.FencingVersion.ShouldBe(promotion.FencingVersion);
-        (await guard.TryBeginPromotionAsync(request.Identity, Guid.NewGuid(), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), default)).ShouldBeNull();
-        await using (var db = postgres.Create())
-            await db.Database.ExecuteSqlRawAsync("UPDATE event_identity_guards SET \"PromotionLeaseUntil\"=clock_timestamp()-interval '1 second'");
-        var successor = (await guard.TryBeginPromotionAsync(request.Identity, Guid.NewGuid(), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), default)).ShouldNotBeNull();
-        successor.FencingVersion.ShouldBeGreaterThan(promotion.FencingVersion);
-        (await guard.RenewPromotionAsync(promotion, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(2), default)).ShouldBeNull();
-        (await guard.TryCompletePromotionAsync(promotion, DateTimeOffset.UtcNow, default)).ShouldBeFalse();
-        (await guard.TryCompletePromotionAsync(successor, DateTimeOffset.UtcNow, default)).ShouldBeTrue();
-        (await guard.GetCommittedAsync(request.Identity, default))!.Location.ShouldBe(IdentityStorageLocation.QueryableCommitted);
-        (await guard.AcquireOrResumeAsync(request, default)).ShouldBeOfType<IdentityReservationResult.Existing>().Outcome.ShouldBe(ExistingIdentityOutcome.IdenticalReplay);
+            CompanyId = request.Identity.CompanyId.Value,
+            VehicleId = request.Identity.VehicleId.Value,
+            EventTimestamp = request.Identity.Timestamp.Value,
+            State = IdentityGuardState.Committed,
+            OwnerBatchId = request.Owner.BatchId.Value,
+            OwnerLineNumber = 1,
+            FencingVersion = 1,
+            Destination = PersistedTelemetryDestination.Pending,
+            StorageLocation = location,
+            GuardExpiresAt = request.GuardExpiresAt,
+            TelemetryExpiresAt = request.GuardExpiresAt,
+            PromotionOwner = location == PersistedIdentityStorageLocation.Promoting ? Guid.NewGuid() : null,
+            PromotionLeaseUntil = location == PersistedIdentityStorageLocation.Promoting ? request.LeaseUntil : null
+        });
+        await db.SaveChangesAsync();
+        (await guard.AcquireOrResumeAsync(request, default)).ShouldBeOfType<IdentityReservationResult.Existing>()
+            .Outcome.ShouldBe(ExistingIdentityOutcome.AlreadyExistsUnclassified);
+        await Should.ThrowAsync<ProviderOperationException>(() => guard.GetCommittedAsync(request.Identity, default).AsTask());
+        var persisted = await db.IdentityGuards.AsNoTracking().SingleAsync();
+        persisted.Destination.ShouldBe(PersistedTelemetryDestination.Pending);
+        persisted.StorageLocation.ShouldBe(location);
+        persisted.FencingVersion.ShouldBe(1);
     }
 
     [Fact]
@@ -122,12 +128,12 @@ public sealed class SelectedEventIdentityGuardTests
         }, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private static IdentityReservationRequest Request(string vehicle, TelemetryDestination destination = TelemetryDestination.Queryable)
+    private static IdentityReservationRequest Request(string vehicle)
     {
         var now = DateTimeOffset.UtcNow;
         var timestamp = EventTimestamp.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds());
         return new(new(new("guard-tests"), new(vehicle), timestamp), new(new BatchId(Guid.NewGuid()), 1), new string('a', 64),
-            destination, now, now.AddMinutes(1), now.AddDays(60), now.AddDays(30));
+            now, now.AddMinutes(1), now.AddDays(60), now.AddDays(30));
     }
     private sealed class Clock : IClock
     {

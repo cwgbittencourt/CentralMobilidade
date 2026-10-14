@@ -42,7 +42,7 @@ public sealed class InfluxV3TelemetryWriter : ITelemetryWriter
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(gzipLineProtocol);
-        if (!Enum.IsDefined(request.Destination) || request.Points is null || request.Points.Count == 0 ||
+        if (request.Points is null || request.Points.Count == 0 ||
             request.Points.Count > maxPoints || request.UncompressedBytes <= 0 || request.UncompressedBytes > maxBytes || !gzipLineProtocol.CanRead)
             throw new ArgumentException("Invalid bounded write request.", nameof(request));
         var owners = new HashSet<(Guid, int)>();
@@ -51,7 +51,7 @@ public sealed class InfluxV3TelemetryWriter : ITelemetryWriter
                 throw new ArgumentException("Invalid or repeated write owner.", nameof(request));
         if (request.TraceId is null || request.TraceId.Length != 32 || !IsHexTrace(request.TraceId))
             throw new ArgumentException("A valid trace identifier is required.", nameof(request));
-        var store = request.Destination == TelemetryDestination.Queryable ? queryable : pending;
+        var store = queryable; // Application writes have exactly one destination; legacy configuration is removed in T107.
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(timeout);
         try

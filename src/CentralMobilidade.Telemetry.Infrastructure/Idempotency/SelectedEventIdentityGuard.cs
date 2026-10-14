@@ -24,9 +24,6 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
     public ValueTask<IdentityLease?> RenewAsync(IdentityLease lease, DateTimeOffset now, DateTimeOffset until, CancellationToken token) => Execute(() => RenewCore(lease, now, until, token));
     public ValueTask<bool> TryMarkWritingAsync(IdentityLease lease, DateTimeOffset now, CancellationToken token) => Execute(() => MarkWritingCore(lease, now, token));
     public ValueTask<bool> TryCommitAsync(IdentityLease lease, DateTimeOffset now, CancellationToken token) => Execute(() => CommitCore(lease, now, token));
-    public ValueTask<PromotionLease?> TryBeginPromotionAsync(EventIdentity id, Guid owner, DateTimeOffset now, DateTimeOffset until, CancellationToken token) => Execute(() => BeginPromotionCore(id, owner, now, until, token));
-    public ValueTask<PromotionLease?> RenewPromotionAsync(PromotionLease lease, DateTimeOffset now, DateTimeOffset until, CancellationToken token) => Execute(() => RenewPromotionCore(lease, now, until, token));
-    public ValueTask<bool> TryCompletePromotionAsync(PromotionLease lease, DateTimeOffset now, CancellationToken token) => Execute(() => CompletePromotionCore(lease, now, token));
     private static async ValueTask<T> Execute<T>(Func<ValueTask<T>> operation)
     {
         try
@@ -47,7 +44,9 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
         if (row?.State != IdentityGuardState.Committed)
             return null;
         var evidence = await Evidence(db, identity).AsNoTracking().SingleOrDefaultAsync(token);
-        return new(identity, row.StorageLocation, row.GuardExpiresAt,
+        if (row.Destination != PersistedTelemetryDestination.Queryable || row.StorageLocation != PersistedIdentityStorageLocation.QueryableCommitted)
+            throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Permanent); // T106 reconciliation required.
+        return new(identity, row.GuardExpiresAt,
             evidence?.EvidenceExpiresAt > clock.UtcNow ? evidence.EvidenceExpiresAt : null);
     }
 
@@ -60,7 +59,7 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
         Utc(request.LeaseUntil);
         Utc(request.GuardExpiresAt);
         Utc(request.EvidenceExpiresAt);
-        if (!Enum.IsDefined(request.Destination) || request.LeaseUntil <= request.Now || request.EvidenceExpiresAt <= request.Now || request.EvidenceExpiresAt - request.Now > TimeSpan.FromDays(30))
+        if (request.LeaseUntil <= request.Now || request.EvidenceExpiresAt <= request.Now || request.EvidenceExpiresAt - request.Now > TimeSpan.FromDays(30))
             throw new ArgumentException("Invalid identity reservation limits.", nameof(request));
         byte[] fingerprint;
         try
@@ -76,13 +75,14 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
         await using var db = await factory.CreateDbContextAsync(token);
         await using var transaction = await db.Database.BeginTransactionAsync(token);
         var id = request.Identity;
-        var location = request.Destination == TelemetryDestination.Pending ? "PendingCommitted" : "QueryableCommitted";
+        const string location = "QueryableCommitted";
+        const string destination = "Queryable";
         var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO event_identity_guards
             ("CompanyId","VehicleId","EventTimestamp","State","OwnerBatchId","OwnerLineNumber","LeaseUntil","FencingVersion",
              "Destination","StorageLocation","GuardExpiresAt","TelemetryExpiresAt")
             VALUES ({id.CompanyId.Value},{id.VehicleId.Value},{id.Timestamp.Value},'Reserved',{request.Owner.BatchId.Value},
-             {request.Owner.LineNumber},{Normalize(request.LeaseUntil)},1,{request.Destination.ToString()},{location},{Normalize(request.GuardExpiresAt)},{Normalize(telemetryExpires)})
+             {request.Owner.LineNumber},{Normalize(request.LeaseUntil)},1,{destination},{location},{Normalize(request.GuardExpiresAt)},{Normalize(telemetryExpires)})
             ON CONFLICT ("CompanyId","VehicleId","EventTimestamp") DO NOTHING
             """, token);
         var row = await Locked(db, id).SingleAsync(token);
@@ -116,14 +116,14 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
             return new IdentityReservationResult.Granted(Lease(row, id), false);
         }
         IdentityReservationResult result;
-        if (evidence is null || evidence.EvidenceExpiresAt <= request.Now)
+        if (row.Destination != PersistedTelemetryDestination.Queryable || row.StorageLocation != PersistedIdentityStorageLocation.QueryableCommitted)
+            result = new IdentityReservationResult.Existing(ExistingIdentityOutcome.AlreadyExistsUnclassified); // Preserve legacy data until T106.
+        else if (evidence is null || evidence.EvidenceExpiresAt <= request.Now)
             result = new IdentityReservationResult.Existing(ExistingIdentityOutcome.AlreadyExistsUnclassified);
         else if (!CryptographicOperations.FixedTimeEquals(evidence.CanonicalFingerprint, fingerprint))
             result = new IdentityReservationResult.Existing(ExistingIdentityOutcome.Conflict);
         else if (row.State == IdentityGuardState.Committed)
             result = new IdentityReservationResult.Existing(ExistingIdentityOutcome.IdenticalReplay);
-        else if (row.Destination != request.Destination)
-            result = new IdentityReservationResult.Contended(row.LeaseUntil!.Value);
         else
         {
             var sameOwner = row.OwnerBatchId == request.Owner.BatchId.Value && row.OwnerLineNumber == request.Owner.LineNumber;
@@ -184,56 +184,6 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
                 .SetProperty(row => row.LeaseUntil, (DateTimeOffset?)null), token) == 1;
     }
 
-    private async ValueTask<PromotionLease?> BeginPromotionCore(EventIdentity identity, Guid owner, DateTimeOffset now, DateTimeOffset until, CancellationToken token)
-    {
-        ValidateIdentity(identity);
-        Utc(now);
-        Utc(until);
-        if (owner == Guid.Empty || until <= now)
-            throw new ArgumentException("Invalid promotion lease.");
-        await using var db = await factory.CreateDbContextAsync(token);
-        await using var transaction = await db.Database.BeginTransactionAsync(token);
-        var row = await Locked(db, identity).SingleOrDefaultAsync(token);
-        if (row?.State != IdentityGuardState.Committed || row.StorageLocation == IdentityStorageLocation.QueryableCommitted)
-            return null;
-        var databaseNow = await db.Database.SqlQueryRaw<DateTimeOffset>("SELECT clock_timestamp() AS \"Value\"").SingleAsync(token);
-        var resume = row.StorageLocation == IdentityStorageLocation.Promoting && row.PromotionOwner == owner;
-        if (row.StorageLocation == IdentityStorageLocation.Promoting && !resume && (row.PromotionLeaseUntil > now || row.PromotionLeaseUntil > databaseNow))
-            return null;
-        if (!resume || row.PromotionLeaseUntil <= now || row.PromotionLeaseUntil <= databaseNow)
-            row.FencingVersion = checked(row.FencingVersion + 1);
-        row.StorageLocation = IdentityStorageLocation.Promoting;
-        row.PromotionOwner = owner;
-        row.PromotionLeaseUntil = Normalize(resume && row.PromotionLeaseUntil > until ? row.PromotionLeaseUntil.Value : until);
-        await db.SaveChangesAsync(token);
-        await transaction.CommitAsync(token);
-        return new(identity, owner, row.FencingVersion, row.PromotionLeaseUntil.Value);
-    }
-    private async ValueTask<PromotionLease?> RenewPromotionCore(PromotionLease lease, DateTimeOffset now, DateTimeOffset until, CancellationToken token)
-    {
-        ValidatePromotion(lease);
-        Utc(now);
-        Utc(until);
-        if (until <= now)
-            throw new ArgumentException("Invalid promotion deadline.", nameof(until));
-        await using var db = await factory.CreateDbContextAsync(token);
-        var changed = await Promoting(db, lease, now).Where(row => row.PromotionLeaseUntil <= until)
-            .ExecuteUpdateAsync(update => update.SetProperty(row => row.PromotionLeaseUntil, Normalize(until)), token);
-        return changed == 1 ? lease with
-        {
-            LeaseUntil = Normalize(until)
-        } : null;
-    }
-    private async ValueTask<bool> CompletePromotionCore(PromotionLease lease, DateTimeOffset now, CancellationToken token)
-    {
-        ValidatePromotion(lease);
-        Utc(now);
-        await using var db = await factory.CreateDbContextAsync(token);
-        return await Promoting(db, lease, now).ExecuteUpdateAsync(update => update
-            .SetProperty(row => row.StorageLocation, IdentityStorageLocation.QueryableCommitted)
-            .SetProperty(row => row.PromotionOwner, (Guid?)null).SetProperty(row => row.PromotionLeaseUntil, (DateTimeOffset?)null), token) == 1;
-    }
-
     private static IQueryable<EventIdentityGuard> Query(TelemetryControlDbContext db, EventIdentity id) => db.IdentityGuards
         .Where(row => row.CompanyId == id.CompanyId.Value && row.VehicleId == id.VehicleId.Value && row.EventTimestamp == id.Timestamp.Value);
     private static IQueryable<EventIdentityEvidence> Evidence(TelemetryControlDbContext db, EventIdentity id) => db.IdentityEvidence
@@ -243,11 +193,8 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
         """);
     private static IQueryable<EventIdentityGuard> Active(TelemetryControlDbContext db, IdentityLease lease, DateTimeOffset now) => Query(db, lease.Identity)
         .Where(row => row.OwnerBatchId == lease.Owner.BatchId.Value && row.OwnerLineNumber == lease.Owner.LineNumber && row.FencingVersion == lease.FencingVersion
-            && row.Destination == lease.Destination && row.State != IdentityGuardState.Committed && row.LeaseUntil > now && row.LeaseUntil > DateTimeOffset.UtcNow);
-    private static IQueryable<EventIdentityGuard> Promoting(TelemetryControlDbContext db, PromotionLease lease, DateTimeOffset now) => Query(db, lease.Identity)
-        .Where(row => row.State == IdentityGuardState.Committed && row.StorageLocation == IdentityStorageLocation.Promoting && row.PromotionOwner == lease.Owner
-            && row.FencingVersion == lease.FencingVersion && row.PromotionLeaseUntil > now && row.PromotionLeaseUntil > DateTimeOffset.UtcNow);
-    private static IdentityLease Lease(EventIdentityGuard row, EventIdentity id) => new(id, new(new(row.OwnerBatchId), checked((int)row.OwnerLineNumber)), row.FencingVersion, row.LeaseUntil!.Value, row.State, row.Destination);
+            && row.Destination == PersistedTelemetryDestination.Queryable && row.StorageLocation == PersistedIdentityStorageLocation.QueryableCommitted && row.State != IdentityGuardState.Committed && row.LeaseUntil > now && row.LeaseUntil > DateTimeOffset.UtcNow);
+    private static IdentityLease Lease(EventIdentityGuard row, EventIdentity id) => new(id, new(new(row.OwnerBatchId), checked((int)row.OwnerLineNumber)), row.FencingVersion, row.LeaseUntil!.Value, row.State);
     private static DateTimeOffset Normalize(DateTimeOffset time) => new(time.Ticks - time.Ticks % 10, TimeSpan.Zero);
     private static void Utc(DateTimeOffset time)
     {
@@ -275,12 +222,5 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
         ValidateOwner(lease.Owner);
         if (lease.FencingVersion <= 0)
             throw new ArgumentOutOfRangeException(nameof(lease));
-    }
-    private static void ValidatePromotion(PromotionLease lease)
-    {
-        ArgumentNullException.ThrowIfNull(lease);
-        ValidateIdentity(lease.Identity);
-        if (lease.Owner == Guid.Empty || lease.FencingVersion <= 0)
-            throw new ArgumentException("Invalid promotion lease.");
     }
 }

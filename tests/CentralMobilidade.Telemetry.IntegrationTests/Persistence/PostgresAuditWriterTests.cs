@@ -85,8 +85,8 @@ public sealed class PostgresAuditWriterTests
             LeaseUntil = now.AddMinutes(1),
             GuardExpiresAt = now.AddDays(60),
             TelemetryExpiresAt = now.AddDays(60),
-            Destination = TelemetryDestination.Pending,
-            StorageLocation = IdentityStorageLocation.PendingCommitted
+            Destination = PersistedTelemetryDestination.Pending,
+            StorageLocation = PersistedIdentityStorageLocation.PendingCommitted
         });
         db.IdentityEvidence.Add(new EventIdentityEvidence
         {

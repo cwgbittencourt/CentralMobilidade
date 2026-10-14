@@ -14,7 +14,7 @@ public interface ITelemetryWriter
     ValueTask<TelemetryWriteResult> WriteAsync(TelemetryWriteRequest request, Stream gzipLineProtocol, CancellationToken cancellationToken);
 }
 public sealed record TelemetryWritePoint(BatchId BatchId, int LineNumber, EventIdentity Identity);
-public sealed record TelemetryWriteRequest(TelemetryDestination Destination, string TraceId,
+public sealed record TelemetryWriteRequest(string TraceId,
     IReadOnlyList<TelemetryWritePoint> Points, long UncompressedBytes);
 public sealed record TelemetryWriteRejection(BatchId BatchId, int LineNumber, string ErrorCode);
 public sealed record TelemetryWriteResult(int CommittedPoints, IReadOnlyList<TelemetryWriteRejection> Rejections);

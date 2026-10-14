@@ -39,13 +39,25 @@ public sealed class ProviderPortTests
     }
 
     [Fact]
+    public void Single_store_ports_keep_driver_resolution_but_expose_no_company_routing_or_promotion()
+    {
+        var assembly = typeof(ITelemetryWriter).Assembly;
+        foreach (var name in new[] { "ICompanyVisibilityResolver", "CompanyVisibility", "TelemetryDestination", "IdentityStorageLocation", "PromotionLease" })
+            assembly.GetType("CentralMobilidade.Telemetry.Application.Abstractions." + name).ShouldBeNull();
+        typeof(IEventIdentityGuard).GetMethods().ShouldNotContain(method => method.Name.Contains("Promotion", StringComparison.Ordinal));
+        foreach (var type in new[] { typeof(TelemetryWriteRequest), typeof(IdentityReservationRequest), typeof(IdentityLease) })
+            type.GetProperty("Destination").ShouldBeNull();
+        typeof(IDriverResolver).GetMethod("ResolveAsync").ShouldNotBeNull();
+    }
+
+    [Fact]
     public void EveryExternalOperationRequiresCancellation()
     {
         Type[] ports =
         [
             typeof(IDurableBatchQueue), typeof(IQueueDelivery), typeof(IBatchStateStore),
             typeof(IQuarantineStore), typeof(IEventIdentityGuard), typeof(ITelemetryWriter),
-            typeof(ICompanyVisibilityResolver), typeof(IDriverResolver),
+            typeof(IDriverResolver),
             typeof(IOperatorAuthorizer), typeof(IAuditWriter)
         ];
         foreach (var port in ports)

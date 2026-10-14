@@ -173,11 +173,11 @@ public sealed class EventIdentityGuard
     {
         get; set;
     }
-    public TelemetryDestination Destination
+    public PersistedTelemetryDestination Destination
     {
         get; set;
     }
-    public IdentityStorageLocation StorageLocation
+    public PersistedIdentityStorageLocation StorageLocation
     {
         get; set;
     }
@@ -344,4 +344,15 @@ public sealed class AuditEvent
     {
         get; set;
     }
+}
+
+// Legacy storage vocabulary stays inside Infrastructure until the T106 forward migration.
+// These values are not application routing choices and must continue decoding existing rows.
+public enum PersistedTelemetryDestination
+{
+    Queryable, Pending
+}
+public enum PersistedIdentityStorageLocation
+{
+    PendingCommitted, Promoting, QueryableCommitted
 }

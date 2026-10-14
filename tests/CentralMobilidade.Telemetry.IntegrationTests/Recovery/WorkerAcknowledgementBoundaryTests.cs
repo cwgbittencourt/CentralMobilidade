@@ -37,21 +37,18 @@ public sealed class WorkerAcknowledgementBoundaryTests
     [Trait("Feature", "FoundationSingleInflux")]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Processing_valid_company_ids_needs_no_registry_or_pending_destination(bool omitResolver)
+    public async Task Processing_valid_company_ids_needs_no_registry_or_pending_destination(bool legacyLookupConfigured)
     {
         // Remains red for absent T051; this task must not implement the processing handler.
-        await using var fixture = await Fixture.Create(true, forbidCompanyLookup: true, omitCompanyLookup: omitResolver);
+        await using var fixture = await Fixture.Create(true, legacyLookupConfigured: legacyLookupConfigured);
         var raw = RawLine.Replace("empresa_id=company", "empresa_id=not-in-registry-a", StringComparison.Ordinal) +
             RawLine.Replace("empresa_id=company", "empresa_id=not-in-registry-b", StringComparison.Ordinal);
         var metadata = await fixture.Accepted(raw);
         await using var delivery = new Delivery(metadata, fixture.Probe, raw: raw);
         await fixture.Run(delivery);
         delivery.Completed.ShouldBeTrue();
-        fixture.Probe.CompanyLookupCalls.ShouldBe(0);
         fixture.Writer.Points.Keys.Select(identity => identity.CompanyId.Value).OrderBy(id => id)
             .ShouldBe(new[] { "not-in-registry-a", "not-in-registry-b" });
-        fixture.Writer.Destinations.ShouldNotBeEmpty();
-        fixture.Writer.Destinations.ShouldAllBe(destination => destination == TelemetryDestination.Queryable);
         var snapshot = (await fixture.RealStore.GetAsync(new(metadata.BatchId), default)).ShouldNotBeNull();
         snapshot.State.ShouldBe(BatchLifecycle.Completed);
         snapshot.Counters.Accepted.ShouldBe(2);
@@ -62,21 +59,22 @@ public sealed class WorkerAcknowledgementBoundaryTests
     public async Task Concurrent_reservation_has_one_winner_and_conflicting_contender_cannot_replace_it()
     {
         await using var fixture = await Fixture.Create(false);
-        var requests = Enumerable.Range(0, 16).Select(_ => Reservation()).ToArray();
+        var now = DateTimeOffset.UtcNow;
+        var requests = Enumerable.Range(0, 16).Select(_ => Reservation(now)).ToArray();
         var results = await Task.WhenAll(requests.Select(request => fixture.Guard.AcquireOrResumeAsync(request, CancellationToken.None).AsTask()));
         results.OfType<IdentityReservationResult.Granted>().Count().ShouldBe(1);
         var lease = results.OfType<IdentityReservationResult.Granted>().Single().Lease;
-        (await fixture.Guard.TryMarkWritingAsync(lease, Now, CancellationToken.None)).ShouldBeTrue();
+        (await fixture.Guard.TryMarkWritingAsync(lease, now, CancellationToken.None)).ShouldBeTrue();
         (await fixture.Guard.TryCommitAsync(lease with
         {
             State = IdentityGuardState.Writing
-        }, Now, CancellationToken.None)).ShouldBeTrue();
-        var conflict = await fixture.Guard.AcquireOrResumeAsync(Reservation() with
+        }, now, CancellationToken.None)).ShouldBeTrue();
+        var conflict = await fixture.Guard.AcquireOrResumeAsync(Reservation(now) with
         {
             Fingerprint = new string('b', 64)
         }, CancellationToken.None);
         conflict.ShouldBeOfType<IdentityReservationResult.Existing>().Outcome.ShouldBe(ExistingIdentityOutcome.Conflict);
-        var replay = await fixture.Guard.AcquireOrResumeAsync(Reservation(), CancellationToken.None);
+        var replay = await fixture.Guard.AcquireOrResumeAsync(Reservation(now), CancellationToken.None);
         replay.ShouldBeOfType<IdentityReservationResult.Existing>().Outcome.ShouldBe(ExistingIdentityOutcome.IdenticalReplay);
     }
 
@@ -86,11 +84,12 @@ public sealed class WorkerAcknowledgementBoundaryTests
     public async Task Owner_resume_retains_fence_and_takeover_fences_stale_writers(bool writing)
     {
         await using var fixture = await Fixture.Create(false);
-        var request = Reservation();
+        var now = DateTimeOffset.UtcNow;
+        var request = Reservation(now);
         var lease = (await fixture.Guard.AcquireOrResumeAsync(request, CancellationToken.None)).ShouldBeOfType<IdentityReservationResult.Granted>().Lease;
         if (writing)
         {
-            (await fixture.Guard.TryMarkWritingAsync(lease, Now, CancellationToken.None)).ShouldBeTrue();
+            (await fixture.Guard.TryMarkWritingAsync(lease, now, CancellationToken.None)).ShouldBeTrue();
             lease = lease with
             {
                 State = IdentityGuardState.Writing
@@ -98,13 +97,13 @@ public sealed class WorkerAcknowledgementBoundaryTests
         }
         var resume = (await fixture.Guard.AcquireOrResumeAsync(request with
         {
-            Now = Now.AddSeconds(1)
+            Now = now.AddSeconds(1)
         }, CancellationToken.None)).ShouldBeOfType<IdentityReservationResult.Granted>();
         resume.IsResumption.ShouldBeTrue();
         resume.Lease.FencingVersion.ShouldBe(lease.FencingVersion);
-        var competing = Reservation() with
+        var competing = Reservation(now) with
         {
-            Now = Now.AddSeconds(2)
+            Now = now.AddSeconds(2)
         };
         (await fixture.Guard.AcquireOrResumeAsync(competing, CancellationToken.None)).ShouldBeOfType<IdentityReservationResult.Contended>();
         // Represent real lease expiry in the isolated database: database triggers use server time.
@@ -112,8 +111,8 @@ public sealed class WorkerAcknowledgementBoundaryTests
             await db.Database.ExecuteSqlRawAsync("UPDATE event_identity_guards SET \"LeaseUntil\"=clock_timestamp()-interval '1 second' WHERE \"OwnerBatchId\"={0}", request.Owner.BatchId.Value);
         competing = competing with
         {
-            Now = Now.AddMinutes(2),
-            LeaseUntil = Now.AddMinutes(3)
+            Now = now.AddMinutes(2),
+            LeaseUntil = now.AddMinutes(3)
         };
         var takeovers = await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => fixture.Guard.AcquireOrResumeAsync(competing with { Owner = new(new BatchId(Guid.NewGuid()), 1) }, CancellationToken.None).AsTask()));
         var successor = takeovers.OfType<IdentityReservationResult.Granted>().Single().Lease;
@@ -132,27 +131,28 @@ public sealed class WorkerAcknowledgementBoundaryTests
     public async Task Expired_evidence_still_blocks_committed_identity(ExistingIdentityOutcome previousClassification)
     {
         await using var fixture = await Fixture.Create(false);
-        var request = Reservation();
+        var now = DateTimeOffset.UtcNow;
+        var request = Reservation(now);
         var lease = (await fixture.Guard.AcquireOrResumeAsync(request, CancellationToken.None)).ShouldBeOfType<IdentityReservationResult.Granted>().Lease;
-        (await fixture.Guard.TryMarkWritingAsync(lease, Now, CancellationToken.None)).ShouldBeTrue();
+        (await fixture.Guard.TryMarkWritingAsync(lease, now, CancellationToken.None)).ShouldBeTrue();
         (await fixture.Guard.TryCommitAsync(lease with
         {
             State = IdentityGuardState.Writing
-        }, Now, CancellationToken.None)).ShouldBeTrue();
+        }, now, CancellationToken.None)).ShouldBeTrue();
         var fingerprint = previousClassification == ExistingIdentityOutcome.Conflict ? new string('b', 64) : Fingerprint;
-        (await fixture.Guard.AcquireOrResumeAsync(Reservation() with
+        (await fixture.Guard.AcquireOrResumeAsync(Reservation(now) with
         {
             Fingerprint = fingerprint
         }, CancellationToken.None))
             .ShouldBeOfType<IdentityReservationResult.Existing>().Outcome.ShouldBe(previousClassification);
         await using var db = fixture.Database.Create();
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM event_identity_evidence WHERE \"EvidenceExpiresAt\" <= {0}", Now.AddDays(31));
-        var expired = await fixture.Guard.AcquireOrResumeAsync(Reservation() with
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM event_identity_evidence WHERE \"EvidenceExpiresAt\" <= {0}", now.AddDays(31));
+        var expired = await fixture.Guard.AcquireOrResumeAsync(Reservation(now) with
         {
             Fingerprint = fingerprint,
-            Now = Now.AddDays(31),
-            LeaseUntil = Now.AddDays(31).AddMinutes(1),
-            EvidenceExpiresAt = Now.AddDays(61)
+            Now = now.AddDays(31),
+            LeaseUntil = now.AddDays(31).AddMinutes(1),
+            EvidenceExpiresAt = now.AddDays(61)
         }, CancellationToken.None);
         expired.ShouldBeOfType<IdentityReservationResult.Existing>().Outcome.ShouldBe(ExistingIdentityOutcome.AlreadyExistsUnclassified);
         (await fixture.Guard.GetCommittedAsync(Identity, CancellationToken.None)).ShouldNotBeNull();
@@ -213,14 +213,15 @@ public sealed class WorkerAcknowledgementBoundaryTests
         (await fixture.Guard.GetCommittedAsync(Identity, CancellationToken.None)).ShouldNotBeNull();
     }
 
-    private static IdentityReservationRequest Reservation() => new(Identity, new(new BatchId(Guid.NewGuid()), 1), Fingerprint,
-        TelemetryDestination.Queryable, Now, Now.AddMinutes(1), Now.AddDays(60), Now.AddDays(30));
+    private static IdentityReservationRequest Reservation(DateTimeOffset now) => new(Identity, new(new BatchId(Guid.NewGuid()), 1), Fingerprint,
+        now, now.AddMinutes(1), now.AddDays(60), now.AddDays(30));
 
     [Fact]
     public async Task Resuming_owner_cannot_change_reserved_fingerprint()
     {
         await using var fixture = await Fixture.Create(false);
-        var request = Reservation();
+        var now = DateTimeOffset.UtcNow;
+        var request = Reservation(now);
         (await fixture.Guard.AcquireOrResumeAsync(request, CancellationToken.None)).ShouldBeOfType<IdentityReservationResult.Granted>();
         var changed = await fixture.Guard.AcquireOrResumeAsync(request with
         {
@@ -321,7 +322,6 @@ public sealed class WorkerAcknowledgementBoundaryTests
     {
         internal string? FailAt;
         internal bool Triggered;
-        internal int CompanyLookupCalls;
         internal ConcurrentQueue<string> Events { get; } = new();
         internal void Hit(string stage)
         {
@@ -360,22 +360,23 @@ public sealed class WorkerAcknowledgementBoundaryTests
         }
         internal Clock Clock { get; } = new();
         private readonly Type? handlerType;
-        private Fixture(MigratedPostgresFixture database, Type guardType, Type? handlerType, bool forbidCompanyLookup, bool omitCompanyLookup)
+        private Fixture(MigratedPostgresFixture database, Type guardType, Type? handlerType, bool legacyLookupConfigured)
         {
             Database = database;
             var collection = new ServiceCollection();
             collection.AddTelemetryControlPersistence(database.Connection);
             collection.AddLogging();
             collection.AddSingleton<IClock>(Clock);
-            collection.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+            collection.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Cadastral:CompanyVisibilityUrl"] = legacyLookupConfigured ? "http://127.0.0.1:1/obsolete-company-lookup" : null
+            }).Build());
             var options = new TelemetryOptions { WriteBatchMaxPoints = 1 };
             collection.AddSingleton(options);
             collection.AddSingleton<IOptions<TelemetryOptions>>(Options.Create(options));
             collection.AddSingleton(TimeProvider.System);
             Writer = new(Probe);
             collection.AddSingleton<ITelemetryWriter>(Writer);
-            if (!omitCompanyLookup)
-                collection.AddSingleton<ICompanyVisibilityResolver>(new Visibility(Probe, forbidCompanyLookup));
             Quarantine = new(Probe);
             collection.AddSingleton<IQuarantineStore>(Quarantine);
             collection.AddTransient<IEventIdentityGuard>(provider => new GuardDecorator(ActivatorUtilities.CreateInstance(provider, guardType).ShouldBeAssignableTo<IEventIdentityGuard>()!, Probe));
@@ -388,7 +389,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
             RealStore = new PostgresBatchStateStore(services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>());
             this.handlerType = handlerType;
         }
-        internal static async Task<Fixture> Create(bool processing, bool forbidCompanyLookup = false, bool omitCompanyLookup = false)
+        internal static async Task<Fixture> Create(bool processing, bool legacyLookupConfigured = false)
         {
             var handlerType = typeof(AcceptTelemetryBatchHandler).Assembly.GetType("CentralMobilidade.Telemetry.Application.Processing.ProcessTelemetryBatchHandler");
             if (processing)
@@ -398,7 +399,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
             var database = await MigratedPostgresFixture.StartAsync();
             try
             {
-                return new(database, guardType, processing ? handlerType : null, forbidCompanyLookup, omitCompanyLookup);
+                return new(database, guardType, processing ? handlerType : null, legacyLookupConfigured);
             }
             catch { await database.DisposeAsync(); throw; }
         }
@@ -462,9 +463,6 @@ public sealed class WorkerAcknowledgementBoundaryTests
             probe.Hit("after-committed");
             return result;
         }
-        public ValueTask<PromotionLease?> TryBeginPromotionAsync(EventIdentity identity, Guid owner, DateTimeOffset now, DateTimeOffset until, CancellationToken token) => inner.TryBeginPromotionAsync(identity, owner, now, until, token);
-        public ValueTask<PromotionLease?> RenewPromotionAsync(PromotionLease lease, DateTimeOffset now, DateTimeOffset until, CancellationToken token) => inner.RenewPromotionAsync(lease, now, until, token);
-        public ValueTask<bool> TryCompletePromotionAsync(PromotionLease lease, DateTimeOffset now, CancellationToken token) => inner.TryCompletePromotionAsync(lease, now, token);
     }
 
     private sealed class StoreDecorator(IBatchStateStore inner, Probe probe) : IBatchStateStore
@@ -494,13 +492,11 @@ public sealed class WorkerAcknowledgementBoundaryTests
     {
         internal ConcurrentDictionary<EventIdentity, byte[]> Points { get; } = new();
         internal int Calls;
-        internal ConcurrentQueue<TelemetryDestination> Destinations { get; } = new();
         internal bool ChangedOriginal;
         internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource? Hold;
         public async ValueTask<TelemetryWriteResult> WriteAsync(TelemetryWriteRequest request, Stream body, CancellationToken token)
         {
-            Destinations.Enqueue(request.Destination);
             probe.Hit("before-influx");
             Entered.TrySetResult();
             if (Hold is not null)
@@ -553,16 +549,6 @@ public sealed class WorkerAcknowledgementBoundaryTests
     private sealed class Clock : IClock
     {
         public DateTimeOffset UtcNow { get; set; } = Now;
-    }
-    private sealed class Visibility(Probe probe, bool forbidden) : ICompanyVisibilityResolver
-    {
-        public ValueTask<CompanyVisibility> ResolveAsync(CompanyId company, CancellationToken token)
-        {
-            Interlocked.Increment(ref probe.CompanyLookupCalls);
-            if (forbidden)
-                throw new InvalidOperationException("Company existence lookup must not gate valid internal telemetry.");
-            return ValueTask.FromResult(CompanyVisibility.Visible);
-        }
     }
     private sealed class Quarantine(Probe probe) : IQuarantineStore
     {

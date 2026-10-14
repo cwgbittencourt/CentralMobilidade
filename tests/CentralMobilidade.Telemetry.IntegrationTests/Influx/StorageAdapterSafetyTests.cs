@@ -10,7 +10,6 @@ using CentralMobilidade.Telemetry.Application.Abstractions;
 using CentralMobilidade.Telemetry.Application.LineProtocol;
 using CentralMobilidade.Telemetry.Contracts.Errors;
 using CentralMobilidade.Telemetry.Domain.ValueObjects;
-using CentralMobilidade.Telemetry.Infrastructure.Cadastral;
 using CentralMobilidade.Telemetry.Infrastructure.Influx;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -95,64 +94,11 @@ public sealed class StorageAdapterSafetyTests
             new TelemetryWritePoint(batchId, index + 1,
                 new(new(company), new("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(1)))).ToArray();
         using var gzip = InfluxV3WriterTests.Gzip(raw);
-        var result = await writer.WriteAsync(new(TelemetryDestination.Queryable,
+        var result = await writer.WriteAsync(new(
             "0123456789abcdef0123456789abcdef", points, Encoding.UTF8.GetByteCount(raw)), gzip, default);
         result.CommittedPoints.ShouldBe(2);
         result.Rejections.ShouldBeEmpty();
         calls.ShouldBe(1, "Only the single storage endpoint may be called");
-    }
-
-    [Theory]
-    [InlineData(200, "{\"companyId\":\"company\",\"visible\":true}", CompanyVisibility.Visible)]
-    [InlineData(200, "{\"companyId\":\"company\",\"visible\":false}", CompanyVisibility.Unknown)]
-    [InlineData(200, "{\"companyId\":\"other\",\"visible\":true}", CompanyVisibility.Inconclusive)]
-    [InlineData(200, "{\"visible\":true}", CompanyVisibility.Inconclusive)]
-    [InlineData(200, "{\"companyId\":\"company\",\"visible\":true,\"visible\":false}", CompanyVisibility.Inconclusive)]
-    [InlineData(200, "not-json", CompanyVisibility.Inconclusive)]
-    [InlineData(404, "", CompanyVisibility.Unknown)]
-    [InlineData(503, "SEEDED_PRIVATE_PROVIDER_BODY", CompanyVisibility.Unavailable)]
-    public async Task Visibility_requires_an_explicit_tenant_matching_positive_response(int status, string body, CompanyVisibility expected)
-    {
-        using var client = new HttpClient(new Handler((request, _) =>
-        {
-            request.RequestUri!.Query.ShouldBe("?companyId=company");
-            request.Headers.Authorization!.ToString().ShouldBe("Bearer private-token");
-            return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status) { Content = new StringContent(body) });
-        }));
-        var adapter = new ConfiguredCadastralAdapter(client, Config());
-        (await adapter.ResolveAsync(new CompanyId("company"), default)).ShouldBe(expected);
-    }
-
-    [Fact]
-    public async Task Unconfigured_visibility_is_unavailable_without_network_access()
-    {
-        using var client = new HttpClient(new Handler((_, _) => throw new InvalidOperationException("No network expected")));
-        var adapter = new ConfiguredCadastralAdapter(client, new ConfigurationBuilder().Build());
-        (await adapter.ResolveAsync(new("company"), default)).ShouldBe(CompanyVisibility.Unavailable);
-    }
-
-    [Fact]
-    public async Task Lookup_timeout_is_unavailable_but_caller_cancellation_propagates()
-    {
-        using var client = new HttpClient(new Handler(async (_, token) =>
-        {
-            await Task.Delay(Timeout.InfiniteTimeSpan, token);
-            return new HttpResponseMessage(HttpStatusCode.OK);
-        }));
-        var adapter = new ConfiguredCadastralAdapter(client, Config("00:00:00.05"));
-        (await adapter.ResolveAsync(new("company"), default)).ShouldBe(CompanyVisibility.Unavailable);
-        using var cancelled = new CancellationTokenSource();
-        cancelled.Cancel();
-        await Should.ThrowAsync<OperationCanceledException>(() => adapter.ResolveAsync(new("company"), cancelled.Token).AsTask());
-    }
-
-    [Fact]
-    public async Task Unbounded_visibility_body_cannot_grant_visibility()
-    {
-        using var body = new GeneratedBody(1024 * 1024);
-        using var client = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(body) })));
-        (await new ConfiguredCadastralAdapter(client, Config()).ResolveAsync(new("company"), default)).ShouldBe(CompanyVisibility.Unavailable);
-        body.ReadBytes.ShouldBeLessThanOrEqualTo(16385);
     }
 
     [Theory]
@@ -246,27 +192,33 @@ public sealed class StorageAdapterSafetyTests
     }
 
     [Fact]
-    public async Task Production_http_registration_does_not_follow_visibility_redirects()
+    public async Task Production_http_registration_ignores_legacy_company_lookup_and_does_not_follow_storage_redirects()
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         await using var app = builder.Build();
-        var positiveCalls = 0;
-        app.MapGet("/visibility", () => Microsoft.AspNetCore.Http.Results.Redirect("/positive"));
-        app.MapGet("/positive", () => { positiveCalls++; return new { companyId = "company", visible = true }; });
+        var lookupCalls = 0;
+        var redirectCalls = 0;
+        app.MapGet("/visibility", () => { lookupCalls++; return new { companyId = "company", visible = false }; });
+        app.MapPost("/api/v3/write_lp", () => Microsoft.AspNetCore.Http.Results.Redirect("/positive", preserveMethod: true));
+        app.MapPost("/positive", () => { redirectCalls++; return Microsoft.AspNetCore.Http.Results.NoContent(); });
         await app.StartAsync();
         try
         {
             var origin = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
-            var configuration = new ConfigurationBuilder().AddConfiguration(Config()).AddInMemoryCollection(new Dictionary<string, string?>
+            var configuration = new ConfigurationBuilder().AddConfiguration(WriterConfig()).AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["InfluxDb:Queryable:Url"] = origin,
                 ["Cadastral:CompanyVisibilityUrl"] = origin + "/visibility"
             }).Build();
             await using var services = new ServiceCollection().AddSingleton<IConfiguration>(configuration).AddTelemetryStorageAdapters().BuildServiceProvider();
-            var resolver = services.GetRequiredService<ICompanyVisibilityResolver>();
-            (await resolver.ResolveAsync(new("company"), default)).ShouldBe(CompanyVisibility.Unavailable);
-            positiveCalls.ShouldBe(0);
+            using var gzip = InfluxV3WriterTests.Gzip("a f=1i 1\n");
+            var failure = await Should.ThrowAsync<ProviderOperationException>(() =>
+                services.GetRequiredService<ITelemetryWriter>().WriteAsync(Request(), gzip, default).AsTask());
+            failure.Kind.ShouldBe(ProviderFailureKind.Ambiguous);
+            lookupCalls.ShouldBe(0);
+            redirectCalls.ShouldBe(0);
         }
         finally { await app.StopAsync(); }
     }
@@ -283,14 +235,8 @@ public sealed class StorageAdapterSafetyTests
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
     }
 
-    private static TelemetryWriteRequest Request() => new(TelemetryDestination.Queryable, "0123456789abcdef0123456789abcdef",
+    private static TelemetryWriteRequest Request() => new( "0123456789abcdef0123456789abcdef",
         [new(new BatchId(Guid.NewGuid()), 17, new(new("company"), new("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(1)))], 10);
-    private static IConfiguration Config(string timeout = "00:00:02") => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-    {
-        ["Cadastral:CompanyVisibilityUrl"] = "http://localhost/visibility",
-        ["Cadastral:Token"] = "private-token",
-        ["Cadastral:LookupTimeout"] = timeout
-    }).Build();
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request, cancellationToken);

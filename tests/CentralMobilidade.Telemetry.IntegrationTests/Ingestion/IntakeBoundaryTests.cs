@@ -62,7 +62,6 @@ public sealed class IntakeBoundaryTests
             snapshot.State.ShouldBe(BatchLifecycle.Accepted);
             snapshot.CompletedAt.ShouldBeNull("Durable intake is still awaiting asynchronous processing");
         }
-        fixture.CompanyLookup.Calls.ShouldBe(0);
     }
 
     [Theory]
@@ -247,7 +246,6 @@ public sealed class IntakeBoundaryTests
         internal QueueSpy Queue { get; } = new();
         internal StateSpy Store { get; } = new();
         internal RequestObserver Observer { get; } = new();
-        internal ForbiddenCompanyLookup CompanyLookup { get; } = new();
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -255,6 +253,7 @@ public sealed class IntakeBoundaryTests
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["AllowedHosts"] = "localhost",
+                ["Cadastral:CompanyVisibilityUrl"] = forbidCompanyLookup ? "http://127.0.0.1:1/obsolete-company-lookup" : null,
                 ["ConnectionStrings:TelemetryControl"] = "",
                 ["Telemetry:MaxCompressedBytes"] = maxCompressedBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Telemetry:UploadTimeout"] = (uploadTimeout ?? TimeSpan.FromSeconds(3)).ToString("c"),
@@ -273,11 +272,6 @@ public sealed class IntakeBoundaryTests
                 services.AddSingleton<IDurableBatchQueue>(Queue);
                 services.RemoveAll<IBatchStateStore>();
                 services.AddSingleton<IBatchStateStore>(Store);
-                if (forbidCompanyLookup)
-                {
-                    services.RemoveAll<ICompanyVisibilityResolver>();
-                    services.AddSingleton<ICompanyVisibilityResolver>(CompanyLookup);
-                }
                 services.AddSingleton<IStartupFilter>(Observer);
                 services.Configure<ForwardedHeadersOptions>(options =>
                 {
@@ -318,16 +312,6 @@ public sealed class IntakeBoundaryTests
                     context.Request.Headers["X-Forwarded-Proto"] = forwardedProto;
                 context.Request.Headers["X-Forwarded-Host"] = "spoofed.invalid";
             }, cancellationToken);
-        }
-    }
-
-    private sealed class ForbiddenCompanyLookup : ICompanyVisibilityResolver
-    {
-        internal int Calls;
-        public ValueTask<CompanyVisibility> ResolveAsync(CompanyId companyId, CancellationToken cancellationToken)
-        {
-            Interlocked.Increment(ref Calls);
-            throw new InvalidOperationException("Company existence lookup must not gate internal telemetry intake.");
         }
     }
 

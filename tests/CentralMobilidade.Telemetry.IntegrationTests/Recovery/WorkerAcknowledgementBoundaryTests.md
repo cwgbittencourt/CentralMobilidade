@@ -57,8 +57,9 @@ Os outros seis cenários verificam:
 O writer controlado preserva o primeiro conteúdo por identidade e conta chamadas
 físicas; adulteração é detectada separadamente, portanto deduplicação do ledger não
 mascara um handler que tente reescrever conteúdo diferente. Quarentena também é
-replay-safe por ID, exigindo recuperação sem criar outro item. Visibilidade é Visible
-para isolar as fronteiras de durabilidade.
+replay-safe por ID, exigindo recuperação sem criar outro item. Desde T105 não existe
+resolver de visibilidade no contrato; os cenários T104 exercitam configuração cadastral
+legada ausente ou indisponível sem introduzir um resolver substituto.
 
 ## Limites da prova e resultado TDD
 

@@ -32,8 +32,7 @@ Transport/timeouts are ambiguous provider failures; caller cancellation propagat
 text nor an inner exception. The writer performs no automatic retry: lease ownership
 and replay reconciliation belong to T051.
 
-`AddTelemetryStorageAdapters()` registers the writer and the company-visibility
-resolver as typed HTTP clients with redirects, cookies and automatic decompression
+`AddTelemetryStorageAdapters()` registers only the writer as a typed HTTP client with redirects, cookies and automatic decompression
 disabled, all logged headers redacted, and connection pooling. Adapter deadlines own
 timeouts. Worker wiring remains T053. Callers constructing adapters directly must
 supply equally controlled HttpClient handlers.
@@ -47,3 +46,14 @@ timestamps as UTC rather than interpreting them in the Windows local timezone.
 Protocol source: [InfluxDB 3 Core write API](https://docs.influxdata.com/influxdb3/core/api/write-data/),
 checked 2026-10-14. End-to-end persistence/ack recovery remains T051 and later recovery
 tests; assembly of count/byte/time batches remains T050.
+
+## T105 — application contract transition (2026-10-14)
+
+`TelemetryWriteRequest` no longer has a destination parameter. All application writes
+use Queryable; company existence is authoritative from the producer's valid `empresa_id`.
+The obsolete company-visibility resolver/HTTP adapter and its registration were removed
+with the application port. Driver resolution remains a separate port.
+
+The constructor still validates the legacy Pending configuration shown above; removing
+that configuration requirement is T107. PostgreSQL still retains its legacy schema until
+T106. Do not infer that the single-container Compose transition has happened (T109).

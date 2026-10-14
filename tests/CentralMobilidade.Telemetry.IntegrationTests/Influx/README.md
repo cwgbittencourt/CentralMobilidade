@@ -54,7 +54,7 @@ disco/WAL ou perda física do host; isso pertence aos testes de recuperação.
 ## Limites do montador
 
 A ponte propõe `InfluxWriteBatcher(ITelemetryWriter, TelemetryOptions, TimeProvider)`
-e `AddAsync(TelemetryWritePoint, ReadOnlyMemory<byte>, TelemetryDestination, CancellationToken)`
+e `AddAsync(TelemetryWritePoint, ReadOnlyMemory<byte>, CancellationToken)`
 retornando `ValueTask`. Um writer de captura verifica o gzip emitido e seus owners.
 5.000 pontos, 2 MiB e um segundo são exercitados como gatilhos independentes, exigindo
 que nenhum envio ocorra antes de atingir o limite. Nos casos de pontos/bytes, o timer
@@ -125,3 +125,52 @@ dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests/CentralMobilidade
 ```
 
 Somente a T104 foi executada. T105–T112 e T050/T051 continuam pendentes.
+
+## T105 — contratos com destino único (2026-10-14)
+
+Os ports não expõem mais `ICompanyVisibilityResolver`, `CompanyVisibility`,
+`TelemetryDestination`, `IdentityStorageLocation`, `PromotionLease` nem métodos de promoção.
+`IDriverResolver`, o schema `empresa_id` e Reserved/Writing/Committed permanecem.
+Writer, guard, testes e doubles usam os contratos sem argumento de destino;
+a ponte reflexiva da futura T050 também foi ajustada, sem implementar o montador.
+
+A implementação HTTP de existência e seu registro foram removidos junto com o port.
+Os testes da regra antiga foram substituídos por ausência do resolver e ausência de
+consulta cadastral mesmo com configuração legada. A proteção contra redirects agora
+exercita o cliente HTTP de storage. Gzip, limites, cancelamento, sync e reconciliação
+parcial continuam cobertos. Os controles reais de Influx foram adaptados ao banco
+queryable, mas não reexecutados nesta etapa; a prova nova usa HTTP controlado.
+
+Persistência mantém seus enums legados exclusivamente na Infrastructure, com os mesmos
+valores gravados em string, sem alterar schema, snapshot ou migrações aplicadas.
+Os novos cenários PostgreSQL comprovam que guards PendingCommitted/Promoting não são
+alterados nem retomados como queryable. A migração e a reconciliação são T106.
+O writer ainda valida a configuração Pending antiga; seu teste continua vermelho para T107.
+Compose e banco de execução do projeto não foram alterados.
+
+Validação: solução compilada com zero erros/avisos; unitários 242/242, contratos 58/58,
+arquitetura 47/47. Integração direcionada: 106 cenários, 78 aprovações, 25 falhas TDD
+esperadas (três T050, 21 T051, uma T107) e três falhas temporais dos fixtures de lease.
+A âncora desses leases foi corrigida para depois da preparação do banco; os intervalos,
+o takeover real no PostgreSQL e as asserções de fencing continuam os mesmos.
+Os TRX locais ficam em `artifacts/validation/T105/` (ignorados pelo Git).
+
+Comandos de validação:
+
+```powershell
+dotnet build CentralMobilidade.slnx --no-restore
+dotnet test tests/CentralMobilidade.Telemetry.UnitTests --no-build --no-restore
+dotnet test tests/CentralMobilidade.Telemetry.ContractTests --no-build --no-restore
+dotnet test tests/CentralMobilidade.Telemetry.ArchitectureTests --no-build --no-restore
+dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --no-build --no-restore --filter "FullyQualifiedName~StorageAdapterSafetyTests|FullyQualifiedName~WorkerAcknowledgementBoundaryTests|FullyQualifiedName~SelectedEventIdentityGuardTests|FullyQualifiedName~InfluxV3WriterTests|FullyQualifiedName~ControlMigration|FullyQualifiedName~PostgresAuditWriterTests|FullyQualifiedName~IntakeBoundaryTests"
+```
+
+A suíte executou também o probe curto do guard existente; isso não aprova a capacidade
+de 5.000 eventos/s nem substitui o gate de performance pendente da ADR-001.
+T106–T112 e T050/T051 continuam pendentes.
+
+Após a correção temporal, os seis cenários afetados passaram **6/6**, sem skips,
+em `guard-clock-recheck.trx` (1m43s). O build do projeto de integração foi refeito
+com zero erros/avisos. A suíte de 106 cenários não foi repetida integralmente:
+a rechecagem cobre os seis testes cujo fixture mudou e resolve as três falhas
+inesperadas da execução inicial. As outras 25 falhas seguem deliberadamente vermelhas.
