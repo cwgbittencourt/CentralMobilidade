@@ -121,7 +121,8 @@ rejection is inspectable.
 
 ### Tests for User Story 2
 
-- [ ] T036 [P] [US2] Add golden Line Protocol v1 tests for escaping, LF/CRLF, UTF-8, field types, required tags/fields, units, and canonical fingerprints in `tests/CentralMobilidade.Telemetry.UnitTests/LineProtocol/LineProtocolV1GoldenTests.cs`
+- [X] T036 [P] [US2] Add golden Line Protocol v1 tests for escaping, LF/CRLF, UTF-8, field types, required tags/fields, units, and canonical fingerprints in `tests/CentralMobilidade.Telemetry.UnitTests/LineProtocol/LineProtocolV1GoldenTests.cs`
+  - TDD validation: 45 executable golden scenarios compile and fail explicitly because the T046 production parser is absent; all 101 existing unit tests pass. Covers decoded values, escapes, strict UTF-8, LF/CRLF, closed schema, required columns, types, coordinate boundaries, units and fingerprint equivalence/content changes. See `tests/CentralMobilidade.Telemetry.UnitTests/LineProtocol/README.md`. The two T022 PostgreSQL readiness failures remain a separate recorded issue.
 - [ ] T037 [P] [US2] Add property/fuzz tests for truncated gzip, CRC failure, 100:1 expansion, 64 MiB decompressed limit, 16 KiB line limit, and 50,000-line limit in `tests/CentralMobilidade.Telemetry.UnitTests/Streaming/GzipBoundaryPropertyTests.cs`
 - [ ] T038 [P] [US2] Add InfluxDB v3 writer integration tests for gzip, millisecond precision, `accept_partial=true`, `no_sync=false`, 5,000-point/2 MiB/1-second flush thresholds, and partial errors in `tests/CentralMobilidade.Telemetry.IntegrationTests/Influx/InfluxV3WriterTests.cs`
 - [ ] T039 [P] [US2] Add quarantine storage integration tests proving encryption/protected storage, metadata-only logging, integrity verification, and 30-day deletion deadline in `tests/CentralMobilidade.Telemetry.IntegrationTests/Quarantine/QuarantineStoreTests.cs`

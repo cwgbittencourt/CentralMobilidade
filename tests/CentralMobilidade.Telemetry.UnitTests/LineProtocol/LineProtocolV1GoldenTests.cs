@@ -1,0 +1,175 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Text;
+using CentralMobilidade.Telemetry.Application.Ingestion;
+using CentralMobilidade.Telemetry.Contracts.Errors;
+using Shouldly;
+using Xunit;
+
+namespace CentralMobilidade.Telemetry.UnitTests.LineProtocol;
+
+public sealed class LineProtocolV1GoldenTests
+{
+    private const string Tags = "telemetria,empresa_id=empresa-42,veiculo_id=veiculo-900";
+    private const string Fields = "latitude=-23.55052,longitude=-46.633308,velocidade=82.5,rpm=2150i,ignicao=true";
+    private const string Timestamp = "1791686400123";
+    private const string Baseline = Tags + " " + Fields + " " + Timestamp;
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public void Golden_event_preserves_values_and_millisecond_units(string ending)
+    {
+        var result = Parse(Encoding.UTF8.GetBytes(Baseline + ending));
+        Property(result, "ErrorCode").ShouldBeNull();
+        var point = Property(result, "Event").ShouldNotBeNull();
+        Value(point, "CompanyId").ShouldBe("empresa-42");
+        Value(point, "VehicleId").ShouldBe("veiculo-900");
+        Property(point, "DriverId").ShouldBeNull();
+        Property(point, "Plate").ShouldBeNull();
+        Convert.ToDouble(Property(point, "Latitude")).ShouldBe(-23.55052);
+        Convert.ToDouble(Property(point, "Longitude")).ShouldBe(-46.633308);
+        Convert.ToDouble(Property(point, "Speed")).ShouldBe(82.5); // km/h, never converted to m/s.
+        Convert.ToInt64(Property(point, "Rpm")).ShouldBe(2150);
+        Property(point, "Ignition").ShouldBe(true);
+        Convert.ToInt64(Property(Property(point, "Timestamp")!, "UnixMilliseconds")).ShouldBe(1791686400123L);
+    }
+
+    [Fact]
+    public void Escaped_tags_and_quoted_plate_decode_without_splitting_columns()
+    {
+        var point = Accepted("telemetria,empresa_id=São\\ Paulo\\,SP,veiculo_id=carro\\=42,motorista_id=José "
+            + Fields + ",placa=\"bra\\\"2\\\\e19\" " + Timestamp);
+        Value(point, "CompanyId").ShouldBe("São Paulo,SP");
+        Value(point, "VehicleId").ShouldBe("carro=42");
+        Value(point, "DriverId").ShouldBe("José");
+        Property(point, "Plate").ShouldBe("BRA\"2\\E19");
+    }
+
+    [Theory]
+    [InlineData(-90, -180, 0, 0, false)]
+    [InlineData(90, 180, 1000, 9223372036854775807L, true)]
+    public void Inclusive_domain_boundaries_are_accepted(double latitude, double longitude, double speed, long rpm, bool ignition)
+    {
+        var fields = FormattableString.Invariant($"latitude={latitude:R},longitude={longitude:R},velocidade={speed:R},rpm={rpm}i,ignicao={ignition.ToString().ToLowerInvariant()}");
+        Accepted(Tags + " " + fields + " " + Timestamp).ShouldNotBeNull();
+    }
+
+    public static IEnumerable<object[]> InvalidLines()
+    {
+        yield return ["", TelemetryErrorCodes.LpEmptyLine];
+        yield return [Baseline.Replace("telemetria,", "outra,"), TelemetryErrorCodes.LpUnknownMeasurement];
+        foreach (var tag in new[] { "empresa_id=empresa-42", "veiculo_id=veiculo-900" })
+            yield return [Baseline.Replace("," + tag, ""), TelemetryErrorCodes.LpMissingRequiredTag];
+        foreach (var field in Fields.Split(','))
+            yield return [Tags + " " + string.Join(',', Array.FindAll(Fields.Split(','), value => value != field)) + " " + Timestamp,
+                TelemetryErrorCodes.LpMissingRequiredField];
+        foreach (var column in new[] { "cpf=123", "nome=José", "email=teste", "event_fingerprint=abc" })
+            yield return [Tags + "," + column + " " + Fields + " " + Timestamp, TelemetryErrorCodes.LpUnknownColumn];
+        yield return [Tags + " " + Fields + ",extra=1 " + Timestamp, TelemetryErrorCodes.LpUnknownColumn];
+        foreach (var (original, replacement) in new[]
+        {
+            ("latitude=-23.55052", "latitude=1i"), ("longitude=-46.633308", "longitude=\"2\""),
+            ("velocidade=82.5", "velocidade=true"), ("rpm=2150i", "rpm=2150"),
+            ("rpm=2150i", "rpm=2150u"), ("ignicao=true", "ignicao=1i"),
+            ("ignicao=true", "ignicao=\"true\""), ("latitude=-23.55052", "latitude=NaN"),
+            ("longitude=-46.633308", "longitude=Infinity")
+        })
+            yield return [Baseline.Replace(original, replacement), TelemetryErrorCodes.LpInvalidFieldType];
+        yield return [Tags + " " + Fields + ",placa=ABC1234 " + Timestamp, TelemetryErrorCodes.LpInvalidFieldType];
+        yield return [Baseline.Replace("latitude=-23.55052", "latitude=90.0001"), TelemetryErrorCodes.LpCoordinateOutOfRange];
+        yield return [Baseline.Replace("longitude=-46.633308", "longitude=-180.0001"), TelemetryErrorCodes.LpCoordinateOutOfRange];
+        yield return [Baseline.Replace(Timestamp, "not-a-time"), TelemetryErrorCodes.LpInvalidTimestamp];
+        yield return [Baseline.Replace(Timestamp, "1791686400123.5"), TelemetryErrorCodes.LpInvalidTimestamp];
+        yield return [Baseline.Replace(Timestamp, "1791686400123000000"), TelemetryErrorCodes.LpTimestampOutOfRange];
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidLines))]
+    public void Invalid_lines_have_stable_rejection_codes(string line, string code)
+    {
+        var result = Parse(Encoding.UTF8.GetBytes(line));
+        Property(result, "Event").ShouldBeNull();
+        Property(result, "ErrorCode").ShouldBe(code);
+    }
+
+    [Theory]
+    [InlineData("velocidade=82.5", "velocidade=-0.1")]
+    [InlineData("rpm=2150i", "rpm=-1i")]
+    public void Negative_speed_and_rpm_are_rejected(string original, string replacement)
+    {
+        var result = Parse(Encoding.UTF8.GetBytes(Baseline.Replace(original, replacement)));
+        Property(result, "Event").ShouldBeNull();
+        TelemetryErrorCodes.IsRejectionCode(Property(result, "ErrorCode") as string).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Malformed_utf8_is_rejected_instead_of_replaced()
+    {
+        var bytes = Encoding.UTF8.GetBytes(Baseline);
+        bytes[Array.IndexOf(bytes, (byte)'4')] = 0xff;
+        var result = Parse(bytes);
+        Property(result, "Event").ShouldBeNull();
+        Property(result, "ErrorCode").ShouldBe(TelemetryErrorCodes.LpInvalidSyntax);
+    }
+
+    [Theory]
+    [InlineData("telemetria,veiculo_id=veiculo-900,empresa_id=empresa-42 ignicao=true,rpm=2150i,velocidade=82.5,longitude=-46.633308,latitude=-23.55052 1791686400123")]
+    [InlineData("telemetria,empresa_id=empresa-42,veiculo_id=veiculo-900 latitude=-23.5505200,longitude=-46.6333080,velocidade=8.25e1,rpm=2150i,ignicao=true 1791686400123\r\n")]
+    public void Canonical_fingerprint_ignores_order_numeric_spelling_and_line_ending(string equivalent)
+    {
+        Fingerprint(Baseline).ShouldBe(Fingerprint(equivalent));
+    }
+
+    [Theory]
+    [InlineData("velocidade=82.5", "velocidade=82.6")]
+    [InlineData("empresa-42", "empresa-43")]
+    [InlineData("veiculo-900", "veiculo-901")]
+    [InlineData("1791686400123", "1791686400124")]
+    [InlineData("ignicao=true", "ignicao=false")]
+    public void Canonical_fingerprint_changes_with_event_content(string original, string replacement)
+    {
+        Fingerprint(Baseline).ShouldNotBe(Fingerprint(Baseline.Replace(original, replacement)));
+    }
+
+    private static object Accepted(string line)
+    {
+        var result = Parse(Encoding.UTF8.GetBytes(line));
+        Property(result, "ErrorCode").ShouldBeNull();
+        return Property(result, "Event").ShouldNotBeNull();
+    }
+
+    private static string Fingerprint(string line)
+    {
+        var point = Accepted(line);
+        var digest = Property(point, "Fingerprint").ShouldBeOfType<string>();
+        digest.Length.ShouldBe(64);
+        Convert.FromHexString(digest).Length.ShouldBe(32);
+        return digest;
+    }
+
+    // Reflection keeps the test-first commit compilable while T043/T046 do not yet exist.
+    // This invokes the production parser; it contains no substitute parser or expected-failure bypass.
+    private static object Parse(byte[] bytes)
+    {
+        var type = typeof(AcceptTelemetryBatchHandler).Assembly.GetType(
+            "CentralMobilidade.Telemetry.Application.LineProtocol.TelemetryLineProtocolV1Parser");
+        type.ShouldNotBeNull("T046 must implement the production Line Protocol v1 parser");
+        var method = type.GetMethod("Parse", [typeof(ReadOnlyMemory<byte>)]);
+        method.ShouldNotBeNull("Parse(ReadOnlyMemory<byte>) must parse one bounded UTF-8 line");
+        var parser = method.IsStatic ? null : Activator.CreateInstance(type);
+        return method.Invoke(parser, [new ReadOnlyMemory<byte>(bytes)]).ShouldNotBeNull();
+    }
+
+    private static object? Property(object instance, string name)
+    {
+        var property = instance.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+        property.ShouldNotBeNull("The parser result/event must expose " + name);
+        return property.GetValue(instance);
+    }
+
+    private static string Value(object point, string name) =>
+        Property(Property(point, name).ShouldNotBeNull(), "Value").ShouldBeOfType<string>();
+}
