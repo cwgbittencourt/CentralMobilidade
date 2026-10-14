@@ -54,6 +54,8 @@ public sealed class IntakeBoundaryTests
         else
         {
             response.Response.StatusCode.ShouldBe(status, "Valid intake must be mapped and durably accepted");
+            response.Response.Headers.Location.ToString().ShouldStartWith("/api/v1/telemetry/batches/");
+            response.Response.Headers.RetryAfter.ToString().ShouldBe("1");
             fixture.Queue.Bodies.ShouldHaveSingleItem().ShouldBe(Gzip);
             var metadata = fixture.Queue.Metadata.ShouldHaveSingleItem();
             metadata.CompressedBytes.ShouldBe(Gzip.Length);

@@ -1,9 +1,11 @@
 using System;
+using CentralMobilidade.Telemetry.Api.Endpoints.V1;
 using CentralMobilidade.Telemetry.Api.Security;
 using CentralMobilidade.Telemetry.Application.Configuration;
-using CentralMobilidade.Telemetry.Infrastructure.Persistence;
-using CentralMobilidade.Telemetry.Infrastructure.Observability;
+using CentralMobilidade.Telemetry.Application.Ingestion;
 using CentralMobilidade.Telemetry.Infrastructure.Health;
+using CentralMobilidade.Telemetry.Infrastructure.Observability;
+using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -15,6 +17,8 @@ try
     builder.Logging.ClearProviders();
     builder.Services.AddPrivacyLogging(TelemetryServiceRole.Api);
     builder.Services.AddTelemetryOptions(builder.Configuration);
+    builder.Services.AddTelemetryIngestion();
+    builder.Services.AddTelemetryIntakeEndpoint();
     builder.Services.AddTelemetrySecurity(builder.Configuration);
     builder.Services.AddTelemetryObservability(builder.Configuration, TelemetryServiceRole.Api);
     builder.Services.AddTelemetryHealthChecks(builder.Configuration, TelemetryServiceRole.Api);
@@ -26,6 +30,7 @@ try
     app.UseAuthorization();
 
     app.MapGet("/", () => "Central Mobilidade Telemetry API");
+    app.MapIngestTelemetryBatchEndpoint();
     app.MapTelemetryMetrics();
     app.MapTelemetryHealthEndpoints();
 

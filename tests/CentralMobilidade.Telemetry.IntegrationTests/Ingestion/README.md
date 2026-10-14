@@ -1,7 +1,7 @@
 # Limites da ingestão — T025
 
 `IntakeBoundaryTests` contém 35 cenários executáveis contra o entry point de produção,
-iniciado por `WebApplicationFactory`. Não há uma rota de ingestão implementada no teste.
+iniciado por `WebApplicationFactory`. A rota de produção implementada na T034 é exercitada diretamente.
 Somente a fila e o armazenamento de estado são substituídos por doubles em memória;
 a autenticação e o pipeline HTTP continuam sendo os da API.
 
@@ -35,11 +35,11 @@ O observador apenas captura o contexto; ele não interpreta os headers.
 
 ## Estado TDD
 
-A T025 adiciona testes antes da implementação das T029/T033/T034/T035. Na validação
-do Docker Linux, os 35 cenários falharam na asserção HTTP porque a rota ainda retorna
-404. Nenhum foi desabilitado, ignorado ou configurado para aceitar essa falha. A suíte
-completa teve 233 testes anteriores aprovados e somente essas 35 falhas esperadas.
-A compilação local e no Docker passou sem avisos.
+A T025 adicionou os testes antes da implementação das T029/T033/T034/T035. Após a T034,
+32 dos 35 cenários passam, incluindo limites, headers, gzip, timeout, cancelamento e
+respostas duráveis com `Location`/`Retry-After`. Os três casos restantes exigem o
+processamento de forwarded headers por proxy confiável e permanecem vermelhos até a T035.
+Nenhum cenário foi desabilitado ou ignorado. A compilação local e no Docker passou sem avisos.
 
 Os testes devem ficar verdes quando a ingestão for implementada. O TestServer simula
 streams e cancelamento do HTTP; esta etapa não comprova limites de transporte do Kestrel,

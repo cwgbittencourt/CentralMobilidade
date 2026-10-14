@@ -12,4 +12,5 @@ request cancellation during publication, mismatched receipt, or failure to persi
 returns success. Publication failures are recorded best-effort without replacing the original safe
 provider exception. The caller retains ownership of the bounded gzip stream.
 
-HTTP validation, backpressure, response mapping, and endpoint registration belong to T034/T035.
+HTTP validation, backpressure, response mapping, and endpoint registration are implemented by T034.
+T035 completes the host-level middleware and provider composition.

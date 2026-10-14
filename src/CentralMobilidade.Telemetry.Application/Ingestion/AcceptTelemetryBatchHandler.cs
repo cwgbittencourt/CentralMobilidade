@@ -136,7 +136,10 @@ public static class TelemetryIngestionRegistration
     public static IServiceCollection AddTelemetryIngestion(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.TryAddScoped<AcceptTelemetryBatchHandler>();
+        services.TryAddScoped(provider => new AcceptTelemetryBatchHandler(
+            provider.GetRequiredService<IBatchStateStore>(),
+            provider.GetRequiredService<IDurableBatchQueue>(),
+            provider.GetRequiredService<IClock>()));
         return services;
     }
 }

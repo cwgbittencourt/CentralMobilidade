@@ -1,0 +1,20 @@
+# Telemetry intake endpoint
+
+`POST /api/v1/telemetry/batches` requires the producer authentication policy, exactly one
+`X-Contract-Version: v1`, exactly one `Content-Encoding: gzip`, and `text/plain` with one UTF-8
+charset parameter. Validation happens before reading or publishing the body.
+
+The endpoint uses `BoundedRequestSpool` for the configured compressed-byte and upload-duration limits,
+then constructs the provider-neutral envelope from the authenticated producer, current trace, UUIDv7,
+original gzip byte count, and streaming SHA-256. The application handler owns durable publication
+ordering. A `202` response is emitted only after that handler returns and includes matching `Location`,
+JSON `statusUrl`, and a positive `Retry-After` for the first status check.
+
+`IntakeAdmissionGate` bounds concurrent admitted requests and never queues excess HTTP work. A full
+gate returns `429 INTAKE_BACKPRESSURE` with `Retry-After` before body intake. Safe provider errors map
+through the stable problem catalog; durability failures also carry `Retry-After`. Caller cancellation
+continues as cancellation and never becomes `202`. The endpoint owns and disposes the temporary spool,
+while the incoming request stream remains owned by ASP.NET Core.
+
+T035 completes host-level Kestrel limits, trusted proxy processing, global Problem Details, provider
+composition, and final middleware ordering.
