@@ -199,6 +199,31 @@ public sealed class GzipBoundaryPropertyTests
             method.Invoke(instance, [stream, compressedBytes, options, token]).ShouldBeAssignableTo<IAsyncEnumerable<ReadOnlyMemory<byte>>>()!;
     }
 
+    [Theory]
+    [InlineData("a\n\n\r\n", "a")]
+    [InlineData("a\n\nb", "a||b")]
+    [InlineData("last line", "last line")]
+    [InlineData("\n\r\n", "")]
+    public async Task Empty_lines_are_preserved_in_the_middle_and_ignored_at_the_end(string input, string expected)
+    {
+        var bytes = Gzip(Encoding.UTF8.GetBytes(input));
+        using var stream = new ChunkStream(bytes, 1);
+        var actual = new List<string>();
+        await foreach (var line in new BoundedGzipLineReader().ReadAsync(stream, bytes.Length, Options()))
+            actual.Add(Encoding.UTF8.GetString(line.Span));
+        string.Join('|', actual).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public async Task Declared_compressed_length_must_match_actual_body(int difference)
+    {
+        var bytes = Gzip(Encoding.UTF8.GetBytes("line\n"));
+        using var stream = new ChunkStream(bytes, 1);
+        await Should.ThrowAsync<InvalidDataException>(() => Drain(new BoundedGzipLineReader().ReadAsync(stream, bytes.Length + difference, Options())));
+    }
+
     private static TelemetryOptions Options() => new() { MaxExpansionRatio = 1000000 };
 
     private static async Task<int> Drain(IAsyncEnumerable<ReadOnlyMemory<byte>> lines)

@@ -1,5 +1,11 @@
 # Limites gzip — T037
 
+Atualização T045: o leitor foi implementado e os 29 casos originais passaram. Com
+seis cenários adicionais para vazias finais/intermediárias, EOF sem newline e tamanho
+comprimido divergente, os 35 testes de streaming passam. Suíte unitária atual: 186
+aprovações e 45 falhas previstas T036; arquitetura: 47 aprovações. Evidência em
+`artifacts/validation/T045/unit.trx`. O resultado abaixo registra a etapa TDD original.
+
 `GzipBoundaryPropertyTests` contém 29 cenários para o leitor de produção da T045.
 
 ```powershell
