@@ -106,7 +106,7 @@ public sealed class RabbitMqPublisherContractTests : IClassFixture<RabbitMqContr
                 ["x-dead-letter-routing-key"] = test.RoutingKey
             });
         await test.Channel.QueueDeclareAsync(test.DeadQueue, durable: true, exclusive: false, autoDelete: false,
-            arguments: new Dictionary<string, object?> { ["x-queue-type"] = "classic" });
+            arguments: new Dictionary<string, object?> { ["x-queue-type"] = "classic", ["x-message-ttl"] = 604800000 });
         await test.Connection.CloseAsync();
         await using var verification = await broker.Connect();
         await using var channel = await verification.CreateChannelAsync();
