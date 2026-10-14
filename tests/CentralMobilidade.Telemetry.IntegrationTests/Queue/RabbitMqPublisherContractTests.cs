@@ -15,6 +15,7 @@ using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using Shouldly;
 using Testcontainers.RabbitMq;
 using Xunit;
@@ -206,6 +207,21 @@ public sealed class RabbitMqPublisherContractTests : IClassFixture<RabbitMqContr
         test.Interceptor.Persistent.ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task An_ack_for_another_sequence_cannot_accept_the_batch()
+    {
+        await using var test = await CreatePublisher("manual-confirm");
+        using var body = new MemoryStream(Payload);
+        var metadata = Envelope();
+        var publication = test.Publisher.PublishAsync(metadata, body, CancellationToken.None).AsTask();
+        await test.Interceptor.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await test.Interceptor.EmitAck(0);
+        (await Task.WhenAny(publication, Task.Delay(100))).ShouldNotBe(publication);
+        publication.IsCompleted.ShouldBeFalse("An unrelated ACK must not create an acceptance receipt");
+        await test.Interceptor.EmitAck(1);
+        (await publication.WaitAsync(TimeSpan.FromSeconds(5))).BatchId.Value.ShouldBe(metadata.BatchId);
+    }
+
     private async Task<PublisherSession> CreatePublisher(string? fault = null)
     {
         var assembly = typeof(TelemetryControlDbContext).Assembly;
@@ -327,8 +343,18 @@ public sealed class RabbitMqPublisherContractTests : IClassFixture<RabbitMqContr
         }
         internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly List<AsyncEventHandler<BasicAckEventArgs>> ackHandlers = [];
+        internal async Task EmitAck(ulong sequence)
+        {
+            foreach (var handler in ackHandlers)
+                await handler(Inner, new BasicAckEventArgs(sequence, false, CancellationToken.None));
+        }
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
+            if (targetMethod!.Name == "add_BasicAcksAsync")
+                ackHandlers.Add((AsyncEventHandler<BasicAckEventArgs>)args![0]!);
+            if (targetMethod.Name == "remove_BasicAcksAsync")
+                ackHandlers.Remove((AsyncEventHandler<BasicAckEventArgs>)args![0]!);
             if (targetMethod!.Name == "BasicPublishAsync")
             {
                 PublishCalls++;
@@ -350,6 +376,8 @@ public sealed class RabbitMqPublisherContractTests : IClassFixture<RabbitMqContr
         private async Task ControlledPublish(MethodInfo method, object?[] args)
         {
             Entered.TrySetResult();
+            if (Fault == "manual-confirm")
+                return; // Deliberately simulate SDK send completion without an ACK.
             if (Fault == "nack")
                 throw new RabbitMQ.Client.Exceptions.PublishException(1, false);
             if (Fault == "timeout")

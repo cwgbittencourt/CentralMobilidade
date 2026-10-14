@@ -10,7 +10,7 @@ uma URI AMQP com credenciais de teste; não use um broker de produção. Cada se
 publicação usa nomes `t026.<UUID>` e remove somente suas próprias filas e exchanges.
 O broker externo e seus volumes não são removidos pela fixture.
 
-Os 11 cenários cobrem:
+Os 12 cenários cobrem:
 
 - Conectividade real: bytes nativos, propriedade persistent e publisher confirms rastreados.
 - Publicação pelo adaptador, recibo com o BatchId correto, corpo gzip idêntico e todos
@@ -21,6 +21,7 @@ Os 11 cenários cobrem:
 - Retorno mandatory para rota sem binding, que nunca pode produzir um recibo de sucesso.
 - Envelope com versão, tamanho ou digest inválidos, rejeitado antes de BasicPublishAsync.
 - Nack, ausência de confirmação e recibo bloqueado até a confirmação correlacionada.
+- ACK de outra sequência que não pode liberar um recibo de aceitação.
 
 O interceptor encaminha os métodos do IChannel real. Nos casos de falha controlada,
 ele entrega o PublishException do SDK para nack, mantém a confirmação pendente até o
@@ -49,12 +50,16 @@ retry retorna ao exchange/routing key principal e a fila principal aponta ao exc
 de dead-letter. A topologia deve existir antes das verificações passivas e equivalentes:
 essas verificações não podem criar a topologia que deveriam testar.
 
-## Estado TDD
+## Estado após T031
 
-A compilação local e no Docker passou sem avisos. O teste de conectividade real passou;
-os outros dez falharam porque o publicador da T031 ainda não existe. A regressão completa
-teve 234 aprovações e 45 falhas esperadas: 35 da T025 pela rota ausente e dez da T026
-pelo adaptador ausente. Nenhum cenário foi ignorado nem configurado para aceitar falhas.
+A implementação T031 resolveu os dez cenários que falhavam por ausência do publicador.
+Agora os 12 testes passam, incluindo a nova guarda contra ACK de outra sequência.
+Nesse caso controlado, o interceptor simula envio concluído sem confirmação e entrega
+ACKs explicitamente; ele não publica uma mensagem real. Isso verifica a correlação
+independentemente do rastreamento interno do SDK. Os demais testes mantêm o escopo
+real/controlado descrito acima. A compilação local e no Docker passou sem avisos.
+A suíte completa teve 289 aprovações e somente 36 falhas de intake ainda pendente
+(35 T025, uma T027). Nenhum cenário foi ignorado nem configurado para aceitar falhas.
 
 Esta etapa não comprova reinício/perda do host, implementação do consumidor ou durabilidade
 de Pub/Sub. Relatórios TRX locais ficam em `artifacts/validation/T026/`, ignorado pelo Git.
