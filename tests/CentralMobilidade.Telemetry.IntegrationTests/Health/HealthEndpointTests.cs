@@ -17,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Shouldly;
@@ -26,6 +27,32 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Health;
 
 public sealed partial class TelemetryHealthTests
 {
+    [Theory]
+    [InlineData(TelemetryServiceRole.Api)]
+    [InlineData(TelemetryServiceRole.Worker)]
+    public async Task Health_registration_probes_only_queryable_even_with_obsolete_pending_configuration(TelemetryServiceRole role)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        config["InfluxDb:Queryable:Url"] = "http://influx.test";
+        config["InfluxDb:Queryable:Token"] = "TEST_TOKEN";
+        config["InfluxDb:Pending:Url"] = "http://unavailable-legacy.test";
+        config["InfluxDb:Pending:Token"] = "LEGACY_SECRET";
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTelemetryHealthChecks(config, role);
+        using var handler = new HealthHandler();
+        services.AddHttpClient("telemetry-health").ConfigurePrimaryHttpMessageHandler(() => handler);
+        await using var provider = services.BuildServiceProvider();
+        var registrations = provider.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value.Registrations;
+        var influx = registrations.Where(r => r.Name.StartsWith("influx_", StringComparison.Ordinal)).ToArray();
+        influx.Length.ShouldBe(1);
+        influx[0].Name.ShouldBe("influx_queryable");
+        influx[0].Tags.Contains("ready").ShouldBe(role == TelemetryServiceRole.Worker);
+        (await influx[0].Factory(provider).CheckHealthAsync(new HealthCheckContext())).Status.ShouldBe(HealthStatus.Healthy);
+        handler.Host.ShouldBe("influx.test");
+        handler.Authorization.ShouldBe("Bearer TEST_TOKEN");
+    }
+
     [Fact]
     public async Task Migrated_postgres_fixture_enables_durable_disk_commits()
     {
@@ -123,22 +150,25 @@ public sealed partial class TelemetryHealthTests
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.ClearProviders();
         builder.Configuration["Observability:WorkerMetricsUrl"] = "http://127.0.0.1:0";
-        foreach (var store in new[] { "Queryable", "Pending" })
-        {
-            builder.Configuration[$"InfluxDb:{store}:Url"] = "http://influx.test";
-            builder.Configuration[$"InfluxDb:{store}:Token"] = "TEST_TOKEN";
-        }
+        builder.Configuration["InfluxDb:Queryable:Url"] = "http://influx.test";
+        builder.Configuration["InfluxDb:Queryable:Token"] = "TEST_TOKEN";
         var clock = new TestTimeProvider();
         builder.Services.AddSingleton<TimeProvider>(clock);
         builder.Services.AddTelemetryControlPersistence(fixture.Connection);
         builder.Services.AddTelemetryObservability(builder.Configuration, TelemetryServiceRole.Worker);
         builder.Services.AddTelemetryHealthChecks(builder.Configuration, TelemetryServiceRole.Worker);
-        builder.Services.AddHttpClient("telemetry-health").ConfigurePrimaryHttpMessageHandler(() => new HealthHandler());
+        using var handler = new HealthHandler();
+        builder.Services.AddHttpClient("telemetry-health").ConfigurePrimaryHttpMessageHandler(() => handler);
         using var host = builder.Build();
         await host.StartAsync();
         host.Services.GetRequiredService<WorkerProgress>().MarkHeartbeat();
         var endpoint = host.Services.GetServices<IHostedService>().OfType<WorkerMetricsEndpoint>().Single();
         using var client = new HttpClient { BaseAddress = new Uri(endpoint.ListenUrl!) };
+        (await client.GetAsync("/health/ready")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        handler.Code = HttpStatusCode.ServiceUnavailable;
+        (await client.GetAsync("/health/ready")).StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await client.GetAsync("/health/live")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        handler.Code = HttpStatusCode.OK;
         (await client.GetAsync("/health/ready")).StatusCode.ShouldBe(HttpStatusCode.OK);
         clock.Ticks += TimeSpan.FromSeconds(31).Ticks;
         (await client.GetAsync("/health/ready")).StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
@@ -246,9 +276,11 @@ public sealed partial class TelemetryHealthTests
         internal HttpMethod? Method;
         internal string? Path;
         internal string? Authorization;
+        internal string? Host;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Method = request.Method;
+            Host = request.RequestUri!.Host;
             Path = request.RequestUri!.AbsolutePath;
             Authorization = request.Headers.Authorization?.ToString();
             return Task.FromResult(new HttpResponseMessage(Code) { Content = new StringContent(Body) });

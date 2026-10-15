@@ -121,10 +121,10 @@ public sealed class PostgresHealthCheck(IDbContextFactory<TelemetryControlDbCont
                     AND has_table_privilege(current_user, to_regclass('public.ingestion_batches'), 'UPDATE')
                     AND has_table_privilege(current_user, to_regclass('public.audit_events'), 'SELECT')
                     AND has_table_privilege(current_user, to_regclass('public.audit_events'), 'INSERT')
-                    AND (SELECT count(*) = 8 FROM information_schema.tables
+                    AND (SELECT count(*) = 7 FROM information_schema.tables
                         WHERE table_schema = 'public' AND table_name IN
                         ('ingestion_batches','line_processing_results','quarantined_rejections','event_identity_guards',
-                         'event_identity_evidence','operator_access_profiles','pending_telemetry_promotions','audit_events')))
+                         'event_identity_evidence','operator_access_profiles','audit_events')))
                     AS "Value"
                 """).SingleAsync(deadline.Token);
             return ready ? HealthCheckResult.Healthy() : HealthCheckResult.Unhealthy("Control storage unavailable.");
@@ -204,15 +204,11 @@ public static class TelemetryHealthChecks
             HealthStatus.Unhealthy, ["ready", "dependency"], options.ProbeTimeout));
         checks.Add(new HealthCheckRegistration("publication", sp => new DurablePublicationHealthCheck(sp.GetService<IDurablePublicationProbe>(), options),
             HealthStatus.Unhealthy, role == TelemetryServiceRole.Api ? ["ready", "dependency"] : ["dependency"], options.ProbeTimeout));
-        var stores = role == TelemetryServiceRole.Api ? new[] { "Queryable" } : ["Queryable", "Pending"];
-        foreach (var store in stores)
-        {
-            var origin = configuration[$"InfluxDb:{store}:Url"];
-            var token = configuration[$"InfluxDb:{store}:Token"];
-            checks.Add(new HealthCheckRegistration("influx_" + store.ToLowerInvariant(), sp => new InfluxHealthCheck(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient("telemetry-health"), origin, token, options),
-                HealthStatus.Unhealthy, role == TelemetryServiceRole.Worker ? ["ready", "dependency"] : ["dependency"], options.ProbeTimeout));
-        }
+        var origin = configuration["InfluxDb:Queryable:Url"];
+        var token = configuration["InfluxDb:Queryable:Token"];
+        checks.Add(new HealthCheckRegistration("influx_queryable", sp => new InfluxHealthCheck(
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient("telemetry-health"), origin, token, options),
+            HealthStatus.Unhealthy, role == TelemetryServiceRole.Worker ? ["ready", "dependency"] : ["dependency"], options.ProbeTimeout));
         checks.Add(new HealthCheckRegistration("worker", sp => role == TelemetryServiceRole.Worker
             ? new WorkerFreshnessHealthCheck(sp.GetRequiredService<WorkerProgress>(), options)
             : new RemoteWorkerHealthCheck(sp.GetRequiredService<IHttpClientFactory>().CreateClient("telemetry-health"), options),

@@ -10,8 +10,8 @@ administrative permissions. ASP.NET Core health/metrics requests are excluded fr
 | Route | API | Worker |
 | --- | --- | --- |
 | `/health/live` | HTTP process responds; no dependency probes | Same |
-| `/health/ready` | PostgreSQL + actual durable publication capability | PostgreSQL + queryable/pending Influx connectivity + consumer freshness |
-| `/health/dependencies` | PostgreSQL, publication, queryable Influx, remote worker freshness | PostgreSQL, publication, both Influx stores, local freshness |
+| `/health/ready` | PostgreSQL + actual durable publication capability | PostgreSQL + queryable Influx connectivity + consumer freshness |
+| `/health/dependencies` | PostgreSQL, publication, queryable Influx, remote worker freshness | PostgreSQL, publication, queryable Influx, local freshness |
 | `/health/worker` | Not mapped | Local consumer freshness only |
 
 Downstream storage/worker failure must not turn API intake readiness unhealthy when PostgreSQL and
@@ -29,7 +29,7 @@ results without preventing the process from serving liveness. Endpoint/token rot
 restart; health registration uses startup configuration snapshots.
 
 PostgreSQL uses the configured EF context factory and a read-only probe query. It verifies that the
-eight control tables are visible, the session is not read-only/recovery, fsync is enabled, synchronous
+seven current control tables are visible, the session is not read-only/recovery, fsync is enabled, synchronous
 commit is not off, and batch/audit read/write privileges required for intake are present. It does not
 create/migrate tables, insert rows, mutate batch state or require access to migration history. This is
 not a full schema/constraint verification or proof of every processing privilege. Apply T019 migrations
@@ -45,7 +45,7 @@ is registered, default API readiness is 503 even when the RabbitMQ container is 
 
 Influx checks require configured URL/token and perform authenticated GET `/health` with bounded
 timeouts, redirects/cookies disabled and response bodies ignored. API checks queryable storage;
-worker checks both isolated stores. This verifies server reachability, not token write permissions,
+worker checks the same single queryable store. Legacy Pending settings are ignored. This verifies server reachability, not token write permissions,
 database existence, retention, capacity or successful Influx persistence. `/health` can be exempt
 from authorization on the configured Influx server. Actual writer acceptance still governs queue ack.
 
@@ -81,3 +81,33 @@ handlers/probes; real RabbitMQ/PubSub/Influx adapter integration remains in thei
 Windows build and formatting verification pass; native test execution remains blocked by the existing
 Windows Application Control policy and therefore runs in Linux. Named validation volumes are retained.
 Compose health/restart hardening is T086. Architecture/load projects remain skeletons.
+
+## Single-store amendment (T108, 2026-10-14)
+
+API and worker now register only `influx_queryable`, reading `InfluxDb:Queryable:Url/Token`.
+No pending storage or company registry is probed. PostgreSQL readiness expects the seven current
+control tables after the guarded T106 migration, without `pending_telemetry_promotions`; read-only,
+recovery, fsync, synchronous commit and intake privileges remain enforced. API readiness still
+requires PostgreSQL and durable publication; worker readiness still requires PostgreSQL, Influx
+connectivity and a fresh consumer heartbeat. HTTP health requests cannot refresh that heartbeat.
+
+The worker template now contains only Queryable. The API template and writer registration already
+use only that store and needed no source changes. Service DNS stays `influxdb-queryable` until T109
+renames the Compose services together. `.env.example` removes obsolete pending settings and explains
+the temporary Compose prerequisite; existing private files and volumes must be preserved.
+
+Validation: the new registration regression first failed for the worker (two Influx checks instead
+of one). All 37 directed health/security/intake scenarios then passed, including migrated real
+PostgreSQL, worker ready/unready/recovery with Queryable only, expired consumer heartbeat, API durable
+intake despite downstream outage, legacy Pending settings ignored, and privacy-safe responses.
+The same shared producer credential accepts two company IDs absent from any registry; operator/viewer
+types, scoped presentation and audited denials remain independent. The authentication route test uses
+synthetic endpoints; the intake regression uses the production API with queue/state doubles and
+proves acceptance, not end-to-end processing. Influx health uses controlled HTTP responses, not proof
+of database/write permissions or persistence. T050/T051/T053 remain future work.
+
+Evidence: `artifacts/validation/T108/t108-red.trx` and `t108-health-security-final.trx` (Git ignored).
+An initial sandbox run failed five PostgreSQL cases because Docker's named pipe was denied; the
+successful directed run used Docker access. No deployed database, Compose topology or volume was changed.
+Unit 242/242, contract 58/58 and architecture 47/47 tests passed. The final sequential solution build
+completed with zero warnings/errors after resolving a concurrent-test DLL copy lock.

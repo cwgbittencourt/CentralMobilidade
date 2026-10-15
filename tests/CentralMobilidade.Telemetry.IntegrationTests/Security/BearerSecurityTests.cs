@@ -26,6 +26,21 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Security;
 
 public sealed class BearerSecurityTests
 {
+    [Fact]
+    public async Task One_producer_credential_authenticates_multiple_company_routes_without_expanding_presentation_scope()
+    {
+        await using var fixture = await Fixture.StartAsync();
+        foreach (var company in new[] { "not-in-registry-a", "not-in-registry-b" })
+        {
+            (await fixture.GetAsync($"/producer/{company}", ProducerToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+            (await fixture.GetAsync($"/producer/{company}", OperatorToken)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+            (await fixture.GetAsync($"/producer/{company}", ViewerToken)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+            (await fixture.GetAsync($"/telemetry/{company}", OperatorToken)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+            (await fixture.GetAsync($"/telemetry/{company}", ViewerToken)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        }
+        (await fixture.GetAsync("/telemetry/empresa-1", ViewerToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
     [Theory]
     [Trait("Feature", "FoundationSingleInflux")]
     [InlineData("/telemetry/not-in-registry-a")]
@@ -305,6 +320,7 @@ public sealed class BearerSecurityTests
             app.UseAuthentication();
             app.UseAuthorization();
             app.MapGet("/producer", () => "ok").RequireAuthorization(OperatorAuthorizationPolicies.Producer);
+            app.MapGet("/producer/{empresaId}", () => "ok").RequireAuthorization(OperatorAuthorizationPolicies.Producer);
             app.MapGet("/producer-batches/{batchId}", () => "ok").RequireAuthorization(OperatorAuthorizationPolicies.ProducerBatchRead);
             app.MapGet("/batches/{batchId}", () => "ok").RequireAuthorization(OperatorAuthorizationPolicies.BatchRead);
             app.MapGet("/driver/{empresaId}", () => "ok").RequireAuthorization(OperatorAuthorizationPolicies.DriverRead);
