@@ -156,13 +156,12 @@ public sealed class InfluxV3WriterTests
     {
         var type = typeof(BoundedRequestSpool).Assembly.GetType("CentralMobilidade.Telemetry.Infrastructure.Influx.InfluxV3TelemetryWriter");
         type.ShouldNotBeNull("T049 must implement the production InfluxDB v3 writer");
-        var values = new Dictionary<string, string?>();
-        foreach (var store in new[] { "Queryable", "Pending" })
+        var values = new Dictionary<string, string?>
         {
-            values[$"InfluxDb:{store}:Url"] = url;
-            values[$"InfluxDb:{store}:Database"] = store.ToLowerInvariant();
-            values[$"InfluxDb:{store}:Token"] = "test-only-token";
-        }
+            ["InfluxDb:Queryable:Url"] = url,
+            ["InfluxDb:Queryable:Database"] = "queryable",
+            ["InfluxDb:Queryable:Token"] = "test-only-token"
+        };
         var config = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
         return Activator.CreateInstance(type, client, config).ShouldBeAssignableTo<ITelemetryWriter>()!;
     }

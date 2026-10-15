@@ -184,15 +184,58 @@ public sealed class StorageAdapterSafetyTests
         gzip.CanRead.ShouldBeTrue();
     }
 
-    [Fact]
-    public void Queryable_and_pending_cannot_share_the_same_storage_destination()
+    [Theory]
+    [InlineData("http://localhost", "queryable", "old-token")]
+    [InlineData("http://127.0.0.1:1", "pending", "old-token")]
+    [InlineData("not-an-origin", "", "SEEDED_PRIVATE\r\nTOKEN")]
+    public async Task Obsolete_pending_configuration_cannot_block_or_redirect_single_store_writes(string url, string database, string token)
     {
-        using var client = new HttpClient();
-        Should.Throw<ArgumentException>(() => new InfluxV3TelemetryWriter(client, WriterConfig(pendingDatabase: "queryable")));
+        var calls = 0;
+        using var client = new HttpClient(new Handler((message, _) =>
+        {
+            calls++;
+            message.RequestUri!.AbsoluteUri.ShouldBe("http://localhost/api/v3/write_lp?db=queryable&precision=millisecond&accept_partial=true&no_sync=false");
+            message.Headers.Authorization!.ToString().ShouldBe("Bearer test-only-token");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+        }));
+        var config = new ConfigurationBuilder().AddConfiguration(WriterConfig()).AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["InfluxDb:Pending:Url"] = url,
+            ["InfluxDb:Pending:Database"] = database,
+            ["InfluxDb:Pending:Token"] = token
+        }).Build();
+        using var gzip = InfluxV3WriterTests.Gzip("a f=1i 1\n");
+        var result = await new InfluxV3TelemetryWriter(client, config).WriteAsync(Request(), gzip, default);
+        result.CommittedPoints.ShouldBe(1);
+        calls.ShouldBe(1);
+        gzip.CanRead.ShouldBeTrue();
     }
 
-    [Fact]
-    public async Task Production_http_registration_ignores_legacy_company_lookup_and_does_not_follow_storage_redirects()
+    [Theory]
+    [InlineData("Url", null)]
+    [InlineData("Url", "http://user:SEEDED_PRIVATE@localhost")]
+    [InlineData("Url", "http://localhost/base")]
+    [InlineData("Database", " ")]
+    [InlineData("Token", "SEEDED_PRIVATE\r\nTOKEN")]
+    public void Invalid_queryable_settings_fail_privately_without_falling_back_to_legacy_pending(string setting, string? value)
+    {
+        using var client = new HttpClient();
+        var values = new Dictionary<string, string?>
+        {
+            ["InfluxDb:Queryable:" + setting] = value,
+            ["InfluxDb:Pending:Url"] = "http://localhost",
+            ["InfluxDb:Pending:Database"] = "legacy",
+            ["InfluxDb:Pending:Token"] = "old-token"
+        };
+        var config = new ConfigurationBuilder().AddConfiguration(WriterConfig()).AddInMemoryCollection(values).Build();
+        var failure = Should.Throw<ArgumentException>(() => new InfluxV3TelemetryWriter(client, config));
+        failure.ToString().ShouldNotContain("SEEDED_PRIVATE");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Production_http_registration_ignores_legacy_company_lookup_and_does_not_follow_storage_redirects(bool redirect)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
@@ -201,7 +244,9 @@ public sealed class StorageAdapterSafetyTests
         var lookupCalls = 0;
         var redirectCalls = 0;
         app.MapGet("/visibility", () => { lookupCalls++; return new { companyId = "company", visible = false }; });
-        app.MapPost("/api/v3/write_lp", () => Microsoft.AspNetCore.Http.Results.Redirect("/positive", preserveMethod: true));
+        app.MapPost("/api/v3/write_lp", Microsoft.AspNetCore.Http.IResult () => redirect
+            ? Microsoft.AspNetCore.Http.Results.Redirect("/positive", preserveMethod: true)
+            : Microsoft.AspNetCore.Http.Results.NoContent());
         app.MapPost("/positive", () => { redirectCalls++; return Microsoft.AspNetCore.Http.Results.NoContent(); });
         await app.StartAsync();
         try
@@ -214,28 +259,30 @@ public sealed class StorageAdapterSafetyTests
             }).Build();
             await using var services = new ServiceCollection().AddSingleton<IConfiguration>(configuration).AddTelemetryStorageAdapters().BuildServiceProvider();
             using var gzip = InfluxV3WriterTests.Gzip("a f=1i 1\n");
-            var failure = await Should.ThrowAsync<ProviderOperationException>(() =>
-                services.GetRequiredService<ITelemetryWriter>().WriteAsync(Request(), gzip, default).AsTask());
-            failure.Kind.ShouldBe(ProviderFailureKind.Ambiguous);
+            var writer = services.GetRequiredService<ITelemetryWriter>();
+            if (redirect)
+            {
+                var failure = await Should.ThrowAsync<ProviderOperationException>(() => writer.WriteAsync(Request(), gzip, default).AsTask());
+                failure.Kind.ShouldBe(ProviderFailureKind.Ambiguous);
+            }
+            else
+                (await writer.WriteAsync(Request(), gzip, default)).CommittedPoints.ShouldBe(1);
             lookupCalls.ShouldBe(0);
             redirectCalls.ShouldBe(0);
         }
         finally { await app.StopAsync(); }
     }
 
-    private static IConfiguration WriterConfig(string timeout = "00:00:30", string pendingDatabase = "pending")
-    {
-        var values = new Dictionary<string, string?> { ["InfluxDb:WriteTimeout"] = timeout };
-        foreach (var store in new[] { "Queryable", "Pending" })
+    private static IConfiguration WriterConfig(string timeout = "00:00:30") =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            values[$"InfluxDb:{store}:Url"] = "http://localhost";
-            values[$"InfluxDb:{store}:Database"] = store == "Pending" ? pendingDatabase : "queryable";
-            values[$"InfluxDb:{store}:Token"] = "test-only-token";
-        }
-        return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
-    }
+            ["InfluxDb:WriteTimeout"] = timeout,
+            ["InfluxDb:Queryable:Url"] = "http://localhost",
+            ["InfluxDb:Queryable:Database"] = "queryable",
+            ["InfluxDb:Queryable:Token"] = "test-only-token"
+        }).Build();
 
-    private static TelemetryWriteRequest Request() => new( "0123456789abcdef0123456789abcdef",
+    private static TelemetryWriteRequest Request() => new("0123456789abcdef0123456789abcdef",
         [new(new BatchId(Guid.NewGuid()), 17, new(new("company"), new("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(1)))], 10);
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {

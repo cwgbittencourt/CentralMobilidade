@@ -18,7 +18,6 @@ public sealed class InfluxV3TelemetryWriter : ITelemetryWriter
 {
     private readonly HttpClient client;
     private readonly Destination queryable;
-    private readonly Destination pending;
     private readonly TimeSpan timeout;
     private readonly int maxPoints;
     private readonly long maxBytes;
@@ -27,10 +26,7 @@ public sealed class InfluxV3TelemetryWriter : ITelemetryWriter
     public InfluxV3TelemetryWriter(HttpClient client, IConfiguration configuration)
     {
         this.client = client;
-        queryable = ReadDestination(configuration, "Queryable");
-        pending = ReadDestination(configuration, "Pending");
-        if (queryable.Uri == pending.Uri)
-            throw new ArgumentException("Queryable and pending storage must be distinct.");
+        queryable = ReadDestination(configuration);
         timeout = configuration.GetValue("InfluxDb:WriteTimeout", TimeSpan.FromSeconds(30));
         maxPoints = configuration.GetValue("Telemetry:WriteBatchMaxPoints", 5000);
         maxBytes = configuration.GetValue("Telemetry:WriteBatchMaxBytes", 2L * 1024 * 1024);
@@ -51,13 +47,12 @@ public sealed class InfluxV3TelemetryWriter : ITelemetryWriter
                 throw new ArgumentException("Invalid or repeated write owner.", nameof(request));
         if (request.TraceId is null || request.TraceId.Length != 32 || !IsHexTrace(request.TraceId))
             throw new ArgumentException("A valid trace identifier is required.", nameof(request));
-        var store = queryable; // Application writes have exactly one destination; legacy configuration is removed in T107.
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(timeout);
         try
         {
-            using var message = new HttpRequestMessage(HttpMethod.Post, store.Uri);
-            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", store.Token);
+            using var message = new HttpRequestMessage(HttpMethod.Post, queryable.Uri);
+            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", queryable.Token);
             message.Headers.Accept.Add(new("application/json"));
             message.Headers.TryAddWithoutValidation("traceparent", $"00-{request.TraceId}-{ActivitySpanId.CreateRandom()}-01");
             message.Content = new BorrowedGzipContent(gzipLineProtocol);
@@ -108,11 +103,11 @@ public sealed class InfluxV3TelemetryWriter : ITelemetryWriter
         return new(request.Points.Count - rejected.Count, rejections);
     }
 
-    private static Destination ReadDestination(IConfiguration configuration, string name)
+    private static Destination ReadDestination(IConfiguration configuration)
     {
-        var url = configuration[$"InfluxDb:{name}:Url"];
-        var database = configuration[$"InfluxDb:{name}:Database"];
-        var token = configuration[$"InfluxDb:{name}:Token"];
+        var url = configuration["InfluxDb:Queryable:Url"];
+        var database = configuration["InfluxDb:Queryable:Database"];
+        var token = configuration["InfluxDb:Queryable:Token"];
         if (!Uri.TryCreate(url, UriKind.Absolute, out var origin) || origin.Scheme is not ("http" or "https") ||
             origin.UserInfo.Length != 0 || origin.Query.Length != 0 || origin.Fragment.Length != 0 || origin.AbsolutePath != "/" ||
             string.IsNullOrWhiteSpace(database) || string.IsNullOrWhiteSpace(token) || token.Contains('\r') || token.Contains('\n'))

@@ -1,33 +1,15 @@
-# Configured company visibility — T049
+# Optional cadastral enrichment — T107
 
-`ConfiguredCadastralAdapter(HttpClient, IConfiguration)` implements the replaceable
-`ICompanyVisibilityResolver`. Ingestion does not register companies or infer their
-visibility. With no `Cadastral:CompanyVisibilityUrl`, every lookup is `Unavailable`,
-so processing must keep the point in pending storage.
+The internal producer is authoritative for company existence: every valid `empresa_id`
+is recognized without a registry request. One ingestion credential covers all companies.
 
-The configured HTTP integration contract is:
+`ICompanyVisibilityResolver` and `ConfiguredCadastralAdapter` were removed in T105.
+`AddTelemetryStorageAdapters()` registers only the single-store telemetry writer.
+Legacy company-lookup configuration is not read and cannot gate persistence or authorized
+telemetry visibility. The old T049 lookup protocol and pending-routing behavior are
+superseded by constitution 2.0.0 and FR-019; they must not be reintroduced.
 
-```text
-GET <CompanyVisibilityUrl>?companyId=<URI-escaped exact company ID>
-Authorization: Bearer <Cadastral:Token>   (if configured)
-
-200 {"companyId":"exact-company-id","visible":true}
-```
-
-This defines the adapter's expected wire contract; no existing external cadastral
-service or live integration is assumed. Supply a service implementing it, or replace
-the port. The endpoint URL may contain a path, but no query, fragment or embedded
-credentials. Company IDs preserve their exact case/Unicode representation.
-
-Only HTTP 200, unique JSON properties, a matching company ID and boolean `visible:true`
-return `Visible`. Explicit false and 404 return `Unknown`. Missing/mismatched fields,
-duplicate keys and invalid JSON return `Inconclusive`. Other HTTP statuses, unavailable
-transport, oversized bodies or timeout return `Unavailable`. All three non-visible
-results route to pending; no stale positive fallback is cached. Caller cancellation
-propagates.
-
-`Cadastral:LookupTimeout` defaults to two seconds (positive, at most 30 seconds).
-Response reads are bounded to 16 KiB with JSON depth 4. No raw provider details are
-logged or returned. `AddTelemetryStorageAdapters()` supplies controlled HTTP clients
-without redirects/cookies and with logged headers redacted; T053 wires the worker.
-Driver identity resolution remains separate and is not implemented by this adapter.
+`IDriverResolver` remains the separate application port for optional, authorized,
+company-scoped driver presentation. No concrete driver resolver is currently supplied
+by this folder. Its future implementation must preserve minimal identity disclosure,
+audit and authorization, and must not reintroduce company-existence gating.

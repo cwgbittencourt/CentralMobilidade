@@ -1,10 +1,12 @@
 # InfluxDB v3 writer — T049
 
 `InfluxV3TelemetryWriter(HttpClient, IConfiguration)` implements `ITelemetryWriter`.
-Configure `InfluxDb:Queryable:{Url,Database,Token}` and
-`InfluxDb:Pending:{Url,Database,Token}`. URLs must be HTTP(S) origins, without paths,
-credentials, query strings or fragments. The resolved destinations must be distinct.
-Tokens belong in protected configuration, never checked-in examples.
+Configure only `InfluxDb:Queryable:{Url,Database,Token}`. The URL must be an HTTP(S)
+origin, without paths, embedded credentials, query strings or fragments. No Pending
+configuration or company-existence endpoint is required or read. Obsolete Pending
+values cannot block or redirect writes, and invalid/missing Queryable configuration
+fails without falling back to another store. Tokens belong in protected configuration,
+never checked-in examples.
 
 The writer streams the caller's existing gzip bytes without decompression or
 recompression. It leaves the source open. Each POST uses `/api/v3/write_lp` with
@@ -54,5 +56,20 @@ use Queryable; company existence is authoritative from the producer's valid `emp
 The obsolete company-visibility resolver/HTTP adapter and its registration were removed
 with the application port. Driver resolution remains a separate port.
 
-The constructor still validates the legacy Pending configuration shown above; removing
-that configuration requirement is T107. T106 provides the guarded PostgreSQL schema migration and offline reconciliation runbook. Do not infer that the single-container Compose transition has happened (T109).
+At the T105 stage the constructor still validated legacy Pending configuration. T107
+removes that requirement; the current writer reads only Queryable. T106 provides the
+guarded PostgreSQL schema migration and offline reconciliation runbook. The Compose
+transition remains T109.
+
+## T107 — single-store configuration (2026-10-14)
+
+The writer has one endpoint and preserves native gzip streaming, stream ownership,
+millisecond precision, `accept_partial=true`, `no_sync=false`, bounded provider JSON,
+partial-result source ownership, trace propagation, cancellation and private failures.
+The shared test fixtures now provide Queryable settings only. Additional regressions
+cover ignored stale Pending configuration, no fallback for invalid Queryable settings,
+and successful writes/blocked redirects with a legacy company-lookup URL that is never called.
+
+The obsolete company adapter/registration was already removed in T105. `IDriverResolver`
+remains independent and unchanged; no driver enrichment implementation is claimed here.
+T108 removes obsolete template/health settings; T109 changes the Compose topology.

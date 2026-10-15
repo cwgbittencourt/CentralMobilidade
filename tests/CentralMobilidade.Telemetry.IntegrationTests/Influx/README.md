@@ -174,3 +174,43 @@ em `guard-clock-recheck.trx` (1m43s). O build do projeto de integração foi ref
 com zero erros/avisos. A suíte de 106 cenários não foi repetida integralmente:
 a rechecagem cobre os seis testes cujo fixture mudou e resolve as três falhas
 inesperadas da execução inicial. As outras 25 falhas seguem deliberadamente vermelhas.
+
+## T107 — writer sem configuração de pendentes (2026-10-14)
+
+O writer lê somente `InfluxDb:Queryable:{Url,Database,Token}`. Os fixtures comuns
+agora fornecem apenas esse destino. A regressão T104 que falhava por exigir Pending
+passou: duas empresas sem cadastro são enviadas ao mesmo banco, sem consulta cadastral.
+
+Os novos casos verificam que valores Pending iguais ao destino atual, indisponíveis
+ou malformados não bloqueiam nem redirecionam a escrita; configuração Queryable
+inválida continua falhando sem fallback e sem expor os valores privados. O registro
+HTTP real é exercitado em sucesso e redirect, sem chamar o endpoint cadastral legado.
+O port `IDriverResolver` segue preservado, sem implementar enriquecimento nesta etapa.
+
+A primeira seleção ampla (`FullyQualifiedName~Influx`) executou 43 casos: 42 passaram
+e um teste de health falhou. O nome do método de health também contém "influx";
+a falha é a adaptação T108 já prevista, pois o probe PostgreSQL ainda exige oito
+tabelas, incluindo a tabela de promoção retirada na T106. Dos 42 aprovados, 41
+pertencem ao namespace de escrita e um é outro cenário de health. O filtro correto
+abaixo restringe o namespace e separa essa pendência, sem alterar nem ignorar o teste.
+
+```powershell
+dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests/CentralMobilidade.Telemetry.IntegrationTests.csproj --no-build --no-restore --filter "FullyQualifiedName~CentralMobilidade.Telemetry.IntegrationTests.Influx.&FullyQualifiedName!~Production_batcher_flushes_at_first_default_threshold" --logger "trx;LogFileName=writer-final.trx" --results-directory artifacts/validation/T107
+```
+
+Os três cenários reais usam InfluxDB `3.11.6-core`, armazenamento em memória e um
+container temporário: timestamp em milissegundos, erro parcial real e reconciliação
+parcial pelo writer de produção. A autenticação do servidor é desativada no fixture;
+o header bearer é validado nos testes HTTP controlados. Não há prova nova de WAL,
+reinício, perda do host ou autorização por banco. Nenhum volume do projeto é usado.
+
+Build da solução: zero erros/avisos. Unitários 242/242, contratos 58/58 e arquitetura
+47/47 passaram. T050/T051 não foram implementadas; os três testes do montador T050
+continuam presentes e fora desta seleção. O teste de saúde pertence à próxima T108.
+Relatórios locais, inclusive a regressão vermelha anterior à mudança e a seleção
+ampla com falha de saúde, ficam em `artifacts/validation/T107/` (Git ignored).
+
+A execução final do filtro restrito passou **41/41**, sem skips, em 34s
+(`writer-final.trx`), incluindo os três cenários contra o servidor real. A falha de
+health na seleção ampla permanece registrada para T108; não é uma aprovação da
+suíte completa. Somente T107 foi marcada como concluída.
