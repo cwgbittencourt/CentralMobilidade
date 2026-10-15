@@ -41,6 +41,16 @@ configuration requires a process restart to reload. File/secret-provider reload 
 configuration provider's change notifications. Protect the private configuration source against writes
 by application clients; only trusted administration provisions profiles and rotates credentials.
 
+## Shared internal producer
+
+One technical producer uses one rotatable ingestion credential for all company IDs. `ProducerCredential`
+has no company allowlist; `empresa_id` is validated by the Line Protocol parser, not a registry.
+Hash fields are configured under `Authentication:Producers:0:Hash`; set the matching `CredentialId`
+and `ProducerId` through protected configuration. Rotation may temporarily overlap two credentials
+for the same producer; it does not create credentials per company. Producer authentication grants
+submission and ownership checks for its own batches, not operator/viewer presentation permissions.
+Optional driver enrichment remains separately scoped and audited.
+
 ## Policies and tenant scope
 
 | Policy | Behavior |
@@ -64,7 +74,8 @@ callers never supply their own allowed-company list. Case-sensitive identifiers 
 with unknown company scope requires explicit human cross-company permission. Missing or mismatched
 company scope yields the same generic 404 as an unavailable resource; a missing permission yields a
 generic 403, and failed authentication yields a generic 401 with `WWW-Authenticate: Bearer`. Handlers
-must still apply cadastral visibility, query bounds, and resource availability. Batch status endpoints
+must still apply authorized company scope, query bounds, and resource availability. Company existence
+is authoritative from valid producer-supplied IDs; no cadastral visibility gate applies. Batch status endpoints
 supporting both producer and operator access must select the appropriate authorization branch, not
 combine their policies as an AND requirement.
 

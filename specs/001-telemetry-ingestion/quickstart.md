@@ -1,7 +1,10 @@
 # Quickstart Validation: Vehicle Telemetry Ingestion
 
-This guide defines the end-to-end checks the implementation must make runnable. Commands become
-available after the implementation tasks create the solution and deployment files.
+This guide includes current startup and future acceptance scenarios. T112 must validate the foundation
+before T050. T050/T051 processing, T052/T053 consumption, status/presentation endpoints, Grafana
+provisioning, Pub/Sub parity and load/final-proof commands below are not all implemented. Sections
+4–10 are acceptance targets, not obtained results. Check tasks.md before running task-specific scripts;
+`Provision-GrafanaOrganizations.ps1` is planned for T071.
 
 ## Prerequisites
 
@@ -13,21 +16,40 @@ available after the implementation tasks create the solution and deployment file
 
 ## 1. Configure local secrets
 
-Copy the checked-in `.env.example` to an untracked `.env` and replace every development placeholder.
+From the repository root, copy `.env.example` to an untracked `.env` and fill its blank secret values.
 The example file must contain no working credentials. Producer and operator bearer tokens are distinct,
 must be stored as hashes/secret references, and must not be passed on command lines in shared
 environments. Seed at least one scoped operator and one explicit cross-company administrator for
 authorization tests; neither credential may be reused as the producer token.
 
+One internal producer credential covers all valid `empresa_id` values (business `idEmpresa`), without
+company allowlists or existence lookup. Missing/invalid IDs retain contract rejection. Optional driver
+enrichment cannot gate telemetry; operator/viewer scopes and audited identity disclosure remain separate.
+Provision hashed producer credentials using protected `Authentication:Producers` configuration as
+[documented by the API](../../src/CentralMobilidade.Telemetry.Api/Security/README.md).
+
+For a fresh installation, create only the offline `queryable.json` token following
+[deploy/README.md](../../deploy/README.md), then set the absolute `INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE`
+path privately. Never regenerate that token for an existing catalog. For legacy installations, complete
+[offline reconciliation](../../docs/runbooks/single-influx-upgrade.md) first. Preserve the project name,
+`influxdb_queryable_data` volume, node-id `queryable`, and legacy pending volume/backups.
+
 ## 2. Start dependencies
 
 ```powershell
-docker compose -f deploy/compose.yaml up -d --wait
-docker compose -f deploy/compose.yaml ps
+docker compose -f deploy/compose.yaml config --quiet
+docker compose -f deploy/compose.yaml up -d --build --wait
+docker compose -f deploy/compose.yaml ps -a
 ```
 
 Expected: PostgreSQL, RabbitMQ, InfluxDB 3 Core, Grafana, Prometheus, and Loki report healthy. Volumes
-are named and persistent.
+are named and persistent. One server `influxdb` stays running; `influxdb-init` initializes/preserves
+`telemetry` with 60-day retention and exits zero. Default container names are
+`centralmobilidade-influxdb-1` and `centralmobilidade-influxdb-init-1`; the latter is a job.
+Base Compose publishes only Grafana on loopback. To publish development ports, include
+`-f deploy/compose.override.yaml` in start/status/stop commands. Starting the solution in the IDE
+does not invoke Compose. The following Grafana provisioning checks await T071–T075; the current
+bootstrap supplies the pinned image/plugin, not the finished dashboards or reconciler.
 
 After initial startup, YAML must provision only the internal default organization and its direct InfluxDB
 datasource and dashboards. Confirm the image reports the pinned Grafana and signed Infinity versions.
@@ -47,14 +69,28 @@ command-line arguments.
 
 ## 3. Run migrations and start application processes
 
+Complete the migration and private runtime configuration described below before invoking `up`.
+Include your private override if using app containers; the checked-in templates alone are insufficient.
+
 ```powershell
 dotnet restore CentralMobilidade.slnx
 dotnet test CentralMobilidade.slnx --filter Category=Contract
 docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app up -d --build --wait
 ```
 
-Expected: database migrations complete once, the API readiness check reports ready only when it can
-confirm durable publishing, and the worker starts consuming with bounded prefetch.
+Before application startup, apply migrations with a separate identity following the
+[migration instructions](../../src/CentralMobilidade.Telemetry.Infrastructure/Persistence/Migrations/README.md).
+The application does not migrate its database. Supply runtime PostgreSQL/RabbitMQ credentials,
+least-privilege `InfluxDb:Queryable:Token` and hashed authentication credentials. Compose does not
+inject arbitrary `.env` keys into application containers. Use a private override under ignored `data/`
+(for example `data/compose.app-secrets.yaml`, included with `-f` before `--profile app`), or configure
+host processes directly. Do not put secrets in command arguments or tracked settings. The command
+above starts hosts with templates; it does not provision runtime credentials or implement consumption.
+
+API readiness requires PostgreSQL durability and durable queue publication, independently of downstream
+Influx/worker availability. Worker readiness requires PostgreSQL, Queryable connectivity and real
+consumer freshness; it remains unavailable until T053 wires the consumer. Liveness alone does not
+prove processing. Application URLs use `http://influxdb:8181`; host runs override this to loopback.
 
 ## 4. Submit a valid gzip batch
 
@@ -65,13 +101,13 @@ charset=utf-8`, `Content-Encoding: gzip`, and `X-Contract-Version: v1`.
 Expected:
 
 - HTTP `202` only after a RabbitMQ publisher confirm.
-- Response contains `batchId`, `accepted`, and a `statusUrl`.
+- Response contains `batchId`, `receivedAt`, `state: accepted`, and `statusUrl`.
 - Polling the status reaches `completed`.
 - The point is queryable from InfluxDB and appears in the provisioned latest-position dashboard.
 
 Verify the same authorized point through a restricted viewer dashboard. Attempt the same API and
 dashboard query for a company outside that viewer organization's service-credential scope; it must
-return the same non-disclosing result as an unknown company. Confirm that Explore in the viewer
+return the same non-disclosing result as an unavailable resource. Confirm that Explore in the viewer
 organization exposes no InfluxDB datasource.
 
 Validate viewer limits at and immediately above 500 latest vehicles, a 24-hour/10,000-point trip, and a
@@ -109,7 +145,7 @@ Expected:
 Use seeded fixture values for plate, coordinates, driver name, CPF, and bearer token. Run the privacy
 scanner over application logs, Loki query results, Prometheus labels, and exported traces.
 
-Expected: none of the seeded sensitive values appears. `id_veiculo`, `batchId`, and safe keyed digests
+Expected: none of the seeded sensitive values appears. `veiculo_id`, `batchId`, and safe keyed digests
 remain sufficient for correlation. The authorized driver-presentation request returns only display name
 and optional CPF suffix and produces an audit event.
 
@@ -153,6 +189,8 @@ the final proof fail.
 
 ```powershell
 docker compose -f deploy/compose.yaml down
+# If started with development profiles, use the same files and profiles:
+docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app --profile pubsub-emulator down
 ```
 
 Do not pass `--volumes` when preserving local data. Backup and destructive cleanup procedures must be

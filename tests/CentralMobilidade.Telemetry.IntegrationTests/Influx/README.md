@@ -1,6 +1,20 @@
 # Writer InfluxDB v3 — T038
 
-## Atualização T049
+## Estado atual após T110
+
+Constituição 2.0.0 e T105–T110 substituem o modelo de empresas desconhecidas: o writer usa apenas
+`InfluxDb:Queryable`, sem consulta de existência. As seções T038/T049/T104/T105 abaixo são registros
+históricos, não instruções para configurar bancos ou resolvers removidos. T107 validou 41 casos,
+incluindo três contra Influx real; T108 resolveu a prontidão que exigia promoções. T109 usa os serviços
+`influxdb` e `influxdb-init` e mantém volume/node-id queryable. T110 validou migração e guard; veja
+[o relatório de recovery](../Recovery/WorkerAcknowledgementBoundaryTests.md) para resultados e limites.
+
+Os três testes T050 e 21 cenários T051 continuam vermelhos por implementações ausentes. T112 ainda
+deve validar o conjunto; evidências da topologia dupla não comprovam persistência/reinício do Compose
+atual. Configuração vigente em [deploy](../../../deploy/README.md) e
+[writer](../../../src/CentralMobilidade.Telemetry.Infrastructure/Influx/README.md).
+
+## Histórico T049 — topologia dupla superada
 
 O writer e o adapter cadastral estão implementados. Os 12 cenários originais do
 writer, o controle direto e uma nova prova de escrita parcial contra InfluxDB real

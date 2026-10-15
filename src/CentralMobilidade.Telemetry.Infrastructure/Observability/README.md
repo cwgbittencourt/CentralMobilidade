@@ -26,7 +26,7 @@ separately by [the T021 privacy logging policy](PrivacyLogging.md).
 ## Correlation and privacy
 
 Use the DI singleton `TelemetryObservability.StartBatchActivity(operation, batchId, parentContext)`
-at the future ingestion/processing/promotion boundaries. Operation is a closed enum, batch ID is a
+at the future ingestion/processing boundaries. Operation is a closed enum, batch ID is a
 validated domain value, and an optional W3C parent context preserves an incoming trace. With an
 active HTTP span, child batch spans inherit its trace. Producers and queue adapters must propagate
 W3C context through their transport adapters; the final queue spans are implemented with those adapters.

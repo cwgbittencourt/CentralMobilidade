@@ -1,6 +1,6 @@
 # Control-plane persistence (T018/T019)
 
-`TelemetryControlDbContext` maps the eight control-plane rows to PostgreSQL. Telemetry coordinates,
+`TelemetryControlDbContext` maps the seven current control-plane entities to PostgreSQL. Telemetry coordinates,
 raw rejected lines, driver names, CPF and bearer tokens are not columns. Protected quarantine content
 is referenced by an opaque quarantine ID and a protected storage reference. Credential IDs in operator
 profiles refer to the separate hashed credential store; this task does not replace the configured
@@ -14,12 +14,12 @@ append-only protections. Apply it with a separate migration identity as describe
 
 Tables use snake_case names and quoted CLR property names for columns. Timestamp columns are
 `timestamp with time zone`; tracked writes reject non-UTC offsets. Company/vehicle keys preserve
-case. Batch/profile/promotion `RowVersion` is a manually incremented optimistic concurrency token.
-Database triggers require each batch/profile/promotion update to advance its version by one.
-Guard `FencingVersion` is a concurrency token controlled by the future reservation adapter. Guard and
+case. Batch/profile `RowVersion` is a manually incremented optimistic concurrency token.
+Database triggers require each batch/profile update to advance its version by one.
+Guard `FencingVersion` is a concurrency token controlled by the SelectedEventIdentityGuard adapter. Guard and
 evidence have independent expiry indexes and no cascading dependency on batches or one another.
-No telemetry-lifetime reservation algorithm or target-scale performance is claimed: T041/ADR-001
-must approve the physical strategy before T047 implements the identity port.
+The adapter preserves immutable guards and recoverable leases/fencing. ADR-001 records the unresolved
+target-throughput shortfall; functional tests do not approve production capacity.
 
 `PostgresBatchStateStore` creates ingestion batches with `INSERT ... ON CONFLICT` inside a database
 transaction. Reusing a `BatchId` with identical persisted metadata returns the existing batch; a
@@ -50,7 +50,7 @@ only append and never performs update/delete.
 ## Verification
 
 The integration tests validate keys, absence of raw telemetry columns, UTC enforcement, tracked audit
-immutability, PostgreSQL round-trips for all eight entities, independent evidence deletion, database
+immutability, PostgreSQL round-trips for current entities, independent evidence deletion, database
 constraints, stale batch version rejection, eight concurrent identical appends, persistent receipts,
 collision rejection and cancellation. The database fixture uses PostgreSQL 17.11 Testcontainers by
 default, or a dedicated disposable database supplied through `TELEMETRY_TEST_POSTGRES`. Never point
@@ -59,8 +59,10 @@ Migration tests also prove repeated application and idempotent SQL execution, sc
 eight concurrent identity inserts, fenced lease takeover, expiry-aware guard deletion, SQL audit mutation
 denial, runtime-role schema denial, scope restrictions and 30-day retention bounds.
 
-On 2026-10-13 the Windows build passed with zero warnings/errors and the full suite ran in the Linux
+Historical T018/T019 validation (before the single-store amendment): on 2026-10-13 the Windows build passed with zero warnings/errors and the full suite ran in the Linux
 .NET 10.0.401 SDK image against an isolated PostgreSQL container. Windows Application Control still
 blocks loading the Application assembly in native tests; that policy was preserved. Validation files
 and database volume live outside versioned source. Architecture/load projects are still skeletons
 and provide no capacity evidence.
+
+Current schema and validation: [T106 migration](Migrations/README.md) and [T110 recovery evidence](../../../tests/CentralMobilidade.Telemetry.IntegrationTests/Recovery/WorkerAcknowledgementBoundaryTests.md). Legacy promotion checks exist only to guard upgrades; runtime has no promotion entity or routing columns. See the [offline upgrade](../../../docs/runbooks/single-influx-upgrade.md) for populated databases. Registration never applies migrations automatically.

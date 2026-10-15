@@ -104,13 +104,13 @@ docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile 
 docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app ps -a
 ```
 
-The API serves its skeleton at `http://localhost:8080/` and aggregate Prometheus metrics at `/metrics`.
+The API serves its root status at `http://localhost:8080/` and aggregate Prometheus metrics at `/metrics`.
 The Worker now remains running and serves `/metrics` on internal port 9464; no worker port is published
-on the host. Its queue consumer is implemented in T053. Application templates are described below,
-dependency adapters follow in later tasks. `/health/live`, `/health/ready`, and `/health/dependencies`
+on the host. Its queue consumer remains unimplemented until T053. Application templates are described below,
+intake and storage adapters have focused tests; the complete worker path remains unfinished. `/health/live`, `/health/ready`, and `/health/dependencies`
 are available on both processes; the worker also exposes `/health/worker`. Liveness is independent of
-dependencies. Readiness intentionally stays unavailable while the real publication probe (T027/T080)
-or consumer heartbeat (T053) is missing. A running metrics endpoint does not prove queue-consumer readiness.
+dependencies. API readiness requires PostgreSQL and the registered RabbitMQ durable publication probe.
+Worker readiness remains unavailable until T053 supplies real consumer heartbeats. A running metrics endpoint does not prove queue-consumer readiness.
 
 Run the Pub/Sub emulator independently:
 
@@ -146,6 +146,22 @@ publish, pull, and acknowledgement through its REST API. Validation used the iso
 `centralmobilidade-t009` project and non-default host ports. Its containers were stopped without
 deleting dependency volumes. Provider parity and worker readiness remain later implementation gates.
 
+## Runtime configuration and current limits
+
+The `app` profile starts hosts without provisioning runtime credentials or migrating PostgreSQL.
+Apply the [migration procedure](../src/CentralMobilidade.Telemetry.Infrastructure/Persistence/Migrations/README.md)
+with a separate identity. Supply runtime connection/password/token and hashed authentication settings
+through a private override under ignored `data/` (include it with `-f` before `--profile app`) or configure
+host processes directly. Arbitrary `.env` settings do not automatically enter app containers.
+A blank producer array accepts no authenticated intake requests.
+
+Every valid producer-supplied `empresa_id` is recognized as existing and targets `telemetry` on
+`influxdb`. Optional driver enrichment cannot block storage or authorized visibility. Missing/invalid
+IDs retain parser rejection; presentation still enforces company scope. T050/T051 and T052/T053 are
+unfinished, so starting hosts does not prove processing. Grafana organizations/datasources/dashboards
+remain T071–T075. T112 still needs combined persistence/restart evidence. No IDE startup hook has
+been added: run Compose explicitly.
+
 ## Configuration templates
 
 Copy `.env.example` to an untracked root `.env` and fill in its blank secret values and absolute token
@@ -169,9 +185,10 @@ Application PostgreSQL connection strings, RabbitMQ passwords, and InfluxDB toke
 them through the application process environment or a deployment secret provider using .NET keys
 such as `ConnectionStrings__TelemetryControl`, `Queue__RabbitMq__Password`,
 `InfluxDb__Queryable__Token`. Use least-privilege
-application credentials rather than the InfluxDB bootstrap admin token files. Credential loading and
-provider registration are implemented in the subsequent security/infrastructure tasks. Do not store
-producer or operator bearer tokens in these files; their separate credential stores follow in T017.
+application credentials rather than the InfluxDB bootstrap admin token files. The API has separate typed credential stores from T017. Provision one hashed producer credential
+for all company IDs through protected `Authentication:Producers` configuration; no company allowlist
+is required. Operator/viewer credentials and presentation scopes remain independent. See
+[authentication setup](../src/CentralMobilidade.Telemetry.Api/Security/README.md).
 
 Service URLs in the JSON templates use Docker DNS names. For a host-based development process,
 override `Queue__RabbitMq__Host` to `localhost`, its port to the development AMQP port, and
@@ -214,3 +231,16 @@ The current Docker inventory contained no project-labelled containers/volumes or
 centralmobilidade/queryable/pending names. External catalogs were not inspected. No existing service
 was stopped or started, no project database was migrated and no volume was removed. Populated
 installations must complete the T106 reconciliation before applying this deployment.
+
+## T111 documentation verification
+
+Documentation now describes a single bootstrap file/store, one shared internal ingestion credential,
+optional driver enrichment, independent presentation permissions, explicit Compose startup and the
+safe T106 legacy procedure. Historical dual-store results remain labelled as superseded. T050/T051,
+worker consumption, dashboards and T112 combined validation are explicitly unfinished.
+
+Validation on 2026-10-14: local Markdown links and code-fence pairing checked; `.env.example` retains
+unique interpolation keys and blank secrets; base/development topology with app/emulator profiles
+passed `scripts/Test-SingleInfluxTopology.ps1` using synthetic values. No services were started and
+no database or volume was changed. This documentation-only task did not repeat runtime suites or
+claim end-to-end acceptance; persistence/restart and cross-artifact gates remain T112.

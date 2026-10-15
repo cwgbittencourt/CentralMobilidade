@@ -4,7 +4,7 @@ Plataforma de ingestão, processamento, consulta e observabilidade de telemetria
 
 O sistema deverá receber lotes compactados de eventos enviados por uma central interna, confirmar o recebimento somente depois que os dados estiverem duravelmente enfileirados, processar cada evento de forma assíncrona e disponibilizar a telemetria autorizada para consulta e visualização no Grafana.
 
-> **Estado atual:** projeto em construção. A solução e os seis projetos de produção em .NET 10 já foram criados (T001 e T002). As APIs, workers, persistência, contêineres, testes e dashboards descritos neste documento ainda fazem parte do plano de implementação.
+> **Estado atual:** projeto em construção. Ingestão durável, parser, guard de identidade, quarentena e writer já possuem implementação e testes. A adequação T104–T110 usa um único InfluxDB. T112 ainda deve validar o conjunto; T050/T051 (batching/processamento), consumo T052/T053, consultas e dashboards ainda não estão completos. Consulte [tasks.md](specs/001-telemetry-ingestion/tasks.md) para os limites de cada evidência.
 
 ## O que o projeto deverá entregar
 
@@ -17,8 +17,7 @@ Ao final, a Central Mobilidade deverá fornecer:
 - idempotência por empresa, veículo e instante do evento, sem alteração silenciosa do evento original;
 - isolamento e retenção controlada de rejeições em quarentena protegida;
 - acompanhamento do estado de cada lote, com contagens e códigos de erro estáveis;
-- separação de telemetria de empresas conhecidas e ainda desconhecidas;
-- promoção segura da área pendente para a área consultável quando a empresa for reconhecida;
+- reconhecimento de todo `empresa_id` válido informado pelo produtor interno, com uma credencial compartilhada e um único banco de telemetria;
 - consultas limitadas para posição atual, trajeto de um veículo e saúde da ingestão;
 - resolução cadastral separada e auditada para apresentação mínima da identidade do motorista;
 - dashboards técnicos e de negócio no Grafana, com isolamento entre organizações;
@@ -58,11 +57,8 @@ Telemetry.Worker
   - quarentena de rejeições
   - processamento parcial
           |
-          +----------------------> InfluxDB pendente
-          |                         empresas desconhecidas
-          |
-          +----------------------> InfluxDB consultável
-                                    empresas reconhecidas
+          +----------------------> InfluxDB / telemetry
+                                    todos os empresa_id válidos
                                              |
                   +--------------------------+-------------------+
                   |                                              |
@@ -113,13 +109,13 @@ Durante toda a retenção da telemetria, um guardião de identidade imutável de
 - reservas incompletas poderão ser retomadas pelo proprietário ou assumidas após expiração de lease, com fencing contra concorrência;
 - uma falha ambígua entre PostgreSQL e InfluxDB poderá repetir a escrita física idêntica, mas nunca criar um segundo evento lógico mutável.
 
-A estratégia definitiva do guardião de identidade depende de benchmark obrigatório para 10.000 e 100.000 veículos e será documentada em ADR antes da implementação correspondente.
+O guardião selecionado foi implementado na T047 e documentado no ADR-001. Os testes funcionais não resolvem o déficit de throughput registrado; a aprovação de capacidade para 10.000 e 100.000 veículos continua bloqueada até otimização e nova medição.
 
-### 4. Empresas conhecidas e pendentes
+### 4. Empresas reconhecidas pelo produtor
 
-Eventos de empresas reconhecidas serão gravados no banco InfluxDB consultável. Eventos de empresas desconhecidas, ou cuja consulta cadastral seja indisponível ou inconclusiva, irão para um banco pendente separado e invisível aos dashboards.
+Todo `empresa_id` válido enviado pelo produtor interno é reconhecido como existente e segue para o único banco `telemetry`. `empresa_id` é o nome no contrato para o identificador de negócio `idEmpresa`; tags não foram renomeadas. IDs ausentes ou inválidos continuam rejeitados pelo parser. Uma única credencial de ingestão atende a todas as empresas, sem allowlist cadastral.
 
-Um worker de promoção deverá mover esses eventos de maneira idempotente quando a empresa for reconhecida. A origem pendente só poderá ser apagada depois da confirmação e reconciliação do destino consultável.
+O enriquecimento de motorista é opcional, separado e autorizado; sua ausência não bloqueia ingestão nem oculta telemetria dentro do escopo permitido. Operadores e viewers mantêm credenciais, permissões e escopos próprios. Para instalações legadas, siga a [reconciliação offline](docs/runbooks/single-influx-upgrade.md) antes de retirar a infraestrutura antiga, preservando dados, volumes e tokens.
 
 ### 5. Consulta de lotes e rejeições
 
@@ -299,8 +295,7 @@ O Docker Compose final deverá iniciar, com volumes nomeados persistentes:
 - API e Worker;
 - PostgreSQL;
 - RabbitMQ;
-- InfluxDB consultável;
-- InfluxDB pendente;
+- um InfluxDB (`influxdb`) e seu job de inicialização (`influxdb-init`, que encerra com código zero);
 - Grafana;
 - Prometheus;
 - Loki;
@@ -310,6 +305,11 @@ O Docker Compose final deverá iniciar, com volumes nomeados persistentes:
 Os serviços deverão ter health checks, restart policies, limites de recursos, usuários não-root e filesystems somente leitura onde possível. Imagens e plugins não usarão a tag `latest`.
 
 O ambiente inicial continuará sujeito à perda física do host único. Alta disponibilidade ou proteção contra perda do host somente poderão ser declaradas após réplica ou backup independente e validação de recuperação.
+
+O Compose é iniciado explicitamente; executar a solução na IDE não inicia containers. Siga o
+[guia de implantação local](deploy/README.md) para o único arquivo de token Influx, portas,
+configuração privada e comandos. O volume `influxdb_queryable_data` e o node-id `queryable`
+permanecem para reutilizar o catálogo. Não use `down --volumes` em uma atualização.
 
 ## Observabilidade e operação
 
@@ -341,7 +341,7 @@ O produto só deverá declarar capacidade depois de produzir evidências reprodu
 - persistir 100% das linhas válidas de lotes mistos e classificar 100% das inválidas ou conflitantes;
 - manter replays sem eventos lógicos adicionais e conflitos sem modificar o original;
 - responder a 95% das leituras de status em até dois segundos;
-- impedir que empresas desconhecidas ou não autorizadas apareçam nos dashboards;
+- impedir que empresas fora do escopo autorizado apareçam nos dashboards;
 - encontrar zero ocorrências de payload, placa, coordenadas, nome, CPF, token ou segredo nos canais proibidos de observabilidade;
 - provar, no aceite final, exatamente 100.000 eventos válidos conciliados entre lotes, InfluxDB e Grafana.
 
@@ -364,7 +364,7 @@ O desenvolvimento seguirá TDD nas histórias: os testes do comportamento dever�
 3. **MVP de ingestão durável:** autenticação, limites, RabbitMQ e `202` confirmado pelo broker.
 4. **Processamento:** parser, validação, quarentena, InfluxDB, idempotência e recuperação.
 5. **Suporte operacional:** status de lotes, rejeições e retenção.
-6. **Apresentação:** consultas limitadas, promoção de empresas, identidade auditada e dashboards.
+6. **Apresentação:** consultas limitadas, enriquecimento opcional, identidade auditada e dashboards.
 7. **Portabilidade:** contrato comum de filas, Pub/Sub, alertas e runbooks.
 8. **Gates de produção:** performance, segurança, LGPD técnica, recuperação, prova de 100.000 eventos e matriz de rastreabilidade.
 
@@ -381,7 +381,7 @@ O projeto estará concluído quando:
 - a recuperação após falhas de dependência estiver comprovada;
 - os controles técnicos de privacidade e segurança estiverem revisados;
 - os dashboards internos e restritos renderizarem dados autorizados corretamente;
-- empresas desconhecidas e viewers fora de escopo permanecerem isolados;
+- viewers fora de escopo permanecerem sem acesso;
 - a execução final de 100.000 eventos reconciliar exatamente o total entre ingestão, armazenamento e visualização;
 - cada requisito e cada projeto de produção possuir cobertura automatizada rastreável;
 - riscos residuais, especialmente o host local único e a retenção futura de cinco anos, estiverem explicitamente registrados.
