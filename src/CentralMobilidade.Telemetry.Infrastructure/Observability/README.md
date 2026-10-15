@@ -60,3 +60,42 @@ payload privacy, worker endpoint shutdown and invalid configuration. PostgreSQL 
 against an isolated 17.11 container. Windows build and formatting checks pass; native test execution
 remains blocked by Windows Application Control, which was preserved. Architecture/load projects remain
 skeletons; no throughput or storage capacity claim follows from these tests.
+
+## Batch state and rejection counters (T062)
+
+`BatchMetrics` has its own `CentralMobilidade.Telemetry.Batches` meter, registered
+once per DI container and included in the existing API/worker Prometheus exporters.
+The global view continues to strip every metric tag and exemplars remain disabled.
+No tenant, vehicle, batch, producer, driver, trace or arbitrary code is accepted as
+a dimension. Instrument names come exclusively from the compiled lifecycle enum
+and the fixed v1 rejection catalog; unknown codes/states create no instruments.
+
+The Prometheus family prefixes are:
+
+- `telemetry_batch_state_<state>`: entries committed into Receiving, Publishing,
+  Accepted, Processing, Retrying, Completed, CompletedWithRejections, Rejected,
+  PublishFailed, Failed and Expired (snake_case suffixes).
+- `telemetry_rejections_<code>`: newly committed rejected lines, split into the
+  16 existing rejection codes in lowercase. No code label is required.
+
+There are currently 27 fixed instruments and no measurement labels. Persistence
+records Receiving only when its INSERT creates the batch, state entries only when
+the compare-and-swap updates one row, and rejected lines only after the line-page
+transaction commits. Exact create/transition/line replays do not increment again;
+conflicting/rolled-back pages contribute nothing. Reads never record state entries.
+A failure in a measurement listener is isolated from already committed operations.
+
+These are cumulative process counters of observed commits, not gauges of rows
+currently in a state. A real retry/resume enters states again and is counted again.
+Retention/deletion does not decrement them; no database scan or historical backfill
+is performed at startup. They reset when the process/provider restarts. The gap
+between database commit and in-process recording is not transactionally durable,
+so a crash can omit an observation; these metrics are not an exactly-once ledger.
+Durable metric history depends on Prometheus and its retention/backup configuration.
+
+Validation uses MeterListener and a real Prometheus scrape with PostgreSQL to prove
+closed instruments, empty tag sets, listener-failure isolation, eight concurrent
+create/transition replays, a duplicate rejection, transactional rollback and
+preservation of counters after batch metadata deletion. The process-global meter
+integration collection is serialized to keep exact assertions independent of
+other concurrently running exporters. No capacity claim follows from these checks.

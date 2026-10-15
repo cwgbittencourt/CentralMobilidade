@@ -11,10 +11,11 @@ using CentralMobilidade.Telemetry.Application.Abstractions;
 using CentralMobilidade.Telemetry.Contracts.Messaging.V1;
 using CentralMobilidade.Telemetry.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using CentralMobilidade.Telemetry.Infrastructure.Observability;
 
 namespace CentralMobilidade.Telemetry.Infrastructure.Persistence;
 
-public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDbContext> contextFactory, Microsoft.Extensions.Configuration.IConfiguration? configuration = null, IClock? clock = null) : IBatchStateStore
+public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDbContext> contextFactory, Microsoft.Extensions.Configuration.IConfiguration? configuration = null, IClock? clock = null, BatchMetrics? metrics = null) : IBatchStateStore
 {
     public async ValueTask<BatchSnapshot> CreateAsync(TelemetryBatchEnvelope metadata,
         DateTimeOffset expiresAt, CancellationToken cancellationToken)
@@ -32,7 +33,7 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        await db.Database.ExecuteSqlInterpolatedAsync($"""
+        var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO ingestion_batches
                 ("BatchId", "TraceId", "ProducerId", "ContractVersion", "State", "ReceivedAt",
                  "ExpiresAt", "CompressedBytes", "Accepted", "Rejected", "Replayed", "RetryCount",
@@ -49,6 +50,8 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
         EnsureSameCreation(row, metadata, receivedAt, normalizedExpiresAt);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (inserted == 1)
+            metrics?.RecordState(BatchLifecycle.Receiving);
         return await ToSnapshotAsync(db, row, cancellationToken).ConfigureAwait(false);
     }
 
@@ -99,7 +102,10 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
             .ConfigureAwait(false);
 
         if (updated == 1)
+        {
+            metrics?.RecordState(transition.TargetState);
             return true;
+        }
 
         var existing = await db.Batches.AsNoTracking().SingleOrDefaultAsync(e => e.BatchId == batchId.Value,
             cancellationToken).ConfigureAwait(false);
@@ -118,6 +124,7 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
             await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
             await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
             var batch = await db.Batches.FromSqlInterpolated($"SELECT * FROM ingestion_batches WHERE \"BatchId\"={batchId.Value} FOR UPDATE").SingleAsync(cancellationToken);
+            var committedRejections = new List<string>();
             foreach (var result in results)
             {
                 if (result.LineNumber <= 0 || !Enum.IsDefined(result.Outcome) || result.OccurredAt.Offset != TimeSpan.Zero ||
@@ -160,6 +167,8 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
                 }
                 if (batch.State != BatchLifecycle.Processing)
                     throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Ambiguous);
+                if (result.Outcome == LineOutcome.Rejected)
+                    committedRejections.Add(result.ErrorCode!);
                 db.LineResults.Add(new LineProcessingResult
                 {
                     BatchId = batchId.Value,
@@ -181,6 +190,8 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
             batch.CompanyScope = await outcomes.Where(r => r.CompanyId != null).Select(r => r.CompanyId!).Distinct().ToArrayAsync(cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await tx.CommitAsync(cancellationToken);
+            foreach (var code in committedRejections)
+                metrics?.RecordRejection(code);
         }
         catch (Exception error) when (error is DbException or DbUpdateException)
         {

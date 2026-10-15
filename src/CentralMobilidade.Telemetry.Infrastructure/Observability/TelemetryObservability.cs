@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 using OpenTelemetry.Exporter;
@@ -105,6 +106,7 @@ public static class TelemetryObservabilityRegistration
         options.Validate();
         services.AddSingleton(options);
         services.AddSingleton<TelemetryObservability>();
+        services.TryAddSingleton<BatchMetrics>();
         // Only W3C trace context crosses dependency boundaries. Never propagate baggage.
         Activity.DefaultIdFormat = ActivityIdFormat.W3C;
         Activity.ForceDefaultIdFormat = true;
@@ -132,7 +134,7 @@ public static class TelemetryObservabilityRegistration
                         o.TimeoutMilliseconds = 5000;
                     });
             })
-            .WithMetrics(metrics => metrics.AddMeter(TelemetryObservability.MeterName, "Microsoft.AspNetCore.Hosting", "System.Net.Http")
+            .WithMetrics(metrics => metrics.AddMeter(TelemetryObservability.MeterName, BatchMetrics.MeterName, "Microsoft.AspNetCore.Hosting", "System.Net.Http")
                 .AddRuntimeInstrumentation()
                 .SetExemplarFilter(ExemplarFilterType.AlwaysOff)
                 // Fail closed on labels, including unknown tags and their values. Correlation belongs in traces.

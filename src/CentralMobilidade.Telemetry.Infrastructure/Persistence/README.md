@@ -123,3 +123,14 @@ cascade. Evidence and guard expiry are independent; guards retain immutable iden
 protection until telemetry and guard deadlines, including active processing leases.
 The original guard trigger still prevents deletion before database time permits it.
 No telemetry or audit row is deleted and no additional migration is required.
+
+## Batch metrics (T062)
+
+The DI-registered batch state store records fixed, unlabeled lifecycle-entry and
+rejection counters after successful database commits. Replayed creation, unchanged
+compare-and-swap and already-recorded lines do not add measurements. A rejected
+page that rolls back adds none. Metrics do not require a schema migration, additional
+queries or an observability service at direct-constructor call sites. They are
+process observations, not part of the database transaction or a durable audit ledger;
+a process failure immediately after commit can leave a missing metric observation.
+See the Observability README for the fixed instrument families and restart semantics.
