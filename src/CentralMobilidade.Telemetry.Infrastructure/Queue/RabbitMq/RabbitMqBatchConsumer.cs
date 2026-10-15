@@ -46,7 +46,18 @@ public sealed class RabbitMqBatchConsumer
         prefetch = (ushort)count;
     }
 
-    public async IAsyncEnumerable<IQueueDelivery> ConsumeAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public IAsyncEnumerable<IQueueDelivery> ConsumeAsync(CancellationToken cancellationToken = default) => ConsumeCoreAsync(null, TimeSpan.FromSeconds(5), cancellationToken);
+
+    /// <summary>Reports subscription health only after a successful RPC on its active channel.</summary>
+    public IAsyncEnumerable<IQueueDelivery> ConsumeAsync(Action<bool> reportAvailability, TimeSpan heartbeatInterval, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reportAvailability);
+        if (heartbeatInterval < TimeSpan.FromMilliseconds(100) || heartbeatInterval > TimeSpan.FromMinutes(1))
+            throw new ArgumentOutOfRangeException(nameof(heartbeatInterval));
+        return ConsumeCoreAsync(reportAvailability, heartbeatInterval, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<IQueueDelivery> ConsumeCoreAsync(Action<bool>? reportAvailability, TimeSpan heartbeatInterval, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await using var channel = await connections.CreatePublishChannelAsync(cancellationToken);
         await using var session = new Session(channel, this);
@@ -56,6 +67,7 @@ public sealed class RabbitMqBatchConsumer
         channel.ChannelShutdownAsync += (_, _) => { session.Fail(); return Task.CompletedTask; };
         await channel.BasicQosAsync(0, prefetch, false, cancellationToken);
         var tag = await channel.BasicConsumeAsync(topology.Options.Queue, false, consumer, cancellationToken);
+        session.StartMonitoring(reportAvailability, heartbeatInterval);
         try
         {
             await foreach (var delivery in session.Inbox.Reader.ReadAllAsync(cancellationToken))
@@ -91,11 +103,14 @@ public sealed class RabbitMqBatchConsumer
         private readonly ConcurrentDictionary<ulong, Delivery> outstanding = new();
         private readonly SemaphoreSlim io = new(1, 1);
         private readonly CancellationTokenSource lifetime = new();
+        private readonly CancellationTokenSource monitoring = new();
+        private Task monitorTask = Task.CompletedTask;
         private int stopped, failed;
 
         internal void Stop()
         {
             Interlocked.Exchange(ref stopped, 1);
+            monitoring.Cancel();
             Inbox.Writer.TryComplete();
         }
         internal void Fail()
@@ -103,6 +118,41 @@ public sealed class RabbitMqBatchConsumer
             Interlocked.Exchange(ref failed, 1);
             lifetime.Cancel();
             Inbox.Writer.TryComplete(Failure());
+        }
+
+        internal void StartMonitoring(Action<bool>? reportAvailability, TimeSpan interval)
+        {
+            if (reportAvailability is not null)
+                monitorTask = Monitor(reportAvailability, interval);
+        }
+
+        private async Task Monitor(Action<bool> reportAvailability, TimeSpan interval)
+        {
+            using var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(monitoring.Token, lifetime.Token);
+            var token = tokenSource.Token;
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    deadline.CancelAfter(owner.publishTimeout);
+                    await io.WaitAsync(deadline.Token);
+                    try
+                    {
+                        if (Volatile.Read(ref stopped) != 0 || Volatile.Read(ref failed) != 0 || !channel.IsOpen)
+                            throw Failure();
+                        // This is a bounded RPC for the subscribed queue, not an independent timestamp timer.
+                        await channel.QueueDeclarePassiveAsync(owner.topology.Options.Queue, deadline.Token);
+                        if (!token.IsCancellationRequested)
+                            reportAvailability(true);
+                    }
+                    finally { io.Release(); }
+                    await Task.Delay(interval, token);
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+            catch (Exception) { Fail(); }
+            finally { reportAvailability(false); }
         }
 
         internal async Task Receive(object sender, BasicDeliverEventArgs args)
@@ -218,11 +268,13 @@ public sealed class RabbitMqBatchConsumer
         {
             Stop();
             lifetime.Cancel();
+            await monitorTask;
             // Dispose closes even an automatically recovered channel, preventing stale delivery-tag ACKs.
             await channel.DisposeAsync();
             foreach (var delivery in outstanding.Values)
                 await delivery.DisposeAsync();
             lifetime.Dispose();
+            monitoring.Dispose();
         }
 
         internal sealed class Delivery(Session session, ulong tag, byte[] bytes) : IQueueDelivery

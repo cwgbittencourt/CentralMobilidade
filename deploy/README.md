@@ -106,11 +106,11 @@ docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile 
 
 The API serves its root status at `http://localhost:8080/` and aggregate Prometheus metrics at `/metrics`.
 The Worker now remains running and serves `/metrics` on internal port 9464; no worker port is published
-on the host. Its queue consumer remains unimplemented until T053. Application templates are described below,
-intake and storage adapters have focused tests; the complete worker path remains unfinished. `/health/live`, `/health/ready`, and `/health/dependencies`
+on the host. T053 wires its RabbitMQ consumer and processing with bounded concurrency and shutdown drain.
+Supply the required runtime settings before startup; see [worker configuration](../src/CentralMobilidade.Telemetry.Worker/README.md). `/health/live`, `/health/ready`, and `/health/dependencies`
 are available on both processes; the worker also exposes `/health/worker`. Liveness is independent of
 dependencies. API readiness requires PostgreSQL and the registered RabbitMQ durable publication probe.
-Worker readiness remains unavailable until T053 supplies real consumer heartbeats. A running metrics endpoint does not prove queue-consumer readiness.
+Worker readiness requires PostgreSQL, Influx connectivity and heartbeat from a live consumer subscription. A running metrics endpoint does not prove queue-consumer readiness.
 
 Run the Pub/Sub emulator independently:
 
@@ -153,13 +153,17 @@ Apply the [migration procedure](../src/CentralMobilidade.Telemetry.Infrastructur
 with a separate identity. Supply runtime connection/password/token and hashed authentication settings
 through a private override under ignored `data/` (include it with `-f` before `--profile app`) or configure
 host processes directly. Arbitrary `.env` settings do not automatically enter app containers.
-A blank producer array accepts no authenticated intake requests.
+A blank producer array accepts no authenticated intake requests. The worker additionally loads the
+optional private root `.env.worker` file through the app override (Compose 2.24+). Use double-underscore
+runtime keys there, including Processing__DiagnosticKey; this file is ignored by Git. Missing worker
+settings now fail startup. Default stop_grace_period is 60s; increase it if you increase the drain/host budget.
 
 Every valid producer-supplied `empresa_id` is recognized as existing and targets `telemetry` on
 `influxdb`. Optional driver enrichment cannot block storage or authorized visibility. Missing/invalid
 IDs retain parser rejection; presentation still enforces company scope. T050/T051 assembly/processing
-are implemented with controlled-delivery proofs; T052 consumption is broker-tested, but host wiring remains T053, so starting hosts does not prove processing. Configure a persistent protected `Processing:DiagnosticKey`
-before T053 wires the handler; see the [processing configuration](../src/CentralMobilidade.Telemetry.Application/Processing/README.md). Grafana organizations/datasources/dashboards
+are implemented, and T053 wires consumption/processing with a mixed-batch real-storage host test.
+Configure a persistent protected `Processing:DiagnosticKey` before starting the worker;
+see the [processing configuration](../src/CentralMobilidade.Telemetry.Application/Processing/README.md). Grafana organizations/datasources/dashboards
 remain T071–T075. [T112 persistence/restart evidence](../artifacts/validation/foundation-single-influx/README.md) is recorded. No IDE startup hook has
 been added: run Compose explicitly.
 

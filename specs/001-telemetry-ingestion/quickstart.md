@@ -1,7 +1,7 @@
 # Quickstart Validation: Vehicle Telemetry Ingestion
 
 This guide includes current startup and future acceptance scenarios. The
-[T112 foundation gate](../../artifacts/validation/foundation-single-influx/README.md) passed; T050 batch assembly and T051 mixed-line processing are implemented and tested through controlled deliveries. T052 RabbitMQ consumption is implemented and broker-tested; T053 host wiring, status/presentation endpoints, Grafana
+[T112 foundation gate](../../artifacts/validation/foundation-single-influx/README.md) passed; T050–T053 processing and RabbitMQ worker wiring are implemented, including a mixed-batch host test with real storage. Status/presentation endpoints, Grafana
 provisioning, Pub/Sub parity and load/final-proof commands below are not all implemented. Sections
 4–10 are acceptance targets, not obtained results. Check tasks.md before running task-specific scripts;
 `Provision-GrafanaOrganizations.ps1` is planned for T071.
@@ -85,11 +85,13 @@ least-privilege `InfluxDb:Queryable:Token` and hashed authentication credentials
 inject arbitrary `.env` keys into application containers. Use a private override under ignored `data/`
 (for example `data/compose.app-secrets.yaml`, included with `-f` before `--profile app`), or configure
 host processes directly. Do not put secrets in command arguments or tracked settings. The command
-above starts hosts with templates; it does not provision runtime credentials or implement consumption.
+above requires runtime credentials; it does not provision them. The worker also accepts a private
+root `.env.worker` file in the app profile, using double-underscore environment keys and a persistent
+Processing__DiagnosticKey. See the [worker configuration](../../src/CentralMobilidade.Telemetry.Worker/README.md).
 
 API readiness requires PostgreSQL durability and durable queue publication, independently of downstream
 Influx/worker availability. Worker readiness requires PostgreSQL, Queryable connectivity and real
-consumer freshness; it remains unavailable until T053 wires the consumer. Liveness alone does not
+consumer freshness from a successful RPC on its active subscription. Liveness alone does not
 prove processing. Application URLs use `http://influxdb:8181`; host runs override this to loopback.
 
 ## 4. Submit a valid gzip batch

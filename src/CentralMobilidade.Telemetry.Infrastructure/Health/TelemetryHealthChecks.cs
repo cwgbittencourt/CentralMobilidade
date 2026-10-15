@@ -63,8 +63,8 @@ public sealed class WorkerProgress(TimeProvider clock)
 {
     private long timestamp;
     private int signaled;
-    // Signal from the active consumer/recovery loop, including its healthy idle polling path (T053).
-    // Neither startup, a separate timer nor a health request is evidence of consumer progress.
+    // Signal only after a successful probe on the channel of the active consumer subscription.
+    // Neither startup, an independent timestamp timer nor a health request proves consumer progress.
     public void MarkHeartbeat()
     {
         Interlocked.Exchange(ref timestamp, clock.GetTimestamp());

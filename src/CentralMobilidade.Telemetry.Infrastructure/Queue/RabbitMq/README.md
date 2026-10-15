@@ -82,7 +82,8 @@ teve 289 aprovações e 36 falhas pendentes das T025/T027; as dez falhas da T026
 `RabbitMqBatchConsumer(connections, configuration).ConsumeAsync(token)` fornece entregas
 `IQueueDelivery`. Cada enumeração possui canal exclusivo, prefetch limitado e ACK manual.
 O chamador deve descartar cada entrega e chamar CompleteAsync somente após os efeitos duráveis
-da T051. DisposeAsync nunca confirma implicitamente. A ligação ao host permanece T053.
+da T051. DisposeAsync nunca confirma implicitamente. O host T053 usa essa enumeração com
+monitoramento da assinatura; veja [configuração e shutdown do worker](../../../CentralMobilidade.Telemetry.Worker/README.md).
 
 O callback copia os bytes antes de retornar, conforme a [API .NET v7 do RabbitMQ](https://www.rabbitmq.com/client-libraries/dotnet-api-guide).
 O limite v1 é 8 MiB por corpo; Prefetch aceita 1–64 (padrão 8), limitando os snapshots de

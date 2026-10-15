@@ -52,6 +52,9 @@ services:
       dockerfile: deploy/containers/worker.Dockerfile
     environment:
       DOTNET_ENVIRONMENT: Development
+    env_file:
+      - path: ../.env.worker
+        required: false
     networks: [backend]
     volumes:
       - quarantine_data:/quarantine
@@ -64,7 +67,8 @@ services:
         condition: service_completed_successfully
       quarantine-init:
         condition: service_completed_successfully
-    # The worker keeps its internal metrics endpoint alive; queue consumption follows in T053.
+    # Default host shutdown budget is 45s, including a 30s processing drain.
+    stop_grace_period: 60s
     restart: "no"
 
   pubsub-emulator:

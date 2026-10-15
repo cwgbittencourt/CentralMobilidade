@@ -50,7 +50,7 @@ only after the persisted accepted/rejected/replayed counts cover the parsed tota
 CompanyScopeComplete is set only for a completed batch whose stored lines all have
 known company IDs. A terminal redelivery acknowledges without another provider write.
 
-Configuration required before worker wiring (T053):
+Configuration required by the T053 worker:
 
 - `Processing:DiagnosticKey`: a persistent, protected Base64 key of at least 32 decoded
   bytes. Never use the synthetic test key. Retain a consistent key across processing
@@ -64,8 +64,8 @@ Configuration required before worker wiring (T053):
 
 No raw data, driver identity, path or provider body is logged by this handler. Caller
 cancellation propagates. Unconfirmed storage/gzip attempts remain unacknowledged and
-request retry; bounded backoff, poison routing and live consumer wiring remain
-T052/T053. There is no retry/ack on disposal of the delivery. T051 does not start a
+request retry; bounded backoff and poison routing are implemented by T052, with
+host wiring and shutdown in T053. There is no retry/ack on disposal of the delivery. T051 does not start a
 RabbitMQ consumer, prove process/power-loss recovery, or approve the ADR-001 throughput
 gate. Rejection paging remains the batch-inspection task; the existing paging stub
 is not used by processing.
