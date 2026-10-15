@@ -131,3 +131,19 @@ The separately executed actual runtime-grant template test also passed 1/1 after
 integration project: grants apply to the seven-table schema while DDL, audit mutation and guard
 truncate remain denied. Thus the final directed integration checks cover 39 distinct passing
 scenarios (38 plus the new grants case), with no skips. No full integration suite claim is made.
+
+## Batch transition replay (T058)
+
+Apply `20261015130000_BatchTransitionReplay` before starting the updated API/worker.
+It adds nullable `ingestion_batches.LastTransitionAt` (timestamptz), without changing
+existing data, counters, ownership, original processing start or row versions.
+Stop application writers during rollout; migrations are applied explicitly with
+the deployment migration identity, never automatically by runtime registration.
+
+Existing rows retain NULL because a previous resume time cannot be reconstructed.
+Their legacy timestamp comparisons remain conservative until the next successful
+transition records its own timestamp. Newly committed transitions use the durable
+last timestamp to recognize exact replay independently of ProcessingStartedAt.
+Downgrade drops only the new column, losing the additional replay evidence; rollback
+requires stopping updated processes first. The schema snapshot and migration
+integration tests include this fourth migration.

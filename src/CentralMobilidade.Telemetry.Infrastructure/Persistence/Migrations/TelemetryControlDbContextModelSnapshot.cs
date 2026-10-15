@@ -216,6 +216,9 @@ namespace CentralMobilidade.Telemetry.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("LastTransitionAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset?>("ProcessingStartedAt")
                         .HasColumnType("timestamp with time zone");
 

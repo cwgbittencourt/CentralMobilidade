@@ -233,7 +233,6 @@ public sealed class BatchLifecycleTests(BatchLifecycleDatabase database) : IClas
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T058")]
     public async Task Concurrent_resume_replays_keep_the_original_start_time_and_one_retry_increment()
     {
         var batch = await Create();
@@ -248,6 +247,26 @@ public sealed class BatchLifecycleTests(BatchLifecycleDatabase database) : IClas
         after.ProcessingStartedAt.ShouldBe(batch.ProcessingStartedAt);
         await using var db = database.CreateContext();
         (await db.Batches.AsNoTracking().SingleAsync(row => row.BatchId == batch.BatchId.Value)).RetryCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Resumed_processing_replay_rejects_a_different_timestamp_after_adapter_restart()
+    {
+        var batch = await Create();
+        (await database.Store().TryTransitionAsync(batch.BatchId, batch.Version,
+            new(BatchLifecycle.Retrying, batch.ReceivedAt.AddSeconds(5)), default)).ShouldBeTrue();
+        var retrying = await Read(batch);
+        var resume = new BatchTransition(BatchLifecycle.Processing, batch.ReceivedAt.AddSeconds(6));
+        (await database.Store().TryTransitionAsync(batch.BatchId, retrying.Version, resume, default)).ShouldBeTrue();
+        (await database.Store().TryTransitionAsync(batch.BatchId, retrying.Version,
+            resume with
+            {
+                OccurredAt = resume.OccurredAt.AddSeconds(1)
+            }, default)).ShouldBeFalse();
+        (await database.Store().TryTransitionAsync(batch.BatchId, retrying.Version, resume, default)).ShouldBeTrue();
+        var after = await Read(batch);
+        after.Version.ShouldBe(retrying.Version + 1);
+        after.ProcessingStartedAt.ShouldBe(batch.ProcessingStartedAt);
     }
 
     [Fact]

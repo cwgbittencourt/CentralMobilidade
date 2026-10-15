@@ -92,3 +92,20 @@ missing and expired outcomes require a matching durable audit receipt. Audit
 failure returns `AUDIT_UNAVAILABLE` without opening the content stream. Expiry,
 deletion and authorization are checked again before handing the stream to the
 caller, which must dispose the result. No database migration is required.
+
+## Batch status and resume replay (T058)
+
+`GetBatchStatusHandler` returns the versioned `BatchStatus` DTO after the T057
+visibility checks. Missing, expired and unauthorized identifiers return null.
+Receiving/Publishing and pre-acceptance rejection/failure also return null: they
+must never be represented as broker-confirmed acceptance. Accepted, Processing,
+Retrying, Completed, CompletedWithRejections and Failed map explicitly to the public
+states. Counts, nullable total and timestamps are preserved; error counts are
+ordered by code. Producer identity, company scope and internal row version are
+excluded. Administrative links and the HTTP route belong to T059.
+
+The additive `20261015130000_BatchTransitionReplay` migration persists the last
+transition timestamp atomically with the lifecycle compare-and-swap. Exact command
+replays compare against that timestamp; ProcessingStartedAt still records the first
+processing attempt. Replayed resumes neither increment the row version nor retry
+count. A different timestamp is rejected, including from a new adapter instance.

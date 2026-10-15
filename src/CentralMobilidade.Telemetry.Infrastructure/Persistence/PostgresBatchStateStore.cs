@@ -82,6 +82,7 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
                 sources.Contains(e.State) && e.ReceivedAt <= occurredAt)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(e => e.State, transition.TargetState)
+                .SetProperty(e => e.LastTransitionAt, occurredAt)
                 .SetProperty(e => e.DurableAt, e => transition.TargetState == BatchLifecycle.Accepted ? occurredAt : e.DurableAt)
                 .SetProperty(e => e.ProcessingStartedAt, e => transition.TargetState == BatchLifecycle.Processing && e.ProcessingStartedAt == null ? occurredAt : e.ProcessingStartedAt)
                 .SetProperty(e => e.CompletedAt, e => IsTerminal(transition.TargetState) ? occurredAt : e.CompletedAt)
@@ -257,7 +258,7 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
     {
         if (row.RowVersion != expectedVersion + 1 || row.State != transition.TargetState)
             return false;
-        var timestampMatches = transition.TargetState switch
+        var timestampMatches = row.LastTransitionAt is { } lastTransition ? lastTransition == occurredAt : transition.TargetState switch
         {
             BatchLifecycle.Accepted => row.DurableAt == occurredAt,
             BatchLifecycle.Processing => row.ProcessingStartedAt == occurredAt,

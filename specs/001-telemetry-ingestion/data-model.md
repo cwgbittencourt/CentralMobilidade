@@ -46,6 +46,7 @@ Line Protocol/provider boundary. These types do not depend on infrastructure or 
 | received_at | timestamp | UTC |
 | durable_at | timestamp? | Set after broker confirmation |
 | processing_started_at | timestamp? | UTC |
+| last_transition_at | timestamp? | UTC of latest committed lifecycle command; exact replay evidence independent of first processing start; legacy rows remain null until their next transition |
 | completed_at | timestamp? | UTC |
 | expires_at | timestamp | Received time plus 30 days |
 | compressed_bytes | integer | Non-negative |

@@ -25,6 +25,10 @@ public sealed class IngestionBatch
     {
         get; set;
     }
+    public DateTimeOffset? LastTransitionAt
+    {
+        get; set;
+    }
     public DateTimeOffset? ProcessingStartedAt
     {
         get; set;

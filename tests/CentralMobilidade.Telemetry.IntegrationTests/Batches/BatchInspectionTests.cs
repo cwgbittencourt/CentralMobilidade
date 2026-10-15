@@ -26,7 +26,7 @@ using Xunit;
 namespace CentralMobilidade.Telemetry.IntegrationTests.Batches;
 
 [Trait("Category", "Integration")]
-public sealed class BatchInspectionTests(BatchLifecycleDatabase database) : IClassFixture<BatchLifecycleDatabase>
+public sealed partial class BatchInspectionTests(BatchLifecycleDatabase database) : IClassFixture<BatchLifecycleDatabase>
 {
     [Theory]
     [InlineData("producer", true)]

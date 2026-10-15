@@ -194,8 +194,11 @@ public sealed class SingleTelemetryStoreMigrationTests(UpgradePostgresServer ser
         var owner = Guid.NewGuid();
         var line = $"telemetria,empresa_id=legacy,veiculo_id=vehicle latitude=1.0,longitude=2.0,velocidade=0.0,rpm=0i,ignicao=false {time.ToUnixTimeMilliseconds()}";
         var fingerprint = new TelemetryLineProtocolV1Parser().Parse(System.Text.Encoding.UTF8.GetBytes(line)).Event.ShouldNotBeNull().Fingerprint;
-        db.Batches.Add(new IngestionBatch { BatchId=owner, ProducerId="internal", State=BatchLifecycle.Accepted, ReceivedAt=time, ExpiresAt=time.AddDays(30) });
-        await db.SaveChangesAsync();
+        // Seed the historical schema without columns introduced by later migrations.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO ingestion_batches ("BatchId", "TraceId", "ProducerId", "ContractVersion", "State", "ReceivedAt", "ExpiresAt", "CompressedBytes", "Accepted", "Rejected", "Replayed", "RetryCount", "CompanyScope", "CompanyScopeComplete", "RowVersion")
+            VALUES ({owner}, '', 'internal', 'v1', 'Accepted', {time}, {time.AddDays(30)}, 0, 0, 0, 0, 0, ARRAY[]::text[], FALSE, 1)
+            """);
         var destination = location == "QueryableCommitted" ? "Queryable" : "Pending";
         DateTimeOffset? lease = state == "Committed" ? null : time.AddMinutes(5);
         Guid? promotionOwner = location == "Promoting" ? Guid.NewGuid() : null;

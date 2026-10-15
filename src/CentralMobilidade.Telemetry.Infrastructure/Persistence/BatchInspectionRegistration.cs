@@ -11,6 +11,7 @@ public static class BatchInspectionRegistration
     public static IServiceCollection AddTelemetryBatchInspection(this IServiceCollection services, IConfiguration configuration)
     {
         services.TryAddScoped<BatchVisibility>();
+        services.TryAddScoped<GetBatchStatusHandler>();
         services.TryAddScoped<ListBatchRejectionsHandler>();
         services.TryAddScoped<GetQuarantinedRejectionContentHandler>();
         services.TryAddScoped<IQuarantineMetadataQuery, PostgresRejectionQuery>();

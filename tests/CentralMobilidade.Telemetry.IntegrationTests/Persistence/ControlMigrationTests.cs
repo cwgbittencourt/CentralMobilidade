@@ -13,7 +13,7 @@ public sealed partial class ControlMigrationTests
     {
         using var db = new TelemetryControlDbContext(new DbContextOptionsBuilder<TelemetryControlDbContext>()
             .UseNpgsql("Host=localhost;Database=model_only;Username=model_only").Options);
-        db.Database.GetMigrations().Count().ShouldBe(3);
+        db.Database.GetMigrations().Count().ShouldBe(4);
         db.Database.HasPendingModelChanges().ShouldBeFalse();
     }
 }

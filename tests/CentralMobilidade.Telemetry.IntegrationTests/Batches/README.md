@@ -56,3 +56,14 @@ A chave de cursor deve ser provisionada no ambiente da API; os testes usam apena
 uma chave sintética. Ausência e configuração inválida falham sem impedir a consulta
 de visibilidade. Os endpoints HTTP serão conectados nas T059/T060. Os relatórios
 locais ficam ignorados em `artifacts/validation/T057/`.
+
+## T058 — status e retomada idempotente
+
+A regressão histórica T055/PendingImplementation=T058 foi corrigida e seu marcador
+removido: oito retomadas idênticas são aceitas, preservando o primeiro início,
+com uma única mudança de versão e um único incremento de retry na entrada em Retrying.
+Outro teste recria o adaptador e confirma que um horário diferente não é replay.
+`BatchStatusTests.cs` amplia a classe de integração para validar autorização,
+projeção dos estados públicos, contadores, total desconhecido, timestamps, resposta
+não reveladora e exclusão de campos internos. A migração é validada com lote existente,
+snapshot, aplicação repetida, script idempotente e rollback em banco vazio isolado.
