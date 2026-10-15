@@ -24,7 +24,7 @@ public sealed class BatchStatusContractTests
 
     [Theory]
     [InlineData(Status, "getTelemetryBatch", "200,401,404")]
-    [InlineData(Rejections, "listTelemetryBatchRejections", "200,401,404")]
+    [InlineData(Rejections, "listTelemetryBatchRejections", "200,400,401,404")]
     [InlineData(Raw, "getQuarantinedRejectionContent", "200,401,403,404,503")]
     public async Task Read_operations_have_exact_documented_outcomes(string route, string id, string outcomes)
     {
@@ -137,6 +137,7 @@ public sealed class BatchStatusContractTests
         limit.Schema.Minimum.ShouldBe("1");
         limit.Schema.Maximum.ShouldBe("200");
         limit.Schema.Default!.GetValue<decimal>().ShouldBe(50m);
+        AssertProblem(operation.Responses!["400"], TelemetryErrorCodes.RequestInvalid, 400);
         var schema = SuccessSchema(operation, "RejectionPage");
         schema.Required!.ShouldBe(new[] { "items" });
         schema.Properties!.Keys.Order().ShouldBe(new[] { "items", "nextCursor" });

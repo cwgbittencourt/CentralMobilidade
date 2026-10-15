@@ -10,11 +10,17 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace CentralMobilidade.Telemetry.Api.Security;
 
+// Authentication denials on the raw endpoint must be audited before the challenge is returned.
+public sealed record RawQuarantineAuditMetadata;
+
 public sealed class AuditedAuthorizationResultHandler(IClock clock) : IAuthorizationMiddlewareResultHandler
 {
     private readonly AuthorizationMiddlewareResultHandler fallback = new();
     public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
     {
+        var rawEndpoint = context.GetEndpoint()?.Metadata.GetMetadata<RawQuarantineAuditMetadata>() is not null;
+        if (rawEndpoint)
+            context.Response.Headers.CacheControl = "no-store";
         // Combined policies must retain the sensitive operation's audit category.
         var requirement = policy.Requirements.OfType<OperatorPermissionRequirement>()
             .OrderByDescending(item => item.Permission switch
@@ -29,12 +35,12 @@ public sealed class AuditedAuthorizationResultHandler(IClock clock) : IAuthoriza
             await SecurityProblemResponses.WriteAsync(context, TelemetryErrorCodes.ResourceNotFound);
             return;
         }
-        if (authorizeResult.Succeeded || requirement is null)
+        if (authorizeResult.Succeeded || requirement is null && !rawEndpoint)
         {
             await fallback.HandleAsync(next, context, policy, authorizeResult);
             return;
         }
-        var (action, category) = requirement.Permission switch
+        var (action, category) = rawEndpoint ? (AuditAction.ReadQuarantineContent, AuditResourceCategory.Quarantine) : requirement!.Permission switch
         {
             OperatorPermission.DriverRead => (AuditAction.ResolveDriver, AuditResourceCategory.Driver),
             OperatorPermission.QuarantineRawRead => (AuditAction.ReadQuarantineContent, AuditResourceCategory.Quarantine),
@@ -55,7 +61,7 @@ public sealed class AuditedAuthorizationResultHandler(IClock clock) : IAuthoriza
                 throw new InvalidOperationException();
             }
             var receipt = await writer.AppendAsync(record, context.RequestAborted);
-            if (receipt.EventId != record.EventId || receipt.CommittedAt.Offset != TimeSpan.Zero)
+            if (receipt.EventId != record.EventId || receipt.CommittedAt == default || receipt.CommittedAt.Offset != TimeSpan.Zero)
             {
                 throw new InvalidOperationException();
             }

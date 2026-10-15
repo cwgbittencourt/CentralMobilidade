@@ -45,3 +45,36 @@ must already be applied for the current persistence model.
 
 `BatchStatusEndpointTests` validates 19 HTTP scenarios through ASP.NET TestServer,
 real salted bearer validation, current operator profiles and migrated PostgreSQL.
+
+## Rejection inspection and raw content (T060)
+
+`GET /api/v1/telemetry/batches/{batchId}/rejections` requires a human operator with
+`batch.read` and the complete batch company scope (or explicit `cross_company.read`).
+Producer/viewer tokens cannot list administrative metadata. Default page size is
+50; limit is 1–200. Duplicate/empty parameters, invalid limits and authenticated
+invalid/expired/out-of-context cursors return `400 REQUEST_INVALID` Problem JSON.
+This outcome is now explicit in OpenAPI. Unknown, expired and unauthorized batches
+share `404 RESOURCE_NOT_FOUND`. Every page rechecks permissions. The public
+`RejectionPage`/`Rejection` DTOs exclude quarantine IDs, protected metadata, content
+hashes, storage paths and raw content. Provision the persistent 32-byte Base64
+`BatchInspection__CursorKey` across API replicas before using pagination.
+
+`GET /api/v1/telemetry/batches/{batchId}/rejections/{quarantineId}/content` requires
+operator authentication and independently enforces `quarantine.raw.read` and company
+scope in the application handler. `batch.read` does not imply raw permission and
+raw permission does not imply metadata-list access. Producer/anonymous/invalid
+credentials are denied and audited by the authorization middleware. Authenticated
+allowed/denied/missing/expired attempts are audited by the application handler;
+invalid opaque paths are audited without storing the supplied path text. Each
+ordinary outcome creates one durable event; a race after an allowed audit can
+produce a subsequent missing/expired/denied event instead of disclosure.
+
+Audit failure or a mismatching receipt returns `503 AUDIT_UNAVAILABLE` without
+opening the content stream, even when authentication itself fails. A successful
+response streams the original bytes as `text/plain; charset=utf-8`, with no-store,
+nosniff and a UUID-only attachment name. The result remains owned until transfer
+finishes and is disposed on success, cancellation or transfer failure. Cancellation
+is propagated; partially transmitted responses are not replaced with JSON.
+
+The status endpoint now supplies the rejection-list link only to authorized human
+operators; producers receive no administrative link. No new migration is needed.

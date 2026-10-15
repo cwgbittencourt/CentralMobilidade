@@ -124,3 +124,16 @@ identity solely from the authenticated server principal; caller-supplied company
 producer or actor parameters cannot grant visibility. Viewer service tokens do not
 grant batch-status access. Status authorization failures are non-disclosing 404s;
 this metadata read does not perform a sensitive raw-content lookup.
+
+## Administrative batch inspection (T060)
+
+The rejection/raw endpoints use the operator-only authentication scheme. Resource
+permissions and company scope are checked by their application handlers, so an
+unknown batch and an unauthorized batch can share metadata 404s. Permission policy
+constants remain available for other routes. The raw endpoint carries
+`RawQuarantineAuditMetadata`: the authorization result handler durably audits
+failed authentication before returning 401; audit failure returns 503. Successful
+authentication proceeds to the application raw handler, avoiding duplicate denial
+audits and allowing missing/expired attempts to receive the proper audit outcome.
+Raw read permission is never inferred from batch.read. Viewer service credentials
+have no raw privilege. No raw bytes, token, path or untrusted query enters the audit.

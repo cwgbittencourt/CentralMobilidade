@@ -366,13 +366,34 @@ public sealed partial class BatchInspectionTests(BatchLifecycleDatabase database
     private sealed class TrackedQuarantine(IQuarantineStore inner) : IQuarantineStore
     {
         internal int OpenCalls;
+        internal int DisposeCalls;
+        internal bool FailRead;
         internal bool MissingMetadata, MissingContent, CorruptMetadata;
         public ValueTask<QuarantineReceipt> WriteAsync(QuarantineWriteRequest request, Stream raw, CancellationToken token) => inner.WriteAsync(request, raw, token);
         public ValueTask<QuarantineMetadata?> GetMetadataAsync(Guid id, CancellationToken token) => CorruptMetadata ? throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Permanent) : MissingMetadata ? ValueTask.FromResult<QuarantineMetadata?>(null) : inner.GetMetadataAsync(id, token);
-        public ValueTask<IQuarantineContent?> OpenReadAsync(Guid id, CancellationToken token)
+        public async ValueTask<IQuarantineContent?> OpenReadAsync(Guid id, CancellationToken token)
         {
             OpenCalls++;
-            return MissingContent ? ValueTask.FromResult<IQuarantineContent?>(null) : inner.OpenReadAsync(id, token);
+            var content = MissingContent ? null : await inner.OpenReadAsync(id, token);
+            return content is null ? null : new TrackedContent(content, this);
+        }
+        private sealed class TrackedContent(IQuarantineContent content, TrackedQuarantine owner) : IQuarantineContent
+        {
+            private int disposed;
+            public Stream Content => owner.FailRead ? new FailingStream() : content.Content;
+            public string ContentSha256 => content.ContentSha256;
+            public async ValueTask DisposeAsync()
+            {
+                if (Interlocked.Exchange(ref disposed, 1) != 0)
+                    return;
+                owner.DisposeCalls++;
+                await content.DisposeAsync();
+            }
+        }
+        private sealed class FailingStream : MemoryStream
+        {
+            public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken) =>
+                Task.FromException(new IOException("PRIVATE_STREAM_FAILURE"));
         }
         public ValueTask<bool> DeleteExpiredAsync(Guid id, DateTimeOffset at, CancellationToken token) => inner.DeleteExpiredAsync(id, at, token);
     }

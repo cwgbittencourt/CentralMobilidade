@@ -19,6 +19,7 @@ public static class OperatorAuthorizationPolicies
     public const string OperatorScheme = "OperatorBearer";
     public const string BatchStatusScheme = "BatchStatusBearer";
     public const string BatchStatusRead = "BatchStatusRead";
+    public const string OperatorAuthenticated = "OperatorAuthenticated";
     public const string Producer = "Producer";
     public const string ProducerBatchRead = "ProducerBatchRead";
     public const string BatchRead = "batch.read";
@@ -39,6 +40,8 @@ public static class OperatorAuthorizationPolicies
     public static void Configure(AuthorizationOptions options)
     {
         options.AddPolicy(BatchStatusRead, policy => policy.AddAuthenticationSchemes(BatchStatusScheme).RequireAuthenticatedUser());
+        // Resource permission and scope are enforced by the batch inspection application handlers.
+        options.AddPolicy(OperatorAuthenticated, policy => policy.AddAuthenticationSchemes(OperatorScheme).RequireAuthenticatedUser());
         options.AddPolicy(Producer, policy => policy.AddAuthenticationSchemes(ProducerScheme).RequireAuthenticatedUser().RequireClaim(SecurityClaims.ProducerId));
         options.AddPolicy(ProducerBatchRead, policy => policy.AddAuthenticationSchemes(ProducerScheme).RequireAuthenticatedUser()
             .RequireClaim(SecurityClaims.ProducerId).AddRequirements(new ProducerBatchOwnershipRequirement()));

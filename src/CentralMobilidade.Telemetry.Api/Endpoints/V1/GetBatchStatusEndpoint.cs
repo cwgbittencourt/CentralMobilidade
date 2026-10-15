@@ -47,6 +47,11 @@ public static class GetBatchStatusEndpoint
             await SecurityProblemResponses.WriteAsync(context, TelemetryErrorCodes.ResourceNotFound);
             return;
         }
+        if (identity.Operator is not null)
+            result = result with
+            {
+                Links = new BatchLinks(context.Request.PathBase + "/api/v1/telemetry/batches/" + id.ToString("D") + "/rejections")
+            };
         await context.Response.WriteAsJsonAsync(result, cancellationToken: context.RequestAborted);
     }
 }

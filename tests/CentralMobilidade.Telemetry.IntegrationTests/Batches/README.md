@@ -78,3 +78,16 @@ headers ausentes/malformados/duplicados, UUIDs inválidos e lotes ausentes/expir
 ou não confirmados. Os testes validam uma única resposta Problem/challenge, DTO,
 content type, traceId e no-store em respostas de sucesso. Nenhum endpoint de rejeição
 ou conteúdo bruto é implementado nesta tarefa; isso permanece T060.
+
+## T060 — rejeições e conteúdo bruto por HTTP
+
+`BatchRejectionEndpointTests.cs` amplia a classe de integração para testar as rotas
+com autenticação bearer real, perfis controlados, PostgreSQL migrado, quarentena
+real e auditoria PostgreSQL real. Abrange permissões independentes de listagem/raw,
+escopo multiempresa, produtor e viewer, cursores adulterados/expirados/de outro lote,
+paginação 50/200, DTO com campos permitidos, erros não reveladores, auditoria de
+negados/ausentes/expirados, falha de commit/recibo incorreto e espera por commit.
+Testa também descarte do stream ao concluir/falhar, cancelamento durante auditoria,
+links administrativos e revalidação de permissões. O probe de auditoria usa barreiras
+e falhas controladas; a persistência efetiva dos eventos é conferida no PostgreSQL.
+O armazenamento e os relatórios são temporários/ignorados em artifacts/validation/T060/.

@@ -147,6 +147,12 @@ paths:
             maximum: 200
             default: 50
       responses:
+        '400':
+          description: Invalid page limit or malformed, tampered, expired, or out-of-context cursor.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '200':
           description: A page of rejection metadata. Raw lines require a separately audited flow.
           content:
