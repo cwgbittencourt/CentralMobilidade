@@ -14,10 +14,16 @@ public sealed class ControlPersistenceTests
         .UseNpgsql("Host=localhost;Database=model_only;Username=model_only").Options);
 
     [Fact]
-    public void All_eight_control_entities_have_keys_and_no_raw_telemetry()
+    public void Single_store_control_entities_have_keys_and_no_raw_telemetry()
     {
         using var db = Create();
-        db.Model.GetEntityTypes().Count().ShouldBe(8);
+        var expected = new[] { typeof(IngestionBatch), typeof(LineProcessingResult), typeof(QuarantinedRejection),
+            typeof(EventIdentityGuard), typeof(EventIdentityEvidence), typeof(OperatorAccessProfile), typeof(AuditEvent) };
+        db.Model.GetEntityTypes().Select(entity => entity.ClrType).OrderBy(type => type.Name)
+            .ShouldBe(expected.OrderBy(type => type.Name));
+        var guard = db.Model.FindEntityType(typeof(EventIdentityGuard))!;
+        foreach (var removed in new[] { "Destination", "StorageLocation", "PromotionOwner", "PromotionLeaseUntil" })
+            guard.FindProperty(removed).ShouldBeNull();
         foreach (var entity in db.Model.GetEntityTypes())
         {
             entity.FindPrimaryKey().ShouldNotBeNull();

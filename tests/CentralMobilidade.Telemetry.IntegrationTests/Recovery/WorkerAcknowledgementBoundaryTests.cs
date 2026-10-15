@@ -33,6 +33,35 @@ public sealed class WorkerAcknowledgementBoundaryTests
     private static readonly EventIdentity Identity = new(new CompanyId("company"), new VehicleId("vehicle"), EventTimestamp.FromUnixTimeMilliseconds(Now.ToUnixTimeMilliseconds()));
     private static readonly string Fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("original")));
 
+    [Fact]
+    public async Task Single_store_keeps_company_id_in_identity_and_reinstantiation_cannot_reopen_committed_events()
+    {
+        await using var fixture = await Fixture.Create(false);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var company in new[] { "not-in-registry-a", "not-in-registry-b" })
+        {
+            var request = Reservation(now) with { Identity = Identity with { CompanyId = new CompanyId(company) } };
+            var lease = (await fixture.Guard.AcquireOrResumeAsync(request, default)).ShouldBeOfType<IdentityReservationResult.Granted>().Lease;
+            (await fixture.Guard.TryMarkWritingAsync(lease, now, default)).ShouldBeTrue();
+            (await fixture.Guard.TryCommitAsync(lease with { State = IdentityGuardState.Writing }, now, default)).ShouldBeTrue();
+        }
+        await using var services = new ServiceCollection().AddTelemetryControlPersistence(fixture.Database.Connection).BuildServiceProvider();
+        var restarted = new CentralMobilidade.Telemetry.Infrastructure.Idempotency.SelectedEventIdentityGuard(
+            services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>(), fixture.Clock);
+        foreach (var company in new[] { "not-in-registry-a", "not-in-registry-b" })
+        {
+            var request = Reservation(now) with { Identity = Identity with { CompanyId = new CompanyId(company) } };
+            (await restarted.AcquireOrResumeAsync(request, default)).ShouldBeOfType<IdentityReservationResult.Existing>()
+                .Outcome.ShouldBe(ExistingIdentityOutcome.IdenticalReplay);
+            (await restarted.AcquireOrResumeAsync(request with { Fingerprint = new string('b', 64) }, default))
+                .ShouldBeOfType<IdentityReservationResult.Existing>().Outcome.ShouldBe(ExistingIdentityOutcome.Conflict);
+            (await restarted.GetCommittedAsync(request.Identity, default)).ShouldNotBeNull();
+        }
+        await using var db = fixture.Database.Create();
+        (await db.IdentityGuards.CountAsync()).ShouldBe(2);
+        (await db.IdentityEvidence.CountAsync()).ShouldBe(2);
+    }
+
     [Theory]
     [Trait("Feature", "FoundationSingleInflux")]
     [InlineData(false)]
