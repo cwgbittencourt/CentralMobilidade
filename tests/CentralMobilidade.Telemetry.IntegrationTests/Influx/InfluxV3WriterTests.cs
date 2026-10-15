@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using CentralMobilidade.Telemetry.Application.Abstractions;
 using CentralMobilidade.Telemetry.Application.Configuration;
 using CentralMobilidade.Telemetry.Application.Ingestion;
+using CentralMobilidade.Telemetry.Application.Processing;
 using CentralMobilidade.Telemetry.Contracts.Errors;
 using CentralMobilidade.Telemetry.Domain.ValueObjects;
 using CentralMobilidade.Telemetry.Infrastructure.Streaming;
@@ -243,6 +244,30 @@ public sealed class InfluxRealServerTests : IClassFixture<InfluxContractServer>
 {
     private readonly InfluxContractServer server;
     public InfluxRealServerTests(InfluxContractServer server) => this.server = server;
+
+    [Fact]
+    public async Task Batcher_and_native_writer_persist_two_companies_in_one_gzip_write()
+    {
+        using var client = new HttpClient();
+        var writer = InfluxV3WriterTests.Writer(client, server.Url);
+        var options = new TelemetryOptions { WriteBatchMaxPoints = 2 };
+        var outcomes = new List<TelemetryWriteResult>();
+        await using var batcher = new InfluxWriteBatcher(writer, options, TimeProvider.System,
+            (request, result, token) => { outcomes.Add(result); return ValueTask.CompletedTask; });
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        foreach (var company in new[] { "batch-company-a", "batch-company-á" })
+        {
+            var point = new TelemetryWritePoint(new BatchId(Guid.NewGuid()), 17,
+                new(new CompanyId(company), new VehicleId("batch-vehicle"), EventTimestamp.FromUnixTimeMilliseconds(timestamp)));
+            var line = Encoding.UTF8.GetBytes($"batcherproof,empresa_id={company},veiculo_id=batch-vehicle rpm=1i {timestamp}\n");
+            await batcher.AddAsync(point, line, default);
+        }
+        outcomes.ShouldHaveSingleItem().CommittedPoints.ShouldBe(2);
+        outcomes[0].Rejections.ShouldBeEmpty();
+        using var document = JsonDocument.Parse(await client.GetStringAsync(server.Url + "/api/v3/query_sql?db=queryable&format=json&q=" +
+            Uri.EscapeDataString("SELECT empresa_id FROM batcherproof ORDER BY empresa_id")));
+        document.RootElement.EnumerateArray().Select(row => row.GetProperty("empresa_id").GetString()).ShouldBe(new[] { "batch-company-a", "batch-company-á" });
+    }
 
     [Fact]
     public async Task Production_writer_commits_to_real_server_and_preserves_millisecond_timestamp()

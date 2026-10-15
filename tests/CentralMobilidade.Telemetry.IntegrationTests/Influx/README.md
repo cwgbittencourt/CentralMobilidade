@@ -1,6 +1,6 @@
 # Writer InfluxDB v3 — T038
 
-## Estado atual após T110
+## Estado atual após T050
 
 Constituição 2.0.0 e T105–T110 substituem o modelo de empresas desconhecidas: o writer usa apenas
 `InfluxDb:Queryable`, sem consulta de existência. As seções T038/T049/T104/T105 abaixo são registros
@@ -9,7 +9,15 @@ incluindo três contra Influx real; T108 resolveu a prontidão que exigia promo�
 `influxdb` e `influxdb-init` e mantém volume/node-id queryable. T110 validou migração e guard; veja
 [o relatório de recovery](../Recovery/WorkerAcknowledgementBoundaryTests.md) para resultados e limites.
 
-Os três testes T050 e 21 cenários T051 continuam vermelhos por implementações ausentes. O [gate T112](../../../artifacts/validation/foundation-single-influx/README.md) validou a fundação; evidências da topologia dupla não comprovam persistência/reinício do Compose
+T050 está implementada: os três limiares originais e 12 cenários adicionais do batcher
+passam; outra prova combina batcher/writer real e consulta duas empresas no mesmo banco.
+A suíte completa passou 248 casos e teve somente 21 falhas esperadas T051; a prova real
+adicional passou em reexecução dirigida (249 aprovações distintas, sem repetir a suíte inteira).
+Unitários 242/242, contratos 58/58 e arquitetura 47/47. Evidências locais ignoradas em
+`artifacts/validation/T050/`. Uso, callback de resultados e limites em
+[Processing](../../../src/CentralMobilidade.Telemetry.Application/Processing/README.md).
+
+Os 21 cenários T051 continuam vermelhos pela implementação ausente. O [gate T112](../../../artifacts/validation/foundation-single-influx/README.md) validou a fundação; evidências da topologia dupla não comprovam persistência/reinício do Compose
 atual. Configuração vigente em [deploy](../../../deploy/README.md) e
 [writer](../../../src/CentralMobilidade.Telemetry.Infrastructure/Influx/README.md).
 
