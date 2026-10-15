@@ -39,4 +39,4 @@ public abstract record IdentityReservationResult
     public sealed record Contended(DateTimeOffset RetryAfter) : IdentityReservationResult;
 }
 public sealed record CommittedIdentitySnapshot(EventIdentity Identity,
-    DateTimeOffset GuardExpiresAt, DateTimeOffset? EvidenceExpiresAt);
+    DateTimeOffset GuardExpiresAt, DateTimeOffset? EvidenceExpiresAt, LineOwner? Owner = null);

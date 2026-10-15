@@ -1,5 +1,34 @@
 # Fronteiras de recuperação do worker — T042
 
+## Atualização T051
+
+O handler e a gravação transacional de resultados por linha estão implementados.
+As 21 falhas TDD de processamento passaram, junto com os sete cenários anteriores
+do guard. Foram acrescentadas provas de contadores exatos após retomada, rejeição
+parcial sem commit indevido, cancelamento, hash/trailer gzip, renovação/perda de lease,
+replay concorrente de resultados e limites dos buffers originais/canônicos.
+`ProcessingRealStorageTests` combina PostgreSQL, InfluxDB e filesystem reais e verifica
+o estado terminal antes da confirmação de uma entrega controlada e de sua redelivery.
+
+Os dados de falha injetada abaixo continuam válidos; encerramento real de processo,
+consumo RabbitMQ e política de poison não são demonstrados aqui. Configuração e
+fluxo atual estão em [Processing](../../../src/CentralMobilidade.Telemetry.Application/Processing/README.md).
+As seções que mencionam tipos ausentes registram a origem TDD anterior à T051.
+
+Validação final em Linux Docker: integração funcional 282/282, unitários 242/242,
+contratos 58/58 e arquitetura 47/47, sem skips. Depois do prazo próprio de processamento,
+a seleção dirigida final passou 41/41, incluindo o novo timeout (283 casos de integração
+distintos; a suíte inteira não foi repetida após essa mudança localizada). As 21 falhas
+TDD originais estão resolvidas. O benchmark de capacidade ADR-001 foi excluído da seleção
+funcional e permanece um gate separado.
+
+No Windows, 56 falhas da execução ampla foram bloqueios `0x800711C7` da DLL da API;
+um novo caso de gzip revelou `InvalidDataException` não tratada, corrigida como tentativa
+não confirmada. A DLL da Application também foi bloqueada numa rechecagem; nenhuma
+política de segurança foi alterada. As execuções finais Linux passaram com fontes atuais.
+Relatórios privados ignorados: `artifacts/validation/T051/final-integration.trx`,
+`final-processing.trx`, `final-unit.trx`, `final-contract.trx`, `final-architecture.trx`.
+
 ```powershell
 dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter FullyQualifiedName~WorkerAcknowledgementBoundaryTests
 ```

@@ -157,8 +157,9 @@ A blank producer array accepts no authenticated intake requests.
 
 Every valid producer-supplied `empresa_id` is recognized as existing and targets `telemetry` on
 `influxdb`. Optional driver enrichment cannot block storage or authorized visibility. Missing/invalid
-IDs retain parser rejection; presentation still enforces company scope. T050/T051 and T052/T053 are
-unfinished, so starting hosts does not prove processing. Grafana organizations/datasources/dashboards
+IDs retain parser rejection; presentation still enforces company scope. T050/T051 assembly/processing
+are implemented with controlled-delivery proofs; live consumption/wiring remains T052/T053, so starting hosts does not prove processing. Configure a persistent protected `Processing:DiagnosticKey`
+before T053 wires the handler; see the [processing configuration](../src/CentralMobilidade.Telemetry.Application/Processing/README.md). Grafana organizations/datasources/dashboards
 remain T071–T075. [T112 persistence/restart evidence](../artifacts/validation/foundation-single-influx/README.md) is recorded. No IDE startup hook has
 been added: run Compose explicitly.
 

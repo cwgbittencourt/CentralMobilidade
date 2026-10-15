@@ -4,6 +4,9 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Data.Common;
+using CentralMobilidade.Telemetry.Contracts.Errors;
+using CentralMobilidade.Telemetry.Domain.Processing;
 using CentralMobilidade.Telemetry.Application.Abstractions;
 using CentralMobilidade.Telemetry.Contracts.Messaging.V1;
 using CentralMobilidade.Telemetry.Domain.ValueObjects;
@@ -86,6 +89,9 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
                 .SetProperty(e => e.Rejected, e => transition.Counters == null ? e.Rejected : transition.Counters.Rejected)
                 .SetProperty(e => e.Replayed, e => transition.Counters == null ? e.Replayed : transition.Counters.Replayed)
                 .SetProperty(e => e.TotalLines, e => transition.Counters == null ? e.TotalLines : transition.Counters.Total)
+                .SetProperty(e => e.CompanyScopeComplete, e =>
+                    (transition.TargetState == BatchLifecycle.Completed || transition.TargetState == BatchLifecycle.CompletedWithRejections)
+                    ? db.LineResults.Any(r => r.BatchId == e.BatchId) && !db.LineResults.Any(r => r.BatchId == e.BatchId && r.CompanyId == null) : e.CompanyScopeComplete)
                 .SetProperty(e => e.TerminalErrorCode, e => transition.ErrorCode ?? e.TerminalErrorCode)
                 .SetProperty(e => e.RetryCount, e => transition.TargetState == BatchLifecycle.Retrying ? e.RetryCount + 1 : e.RetryCount)
                 .SetProperty(e => e.RowVersion, e => e.RowVersion + 1), cancellationToken)
@@ -99,9 +105,103 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
         return existing is not null && IsExactReplay(existing, expectedVersion, transition, occurredAt);
     }
 
-    public ValueTask RecordLineResultsAsync(BatchId batchId, IReadOnlyCollection<LineProcessingOutcome> results,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Line-result persistence is implemented with worker processing.");
+    public async ValueTask RecordLineResultsAsync(BatchId batchId, IReadOnlyCollection<LineProcessingOutcome> results,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(batchId);
+        ArgumentNullException.ThrowIfNull(results);
+        if (results.Count > 5000)
+            throw new ArgumentException("Result page is too large.", nameof(results));
+        try
+        {
+            await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+            var batch = await db.Batches.FromSqlInterpolated($"SELECT * FROM ingestion_batches WHERE \"BatchId\"={batchId.Value} FOR UPDATE").SingleAsync(cancellationToken);
+            foreach (var result in results)
+            {
+                if (result.LineNumber <= 0 || !Enum.IsDefined(result.Outcome) || result.OccurredAt.Offset != TimeSpan.Zero ||
+                    (result.Outcome == LineOutcome.Rejected ? !TelemetryErrorCodes.IsRejectionCode(result.ErrorCode!) || result.QuarantineId is null :
+                        result.ErrorCode is not null || result.QuarantineId is not null || result.ProtectedContent is not null || result.CompanyId is null || result.VehicleId is null))
+                    throw new ArgumentException("Invalid line result.", nameof(results));
+                _ = SafeLineDigest.FromStoredValue(result.SafeDigest);
+                if (result.Outcome == LineOutcome.Rejected)
+                {
+                    var content = result.ProtectedContent ?? throw new ArgumentException("Protected quarantine metadata is required.");
+                    if (content.QuarantineId != result.QuarantineId || content.BatchId != batchId || content.LineNumber != result.LineNumber ||
+                        content.ErrorCode != result.ErrorCode || content.CreatedAt.Offset != TimeSpan.Zero || content.DeleteAfter.Offset != TimeSpan.Zero ||
+                        content.DeleteAfter < content.CreatedAt || content.DeleteAfter - content.CreatedAt > TimeSpan.FromDays(30) ||
+                        content.ContentSha256.Length != 64 || !content.ContentSha256.All(Uri.IsHexDigit))
+                        throw new ArgumentException("Invalid protected metadata.");
+                    var stored = await db.QuarantinedRejections.SingleOrDefaultAsync(q => q.QuarantineId == content.QuarantineId, cancellationToken);
+                    if (stored is null)
+                        db.QuarantinedRejections.Add(new QuarantinedRejection
+                        {
+                            QuarantineId = content.QuarantineId,
+                            BatchId = batchId.Value,
+                            LineNumber = content.LineNumber,
+                            ErrorCode = content.ErrorCode,
+                            ContentDigest = content.ContentSha256,
+                            EncryptedContentLocation = "quarantine:" + content.QuarantineId.ToString("N"),
+                            CreatedAt = NormalizeForPostgres(content.CreatedAt),
+                            DeleteAfter = NormalizeForPostgres(content.DeleteAfter)
+                        });
+                    else if (stored.BatchId != batchId.Value || stored.LineNumber != content.LineNumber || stored.ErrorCode != content.ErrorCode ||
+                        stored.ContentDigest != content.ContentSha256 || stored.CreatedAt != NormalizeForPostgres(content.CreatedAt) || stored.DeleteAfter != NormalizeForPostgres(content.DeleteAfter))
+                        throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Permanent);
+                }
+                var existing = await db.LineResults.SingleOrDefaultAsync(r => r.BatchId == batchId.Value && r.LineNumber == result.LineNumber, cancellationToken);
+                if (existing is not null)
+                {
+                    if (existing.Outcome != result.Outcome || existing.ErrorCode != result.ErrorCode || existing.SafeDigest != result.SafeDigest ||
+                        existing.CompanyId != result.CompanyId?.Value || existing.VehicleId != result.VehicleId?.Value || existing.QuarantineId != result.QuarantineId)
+                        throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Permanent);
+                    continue;
+                }
+                if (batch.State != BatchLifecycle.Processing)
+                    throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Ambiguous);
+                db.LineResults.Add(new LineProcessingResult
+                {
+                    BatchId = batchId.Value,
+                    LineNumber = result.LineNumber,
+                    Outcome = result.Outcome,
+                    ErrorCode = result.ErrorCode,
+                    SafeDigest = result.SafeDigest,
+                    CompanyId = result.CompanyId?.Value,
+                    VehicleId = result.VehicleId?.Value,
+                    QuarantineId = result.QuarantineId,
+                    OccurredAt = NormalizeForPostgres(result.OccurredAt)
+                });
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            var outcomes = db.LineResults.Where(r => r.BatchId == batchId.Value);
+            batch.Accepted = await outcomes.LongCountAsync(r => r.Outcome == LineOutcome.Accepted, cancellationToken);
+            batch.Rejected = await outcomes.LongCountAsync(r => r.Outcome == LineOutcome.Rejected, cancellationToken);
+            batch.Replayed = await outcomes.LongCountAsync(r => r.Outcome == LineOutcome.IdenticalReplay, cancellationToken);
+            batch.CompanyScope = await outcomes.Where(r => r.CompanyId != null).Select(r => r.CompanyId!).Distinct().ToArrayAsync(cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch (Exception error) when (error is DbException or DbUpdateException)
+        {
+            throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Ambiguous);
+        }
+    }
+
+    public async ValueTask<LineProcessingOutcome?> GetLineResultAsync(BatchId batchId, int lineNumber, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(batchId);
+        if (lineNumber <= 0)
+            throw new ArgumentOutOfRangeException(nameof(lineNumber));
+        try
+        {
+            await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+            var row = await db.LineResults.AsNoTracking().SingleOrDefaultAsync(r => r.BatchId == batchId.Value && r.LineNumber == lineNumber, cancellationToken);
+            return row is null ? null : new((int)row.LineNumber, row.Outcome, row.ErrorCode,
+                row.CompanyId is null ? null : new(row.CompanyId), row.VehicleId is null ? null : new(row.VehicleId),
+                row.SafeDigest, row.OccurredAt, row.QuarantineId);
+        }
+        catch (DbException) { throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Ambiguous); }
+    }
 
     public ValueTask<RejectionResultPage> GetRejectionsAsync(BatchId batchId, string? cursor, int limit,
         CancellationToken cancellationToken) =>

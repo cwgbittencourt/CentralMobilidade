@@ -12,6 +12,9 @@ public interface IBatchStateStore
     // Creation and line recording are replay-safe by BatchId and (BatchId, LineNumber), respectively.
     ValueTask<BatchSnapshot> CreateAsync(TelemetryBatchEnvelope metadata, DateTimeOffset expiresAt, CancellationToken cancellationToken);
     ValueTask<BatchSnapshot?> GetAsync(BatchId batchId, CancellationToken cancellationToken);
+    // Required by processing recovery. Intake-only adapters may leave this unsupported.
+    ValueTask<LineProcessingOutcome?> GetLineResultAsync(BatchId batchId, int lineNumber, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Line-result recovery is not supported by this adapter.");
     // Compare-and-swap and legal lifecycle transition checks are atomic; false means no mutation.
     ValueTask<bool> TryTransitionAsync(BatchId batchId, long expectedVersion, BatchTransition transition, CancellationToken cancellationToken);
     ValueTask RecordLineResultsAsync(BatchId batchId, IReadOnlyCollection<LineProcessingOutcome> results, CancellationToken cancellationToken);
@@ -32,5 +35,5 @@ public sealed record BatchSnapshot(BatchId BatchId, string ProducerId, BatchLife
     IReadOnlyDictionary<string, long> ErrorSummary, IReadOnlyCollection<CompanyId> Companies, bool CompanyScopeComplete, long Version);
 public sealed record BatchTransition(BatchLifecycle TargetState, DateTimeOffset OccurredAt, BatchCounters? Counters = null, string? ErrorCode = null);
 public sealed record LineProcessingOutcome(int LineNumber, LineOutcome Outcome, string? ErrorCode, CompanyId? CompanyId,
-    VehicleId? VehicleId, string SafeDigest, DateTimeOffset OccurredAt, Guid? QuarantineId = null);
+    VehicleId? VehicleId, string SafeDigest, DateTimeOffset OccurredAt, Guid? QuarantineId = null, QuarantineMetadata? ProtectedContent = null);
 public sealed record RejectionResultPage(IReadOnlyList<LineProcessingOutcome> Items, string? NextCursor);

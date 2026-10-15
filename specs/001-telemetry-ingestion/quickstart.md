@@ -1,7 +1,7 @@
 # Quickstart Validation: Vehicle Telemetry Ingestion
 
 This guide includes current startup and future acceptance scenarios. The
-[T112 foundation gate](../../artifacts/validation/foundation-single-influx/README.md) passed; T050 bounded single-destination batch assembly is implemented. T051 processing, T052/T053 consumption, status/presentation endpoints, Grafana
+[T112 foundation gate](../../artifacts/validation/foundation-single-influx/README.md) passed; T050 batch assembly and T051 mixed-line processing are implemented and tested through controlled deliveries. T052/T053 live consumption, status/presentation endpoints, Grafana
 provisioning, Pub/Sub parity and load/final-proof commands below are not all implemented. Sections
 4–10 are acceptance targets, not obtained results. Check tasks.md before running task-specific scripts;
 `Provision-GrafanaOrganizations.ps1` is planned for T071.

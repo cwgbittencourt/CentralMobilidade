@@ -1,5 +1,9 @@
 # Leitor gzip limitado — T045
 
+T051 extraiu a implementação compartilhada para `Application/Streaming/BoundedGzipLineReader`.
+O tipo público original em Infrastructure é uma fachada compatível; intake e worker
+executam os mesmos limites e verificação de trailer, sem dependência Application → Infrastructure.
+
 `ReadAsync(Stream, compressedBytes, TelemetryOptions, CancellationToken)` retorna uma
 sequência assíncrona de linhas UTF-8 em bytes. Não lê Length/Position, não materializa
 o payload como string e mantém a propriedade do stream com o chamador. Memória de

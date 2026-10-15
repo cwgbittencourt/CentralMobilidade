@@ -1,6 +1,6 @@
 # Writer InfluxDB v3 — T038
 
-## Estado atual após T050
+## Estado atual após T051
 
 Constituição 2.0.0 e T105–T110 substituem o modelo de empresas desconhecidas: o writer usa apenas
 `InfluxDb:Queryable`, sem consulta de existência. As seções T038/T049/T104/T105 abaixo são registros
@@ -17,7 +17,15 @@ Unitários 242/242, contratos 58/58 e arquitetura 47/47. Evidências locais igno
 `artifacts/validation/T050/`. Uso, callback de resultados e limites em
 [Processing](../../../src/CentralMobilidade.Telemetry.Application/Processing/README.md).
 
-Os 21 cenários T051 continuam vermelhos pela implementação ausente. O [gate T112](../../../artifacts/validation/foundation-single-influx/README.md) validou a fundação; evidências da topologia dupla não comprovam persistência/reinício do Compose
+T051 resolveu os 21 cenários vermelhos. A suíte funcional Linux passou 282/282;
+unitários
+242/242, contratos 58/58 e arquitetura 47/47. A prova real de T051 combina guard,
+writer, quarentena e estado terminal; o consumer RabbitMQ continua T052/T053.
+O prazo próprio de processamento passou na seleção dirigida final 41/41, totalizando
+283 casos de integração distintos sem repetir a suíte inteira após essa mudança.
+O parágrafo anterior registra o resultado histórico da T050.
+
+O [gate T112](../../../artifacts/validation/foundation-single-influx/README.md) validou a fundação; evidências da topologia dupla não comprovam persistência/reinício do Compose
 atual. Configuração vigente em [deploy](../../../deploy/README.md) e
 [writer](../../../src/CentralMobilidade.Telemetry.Infrastructure/Influx/README.md).
 

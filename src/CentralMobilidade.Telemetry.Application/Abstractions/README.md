@@ -20,6 +20,15 @@ or safe destructive cleanup. Raw SDK diagnostics remain inside the adapter's pri
 | `IAuditWriter` | Append-only, replay-safe, durable receipt; no sensitive disclosure if audit fails |
 | `IClock` | UTC offset-zero clock that can be replaced in tests |
 
+T051 extends committed guard snapshots with their original line owner, allowing a
+resumed original batch line to retain Accepted rather than becoming a new replay.
+`GetLineResultAsync` is required by processing adapters to reuse durable rejections
+and successful outcomes before any repeat side effects; intake-only test adapters
+may leave it unsupported. Rejected line outcomes carry protected quarantine metadata (opaque UUID, digest and
+deadline) for atomic control-plane persistence; this internal record is not an HTTP
+response DTO. It exposes neither raw content nor filesystem paths. Result recording
+is implemented; rejection paging remains the inspection task.
+
 Publishing/writing callers retain stream ownership. A queue delivery owns its readable body until
 disposed; disposal never acknowledges it. Quarantine read handles own their streams and expose no
 storage path. Publish metadata and gzip body remain separate arguments. An adapter returns a durable

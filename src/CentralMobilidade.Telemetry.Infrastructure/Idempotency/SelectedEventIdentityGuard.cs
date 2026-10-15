@@ -45,7 +45,8 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
             return null;
         var evidence = await Evidence(db, identity).AsNoTracking().SingleOrDefaultAsync(token);
         return new(identity, row.GuardExpiresAt,
-            evidence?.EvidenceExpiresAt > clock.UtcNow ? evidence.EvidenceExpiresAt : null);
+            evidence?.EvidenceExpiresAt > clock.UtcNow ? evidence.EvidenceExpiresAt : null,
+            new(new(row.OwnerBatchId), checked((int)row.OwnerLineNumber)));
     }
 
     private async ValueTask<IdentityReservationResult> AcquireCore(IdentityReservationRequest request, CancellationToken token)

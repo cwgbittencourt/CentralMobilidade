@@ -40,20 +40,38 @@ public sealed class WorkerAcknowledgementBoundaryTests
         var now = DateTimeOffset.UtcNow;
         foreach (var company in new[] { "not-in-registry-a", "not-in-registry-b" })
         {
-            var request = Reservation(now) with { Identity = Identity with { CompanyId = new CompanyId(company) } };
+            var request = Reservation(now) with
+            {
+                Identity = Identity with
+                {
+                    CompanyId = new CompanyId(company)
+                }
+            };
             var lease = (await fixture.Guard.AcquireOrResumeAsync(request, default)).ShouldBeOfType<IdentityReservationResult.Granted>().Lease;
             (await fixture.Guard.TryMarkWritingAsync(lease, now, default)).ShouldBeTrue();
-            (await fixture.Guard.TryCommitAsync(lease with { State = IdentityGuardState.Writing }, now, default)).ShouldBeTrue();
+            (await fixture.Guard.TryCommitAsync(lease with
+            {
+                State = IdentityGuardState.Writing
+            }, now, default)).ShouldBeTrue();
         }
         await using var services = new ServiceCollection().AddTelemetryControlPersistence(fixture.Database.Connection).BuildServiceProvider();
         var restarted = new CentralMobilidade.Telemetry.Infrastructure.Idempotency.SelectedEventIdentityGuard(
             services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>(), fixture.Clock);
         foreach (var company in new[] { "not-in-registry-a", "not-in-registry-b" })
         {
-            var request = Reservation(now) with { Identity = Identity with { CompanyId = new CompanyId(company) } };
+            var request = Reservation(now) with
+            {
+                Identity = Identity with
+                {
+                    CompanyId = new CompanyId(company)
+                }
+            };
             (await restarted.AcquireOrResumeAsync(request, default)).ShouldBeOfType<IdentityReservationResult.Existing>()
                 .Outcome.ShouldBe(ExistingIdentityOutcome.IdenticalReplay);
-            (await restarted.AcquireOrResumeAsync(request with { Fingerprint = new string('b', 64) }, default))
+            (await restarted.AcquireOrResumeAsync(request with
+            {
+                Fingerprint = new string('b', 64)
+            }, default))
                 .ShouldBeOfType<IdentityReservationResult.Existing>().Outcome.ShouldBe(ExistingIdentityOutcome.Conflict);
             (await restarted.GetCommittedAsync(request.Identity, default)).ShouldNotBeNull();
         }
@@ -76,6 +94,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
         await using var delivery = new Delivery(metadata, fixture.Probe, raw: raw);
         await fixture.Run(delivery);
         delivery.Completed.ShouldBeTrue();
+        fixture.Writer.LastTraceId.ShouldBe(metadata.TraceId);
         fixture.Writer.Points.Keys.Select(identity => identity.CompanyId.Value).OrderBy(id => id)
             .ShouldBe(new[] { "not-in-registry-a", "not-in-registry-b" });
         var snapshot = (await fixture.RealStore.GetAsync(new(metadata.BatchId), default)).ShouldNotBeNull();
@@ -218,6 +237,9 @@ public sealed class WorkerAcknowledgementBoundaryTests
         fixture.Writer.ChangedOriginal.ShouldBeFalse();
         var snapshot = (await fixture.RealStore.GetAsync(new(metadata.BatchId), CancellationToken.None)).ShouldNotBeNull();
         snapshot.State.ShouldBeOneOf(BatchLifecycle.Completed, BatchLifecycle.CompletedWithRejections);
+        snapshot.Counters.Accepted.ShouldBe(1);
+        snapshot.Counters.Replayed.ShouldBe(0);
+        snapshot.Counters.Total.ShouldBe(1);
         fixture.Probe.Events.Last().ShouldBe("ack");
         if (boundary is "after-influx" or "before-committed")
             fixture.Writer.Calls.ShouldBeGreaterThanOrEqualTo(2, "Ambiguous persistence may repeat identical physical writes");
@@ -339,6 +361,216 @@ public sealed class WorkerAcknowledgementBoundaryTests
         snapshot.Counters.Rejected.ShouldBe(1);
     }
 
+    [Fact]
+    public async Task Mixed_replay_conflict_and_invalid_lines_have_exact_durable_counters()
+    {
+        await using var fixture = await Fixture.Create(true, maxPoints: 10);
+        var raw = RawLine + RawLine + RawLine.Replace("velocidade=0.0", "velocidade=99.0", StringComparison.Ordinal) + "invalid line\n";
+        var metadata = await fixture.Accepted(raw);
+        await using var delivery = new Delivery(metadata, fixture.Probe, raw: raw);
+        await fixture.Run(delivery);
+        delivery.Completed.ShouldBeTrue();
+        var snapshot = (await fixture.RealStore.GetAsync(new(metadata.BatchId), default)).ShouldNotBeNull();
+        snapshot.Counters.ShouldBe(new BatchCounters(1, 2, 1, 4));
+        snapshot.CompanyScopeComplete.ShouldBeFalse();
+        fixture.Writer.Calls.ShouldBe(1);
+        await using var db = fixture.Database.Create();
+        (await db.QuarantinedRejections.CountAsync()).ShouldBe(2);
+        (await db.LineResults.ToListAsync()).ShouldAllBe(r => r.SafeDigest.StartsWith("hmac-sha256:v1:"));
+    }
+
+    [Fact]
+    public async Task Partial_storage_rejection_is_quarantined_and_never_commits_its_guard()
+    {
+        await using var fixture = await Fixture.Create(true, maxPoints: 2);
+        fixture.Writer.RejectLine = 2;
+        var raw = RawLine + RawLine.Replace("veiculo_id=vehicle", "veiculo_id=vehicle-2", StringComparison.Ordinal);
+        var metadata = await fixture.Accepted(raw);
+        await using var delivery = new Delivery(metadata, fixture.Probe, raw: raw);
+        await fixture.Run(delivery);
+        delivery.Completed.ShouldBeTrue();
+        var snapshot = (await fixture.RealStore.GetAsync(new(metadata.BatchId), default)).ShouldNotBeNull();
+        snapshot.Counters.ShouldBe(new BatchCounters(1, 1, 0, 2));
+        snapshot.CompanyScopeComplete.ShouldBeTrue();
+        await using var db = fixture.Database.Create();
+        (await db.IdentityGuards.CountAsync(r => r.State == IdentityGuardState.Committed)).ShouldBe(1);
+        (await db.QuarantinedRejections.SingleAsync()).ErrorCode.ShouldBe(TelemetryErrorCodes.StorageSchemaConflict);
+        (await db.LineResults.SingleAsync(r => r.LineNumber == 2)).Outcome.ShouldBe(LineOutcome.Rejected);
+    }
+
+    [Fact]
+    public async Task Cancelled_attempt_is_not_acknowledged_and_a_fresh_attempt_resumes_writing()
+    {
+        await using var fixture = await Fixture.Create(true);
+        var metadata = await fixture.Accepted();
+        fixture.Writer.Hold = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancelled = new CancellationTokenSource();
+        await using var first = new Delivery(metadata, fixture.Probe);
+        var processing = fixture.Run(first, cancelled.Token);
+        await fixture.Writer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancelled.Cancel();
+        await Should.ThrowAsync<OperationCanceledException>(() => processing);
+        first.Completed.ShouldBeFalse();
+        fixture.Writer.Points.ShouldBeEmpty();
+        fixture.Writer.Hold.TrySetResult();
+        await using var retry = new Delivery(metadata, fixture.Probe, 2);
+        await fixture.Run(retry);
+        retry.Completed.ShouldBeTrue();
+        fixture.Writer.Calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Envelope_hash_mismatch_causes_retry_before_any_storage_side_effect()
+    {
+        await using var fixture = await Fixture.Create(true);
+        var metadata = await fixture.Accepted();
+        await using var delivery = new Delivery(metadata, fixture.Probe, raw: RawLine + "invalid\n");
+        await fixture.Run(delivery);
+        delivery.Completed.ShouldBeFalse();
+        fixture.Probe.Events.ShouldContain("retry");
+        fixture.Writer.Calls.ShouldBe(0);
+        await using var db = fixture.Database.Create();
+        (await db.IdentityGuards.CountAsync()).ShouldBe(0);
+        (await db.LineResults.CountAsync()).ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task Long_write_renews_its_lease_and_lost_lease_cancels_without_ack(bool loseLease, bool attemptTimeout)
+    {
+        await using var fixture = await Fixture.Create(true, shortLease: true, shortAttempt: attemptTimeout);
+        fixture.Clock.UseSystem = true;
+        var metadata = await fixture.Accepted();
+        fixture.Writer.Hold = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var delivery = new Delivery(metadata, fixture.Probe);
+        var processing = fixture.Run(delivery);
+        await fixture.Writer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await using var db = fixture.Database.Create();
+        var initial = (await db.IdentityGuards.AsNoTracking().SingleAsync()).LeaseUntil;
+        if (attemptTimeout)
+        {
+            await processing.WaitAsync(TimeSpan.FromSeconds(5));
+            delivery.Completed.ShouldBeFalse();
+            fixture.Probe.Events.ShouldContain("retry");
+            fixture.Writer.Calls.ShouldBe(0);
+        }
+        else if (loseLease)
+        {
+            await db.Database.ExecuteSqlRawAsync("UPDATE event_identity_guards SET \"LeaseUntil\"=clock_timestamp()-interval '1 second'");
+            await processing.WaitAsync(TimeSpan.FromSeconds(5));
+            delivery.Completed.ShouldBeFalse();
+            fixture.Probe.Events.ShouldContain("retry");
+            fixture.Writer.Calls.ShouldBe(0);
+        }
+        else
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            var renewed = (await db.IdentityGuards.AsNoTracking().SingleAsync()).LeaseUntil;
+            renewed!.Value.ShouldBeGreaterThan(initial!.Value);
+            renewed.Value.ShouldBeGreaterThan(DateTimeOffset.UtcNow);
+            fixture.Writer.Hold.TrySetResult();
+            await processing.WaitAsync(TimeSpan.FromSeconds(5));
+            delivery.Completed.ShouldBeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task Line_result_recording_is_concurrently_idempotent_and_rejects_conflicting_replay()
+    {
+        await using var fixture = await Fixture.Create(false);
+        var metadata = await fixture.Accepted();
+        var id = new BatchId(metadata.BatchId);
+        var before = (await fixture.RealStore.GetAsync(id, default)).ShouldNotBeNull();
+        (await fixture.RealStore.TryTransitionAsync(id, before.Version, new(BatchLifecycle.Processing, metadata.ReceivedAt), default)).ShouldBeTrue();
+        var digest = CentralMobilidade.Telemetry.Domain.Processing.SafeLineDigest.Compute(Encoding.UTF8.GetBytes(RawLine), Enumerable.Repeat((byte)0x51, 32).ToArray()).Value;
+        var outcome = new LineProcessingOutcome(1, LineOutcome.Accepted, null, new("company"), new("vehicle"), digest, metadata.ReceivedAt);
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => fixture.RealStore.RecordLineResultsAsync(id, [outcome], default).AsTask()));
+        var snapshot = (await fixture.RealStore.GetAsync(id, default)).ShouldNotBeNull();
+        snapshot.Counters.Accepted.ShouldBe(1);
+        await Should.ThrowAsync<ProviderOperationException>(() => fixture.RealStore.RecordLineResultsAsync(id, [outcome with { Outcome = LineOutcome.IdenticalReplay }], default).AsTask());
+        await using var db = fixture.Database.Create();
+        (await db.LineResults.CountAsync()).ShouldBe(1);
+        (await db.LineResults.SingleAsync()).Outcome.ShouldBe(LineOutcome.Accepted);
+    }
+
+    [Fact]
+    public async Task Valid_envelope_hash_cannot_hide_a_corrupt_gzip_trailer()
+    {
+        await using var fixture = await Fixture.Create(true);
+        var original = await fixture.Accepted();
+        var bytes = Gzip();
+        bytes[^1] ^= 1;
+        var metadata = original with
+        {
+            PayloadSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes))
+        };
+        await using var delivery = new Delivery(metadata, fixture.Probe);
+        delivery.Body.Position = 0;
+        await delivery.Body.WriteAsync(bytes);
+        delivery.Body.Position = 0;
+        await fixture.Run(delivery);
+        delivery.Completed.ShouldBeFalse();
+        fixture.Writer.Calls.ShouldBe(0);
+        await using var db = fixture.Database.Create();
+        (await db.IdentityGuards.CountAsync()).ShouldBe(0);
+        fixture.Probe.Events.ShouldContain("retry");
+    }
+
+    [Fact]
+    public async Task Raw_quarantine_buffer_is_bounded_even_when_canonical_lines_are_much_smaller()
+    {
+        await using var fixture = await Fixture.Create(true, maxPoints: 10, maxBytes: 1500);
+        var padded = RawLine.TrimEnd('\n') + new string(' ', 1000) + "\n";
+        var raw = padded + padded.Replace("veiculo_id=vehicle", "veiculo_id=vehicle-2", StringComparison.Ordinal);
+        var metadata = await fixture.Accepted(raw);
+        await using var delivery = new Delivery(metadata, fixture.Probe, raw: raw);
+        await fixture.Run(delivery);
+        delivery.Completed.ShouldBeTrue();
+        fixture.Writer.Calls.ShouldBe(2);
+        (await fixture.RealStore.GetAsync(new(metadata.BatchId), default))!.Counters.ShouldBe(new BatchCounters(2, 0, 0, 2));
+    }
+
+    [Fact]
+    public async Task Canonical_line_exceeding_write_budget_is_quarantined_before_reserving_identity()
+    {
+        await using var fixture = await Fixture.Create(true, maxBytes: 10);
+        var metadata = await fixture.Accepted();
+        await using var delivery = new Delivery(metadata, fixture.Probe);
+        await fixture.Run(delivery);
+        delivery.Completed.ShouldBeTrue();
+        fixture.Writer.Calls.ShouldBe(0);
+        (await fixture.RealStore.GetAsync(new(metadata.BatchId), default))!.Counters.ShouldBe(new BatchCounters(0, 1, 0, 1));
+        await using var db = fixture.Database.Create();
+        (await db.IdentityGuards.CountAsync()).ShouldBe(0);
+        (await db.QuarantinedRejections.CountAsync()).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Durable_provider_rejection_is_not_rewritten_after_schema_changes_on_redelivery()
+    {
+        await using var fixture = await Fixture.Create(true);
+        fixture.Writer.RejectLine = 1;
+        fixture.Probe.FailAt = "after-results";
+        var raw = RawLine + RawLine.Replace("veiculo_id=vehicle", "veiculo_id=vehicle-2", StringComparison.Ordinal);
+        var metadata = await fixture.Accepted(raw);
+        await using var first = new Delivery(metadata, fixture.Probe, raw: raw);
+        await fixture.Run(first);
+        fixture.Probe.Triggered.ShouldBeTrue();
+        first.Completed.ShouldBeFalse();
+        fixture.Writer.RejectLine = null; // Provider would now accept the previously rejected payload.
+        fixture.Probe.FailAt = null;
+        await using var retry = new Delivery(metadata, fixture.Probe, 2, raw);
+        await fixture.Run(retry);
+        retry.Completed.ShouldBeTrue();
+        fixture.Writer.Calls.ShouldBe(2);
+        (await fixture.RealStore.GetAsync(new(metadata.BatchId), default))!.Counters.ShouldBe(new BatchCounters(1, 1, 0, 2));
+        await using var db = fixture.Database.Create();
+        (await db.IdentityGuards.CountAsync(r => r.State == IdentityGuardState.Committed)).ShouldBe(1);
+        (await db.LineResults.SingleAsync(r => r.LineNumber == 1)).Outcome.ShouldBe(LineOutcome.Rejected);
+    }
+
     private static byte[] Gzip(string? raw = null)
     {
         using var output = new MemoryStream();
@@ -389,7 +621,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
         }
         internal Clock Clock { get; } = new();
         private readonly Type? handlerType;
-        private Fixture(MigratedPostgresFixture database, Type guardType, Type? handlerType, bool legacyLookupConfigured)
+        private Fixture(MigratedPostgresFixture database, Type guardType, Type? handlerType, bool legacyLookupConfigured, int maxPoints, bool shortLease, long maxBytes, bool shortAttempt)
         {
             Database = database;
             var collection = new ServiceCollection();
@@ -398,9 +630,13 @@ public sealed class WorkerAcknowledgementBoundaryTests
             collection.AddSingleton<IClock>(Clock);
             collection.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["Processing:DiagnosticKey"] = Convert.ToBase64String(Enumerable.Repeat((byte)0x51, 32).ToArray()),
+                ["Processing:LeaseDuration"] = shortLease ? "00:00:02" : "00:05:00",
+                ["Processing:RenewalInterval"] = shortLease ? "00:00:00.2" : "00:00:30",
+                ["Processing:AttemptTimeout"] = shortAttempt ? "00:00:03" : "00:10:00",
                 ["Cadastral:CompanyVisibilityUrl"] = legacyLookupConfigured ? "http://127.0.0.1:1/obsolete-company-lookup" : null
             }).Build());
-            var options = new TelemetryOptions { WriteBatchMaxPoints = 1 };
+            var options = new TelemetryOptions { WriteBatchMaxPoints = maxPoints, WriteBatchMaxBytes = maxBytes };
             collection.AddSingleton(options);
             collection.AddSingleton<IOptions<TelemetryOptions>>(Options.Create(options));
             collection.AddSingleton(TimeProvider.System);
@@ -418,7 +654,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
             RealStore = new PostgresBatchStateStore(services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>());
             this.handlerType = handlerType;
         }
-        internal static async Task<Fixture> Create(bool processing, bool legacyLookupConfigured = false)
+        internal static async Task<Fixture> Create(bool processing, bool legacyLookupConfigured = false, int maxPoints = 1, bool shortLease = false, long maxBytes = 2 * 1024 * 1024, bool shortAttempt = false)
         {
             var handlerType = typeof(AcceptTelemetryBatchHandler).Assembly.GetType("CentralMobilidade.Telemetry.Application.Processing.ProcessTelemetryBatchHandler");
             if (processing)
@@ -428,7 +664,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
             var database = await MigratedPostgresFixture.StartAsync();
             try
             {
-                return new(database, guardType, processing ? handlerType : null, legacyLookupConfigured);
+                return new(database, guardType, processing ? handlerType : null, legacyLookupConfigured, maxPoints, shortLease, maxBytes, shortAttempt);
             }
             catch { await database.DisposeAsync(); throw; }
         }
@@ -443,14 +679,14 @@ public sealed class WorkerAcknowledgementBoundaryTests
             (await RealStore.TryTransitionAsync(batch.BatchId, batch.Version + 1, new(BatchLifecycle.Accepted, received), CancellationToken.None)).ShouldBeTrue();
             return metadata;
         }
-        internal async Task Run(Delivery delivery)
+        internal async Task Run(Delivery delivery, CancellationToken token = default)
         {
             // Every delivery/retry gets fresh processing and batching objects; durable state is external.
             var handler = ActivatorUtilities.CreateInstance(services, handlerType!);
             var method = handler.GetType().GetMethod("HandleAsync", [typeof(IQueueDelivery), typeof(CancellationToken)]).ShouldNotBeNull();
             try
             {
-                var operation = method.Invoke(handler, [delivery, CancellationToken.None]);
+                var operation = method.Invoke(handler, [delivery, token]);
                 if (operation is Task task)
                     await task;
                 else
@@ -496,6 +732,7 @@ public sealed class WorkerAcknowledgementBoundaryTests
 
     private sealed class StoreDecorator(IBatchStateStore inner, Probe probe) : IBatchStateStore
     {
+        public ValueTask<LineProcessingOutcome?> GetLineResultAsync(BatchId id, int number, CancellationToken token) => inner.GetLineResultAsync(id, number, token);
         public ValueTask<BatchSnapshot> CreateAsync(TelemetryBatchEnvelope metadata, DateTimeOffset expires, CancellationToken token) => inner.CreateAsync(metadata, expires, token);
         public ValueTask<BatchSnapshot?> GetAsync(BatchId id, CancellationToken token) => inner.GetAsync(id, token);
         public async ValueTask<bool> TryTransitionAsync(BatchId id, long version, BatchTransition transition, CancellationToken token)
@@ -521,11 +758,14 @@ public sealed class WorkerAcknowledgementBoundaryTests
     {
         internal ConcurrentDictionary<EventIdentity, byte[]> Points { get; } = new();
         internal int Calls;
+        internal string? LastTraceId;
         internal bool ChangedOriginal;
+        internal int? RejectLine;
         internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource? Hold;
         public async ValueTask<TelemetryWriteResult> WriteAsync(TelemetryWriteRequest request, Stream body, CancellationToken token)
         {
+            LastTraceId = request.TraceId;
             probe.Hit("before-influx");
             Entered.TrySetResult();
             if (Hold is not null)
@@ -537,12 +777,15 @@ public sealed class WorkerAcknowledgementBoundaryTests
             var content = bytes.ToArray();
             foreach (var point in request.Points)
             {
+                if (point.LineNumber == RejectLine)
+                    continue;
                 var original = Points.GetOrAdd(point.Identity, content);
                 if (!original.AsSpan().SequenceEqual(content))
                     ChangedOriginal = true;
             }
             probe.Hit("after-influx");
-            return new(request.Points.Count, []);
+            var rejected = request.Points.Where(p => p.LineNumber == RejectLine).Select(p => new TelemetryWriteRejection(p.BatchId, p.LineNumber, TelemetryErrorCodes.StorageSchemaConflict)).ToArray();
+            return new(request.Points.Count - rejected.Length, rejected);
         }
     }
 
@@ -577,7 +820,12 @@ public sealed class WorkerAcknowledgementBoundaryTests
     }
     private sealed class Clock : IClock
     {
-        public DateTimeOffset UtcNow { get; set; } = Now;
+        private DateTimeOffset current = Now;
+        internal bool UseSystem;
+        public DateTimeOffset UtcNow
+        {
+            get => UseSystem ? DateTimeOffset.UtcNow : current; set => current = value;
+        }
     }
     private sealed class Quarantine(Probe probe) : IQuarantineStore
     {
