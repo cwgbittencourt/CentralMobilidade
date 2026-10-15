@@ -1,7 +1,7 @@
 # Local dependency stack
 
-Run Docker Compose from the repository root. This stack persists PostgreSQL, RabbitMQ, queryable
-InfluxDB, pending InfluxDB, Prometheus, Loki, Grafana, and rejection quarantine in separate named volumes.
+Run Docker Compose from the repository root. This stack persists PostgreSQL, RabbitMQ, a single
+InfluxDB, Prometheus, Loki, Grafana, and rejection quarantine in separate named volumes.
 The base file publishes only Grafana, on `127.0.0.1:3000`. Load the development override explicitly
 to publish dependency ports and enable optional application/emulator profiles.
 
@@ -9,26 +9,36 @@ Set `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, and `GRAFANA_ADMIN_PASSWORD` in th
 root `.env`. Use distinct secrets. `GRAFANA_ADMIN_USER` defaults to `admin`; `GRAFANA_PORT` defaults to
 `3000`. PostgreSQL and Grafana receive their passwords through Docker Compose secrets.
 
-Create two distinct offline InfluxDB admin token files in an untracked directory, for example:
+For a fresh installation, create one offline InfluxDB admin token file in an untracked directory, for example:
 
 ```powershell
 New-Item -ItemType Directory -Force data/secrets
 $tokenDirectory = (Resolve-Path data/secrets).Path
 docker run --rm --mount "type=bind,source=$tokenDirectory,target=/tokens" influxdb:3.11.6-core influxdb3 create token --admin --offline --name queryable-bootstrap --output-file /tokens/queryable.json
-docker run --rm --mount "type=bind,source=$tokenDirectory,target=/tokens" influxdb:3.11.6-core influxdb3 create token --admin --offline --name pending-bootstrap --output-file /tokens/pending.json
 $env:INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE = Join-Path $tokenDirectory queryable.json
-$env:INFLUXDB_PENDING_ADMIN_TOKEN_FILE = Join-Path $tokenDirectory pending.json
 docker compose -f deploy/compose.yaml config --quiet
 docker compose -f deploy/compose.yaml up -d --build --wait
 docker compose -f deploy/compose.yaml ps -a
 ```
 
-Keep these token files private and available across restarts; do not regenerate them for an existing
-catalog. The init jobs create `telemetry` and `telemetry_pending` with 60-day retention and skip existing
-databases. They fail on connection/authentication errors. Each InfluxDB instance has its own catalog,
-WAL, Parquet files, network, and bootstrap credential. Pending storage has no host port in the base file and Grafana
-does not join its network or receive its token. Provision scoped application/read credentials in the
-later provider and Grafana provisioning tasks; bootstrap tokens are for administration.
+Keep the token file private and available across restarts; reuse the existing queryable token for an
+existing catalog. The one-shot `influxdb-init` job creates only `telemetry` with 60-day retention and
+skips it when it already exists. Connection/authentication/create errors fail the job. The persistent
+server is `influxdb`; default containers are `centralmobilidade-influxdb-1` and
+`centralmobilidade-influxdb-init-1`. A successful initializer exits with code zero; it is not another
+InfluxDB server. Compose generates project-scoped names; no fixed `container_name` is used.
+Application DNS is `http://influxdb:8181`. Provision least-privilege application/read credentials;
+the offline bootstrap token remains administrative and is separate from the shared producer credential.
+
+For an existing dual-store installation, complete [the offline reconciliation procedure](../docs/runbooks/single-influx-upgrade.md)
+before applying the new composition. Preserve the Compose project name, `influxdb_queryable_data`
+volume key (default physical name `centralmobilidade_influxdb_queryable_data`), mount path and
+`--node-id queryable`. The node-id is deliberately unchanged because it identifies the existing
+catalog. Inventory actual mounts for custom project names before starting. Stop legacy Influx
+containers before attaching the retained volume to the new service; never run both writers on it.
+The removed pending volume and its token/backups must be retained separately until reconciliation
+and restore verification are signed off. This change does not copy points or remove old containers
+or volumes. Do not use `--remove-orphans` as a substitute for the reconciled upgrade.
 
 The Grafana image fixes OSS 12.2.5 and signed Infinity 4.1.1, whose declared minimum for the 12.2 line
 is 12.2.5. Plugins are installed at build time outside `/var/lib/grafana` so the data volume cannot hide
@@ -52,7 +62,7 @@ References: [Infinity releases](https://grafana.com/api/plugins/yesoreyeram-infi
 [InfluxDB offline admin tokens](https://docs.influxdata.com/influxdb3/core/admin/tokens/),
 [InfluxDB retention](https://docs.influxdata.com/influxdb3/core/reference/internals/data-retention/).
 
-## T008 validation
+## Historical T008 validation (dual-store, superseded by T109)
 
 Validated on 2026-10-12 with Docker Desktop 4.95.0, Engine 29.8.2, and Compose 5.6.0 in the isolated
 `centralmobilidade-t008` project. Compose configuration and image builds passed. Seven long-running
@@ -69,14 +79,13 @@ later queue, retention, privacy, and load-test gates.
 ## Development override and profiles
 
 The development file must be included explicitly in every start, status, logs, or shutdown command.
-It publishes ports only on IPv4 loopback and preserves authentication, named volumes, and pending
-network isolation. Use the same secret setup described above.
+It publishes ports only on IPv4 loopback and preserves authentication and named volumes. Use the same secret setup described above.
 
 | Service | Default host port | Override variable |
 | --- | --- | --- |
 | PostgreSQL | 5432 | `POSTGRES_PORT` |
 | RabbitMQ AMQP / management | 5672 / 15672 | `RABBITMQ_PORT` / `RABBITMQ_MANAGEMENT_PORT` |
-| InfluxDB queryable / pending | 8181 / 8182 | `INFLUXDB_QUERYABLE_PORT` / `INFLUXDB_PENDING_PORT` |
+| InfluxDB | 8181 | `INFLUXDB_QUERYABLE_PORT` |
 | Prometheus | 9090 | `PROMETHEUS_PORT` |
 | Loki | 3100 | `LOKI_PORT` |
 | API (`app` profile) | 8080 | `API_PORT` |
@@ -128,7 +137,7 @@ Stop every selected profile and preserve dependency volumes:
 docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app --profile pubsub-emulator down
 ```
 
-T009 validation on 2026-10-12 confirmed that base-only commands remain unchanged, both profiles are
+Historical T009 validation (dual-store, superseded by T109) on 2026-10-12 confirmed that base-only commands remain unchanged, both profiles are
 disabled by default, all development port bindings use `127.0.0.1`, and the eight persistent volumes
 remain declared. Both application builds passed. The Development API returned HTTP 200; the Worker
 skeleton exited with code zero, and a separate check confirmed its UID 1654 can write to the shared
@@ -140,7 +149,7 @@ deleting dependency volumes. Provider parity and worker readiness remain later i
 ## Configuration templates
 
 Copy `.env.example` to an untracked root `.env` and fill in its blank secret values and absolute token
-file paths. The example intentionally cannot start the stack with working credentials. Compose reads
+file path. The example intentionally cannot start the stack with working credentials. Compose reads
 this file for interpolation; it does not automatically export every key into API/Worker containers.
 
 Both application `appsettings.json` files contain the same `Telemetry` limit defaults from the plan:
@@ -153,20 +162,20 @@ startup. Unknown keys, malformed values, nonpositive sizes/counts/durations, non
 ratios, and inconsistent byte limits fail startup. Viewer limits may be reduced, but cannot exceed
 the documented maxima or use health granularity below one minute. Quarantine retention may be reduced
 but cannot exceed 30 days; queue retention must cover seven days. Batch status and fingerprint evidence
-must remain at 30 days, and local telemetry retention must match the databases' fixed 60-day policy.
+must remain at 30 days, and local telemetry retention must match the database's fixed 60-day policy.
 Request/stream enforcement and retention cleanup are implemented in the later processing tasks.
 
 Application PostgreSQL connection strings, RabbitMQ passwords, and InfluxDB tokens are blank. Supply
 them through the application process environment or a deployment secret provider using .NET keys
 such as `ConnectionStrings__TelemetryControl`, `Queue__RabbitMq__Password`,
-`InfluxDb__Queryable__Token`, and, for the Worker only, `InfluxDb__Pending__Token`. Use least-privilege
+`InfluxDb__Queryable__Token`. Use least-privilege
 application credentials rather than the InfluxDB bootstrap admin token files. Credential loading and
 provider registration are implemented in the subsequent security/infrastructure tasks. Do not store
 producer or operator bearer tokens in these files; their separate credential stores follow in T017.
 
 Service URLs in the JSON templates use Docker DNS names. For a host-based development process,
 override `Queue__RabbitMq__Host` to `localhost`, its port to the development AMQP port, and
-`InfluxDb__Queryable__Url` / `InfluxDb__Pending__Url` to the corresponding loopback URLs. Set the
+`InfluxDb__Queryable__Url` to `http://localhost:8181` (or the overridden port). Set the
 PostgreSQL connection string to the published PostgreSQL endpoint. Override `Quarantine__Path` to
 a protected local directory and `AllowedHosts` for any additional API hostname. Pub/Sub fields are
 inactive while `Queue:Provider` is `RabbitMq`; emulator configuration must be selected explicitly.
@@ -175,3 +184,33 @@ T010 validation confirmed valid JSON, matching limits in both applications, blan
 coverage of the Compose interpolation variables in `.env.example`, and inclusion of each JSON file
 in its Release publish output. Compose configuration passes with supplied validation secrets and
 rejects the untouched example. The real `.env` and token-file directory remain ignored by Git.
+
+## T109 topology validation
+
+Run `./scripts/Test-SingleInfluxTopology.ps1` from PowerShell with Docker Compose installed. It resolves
+base and development configurations, including both optional profiles, with synthetic interpolation
+values and without loading the private `.env`. It checks one server/one initializer, retained node and
+volume identity, application DNS, dependency completion conditions, loopback ports, and removal of
+pending resources and fixed container names. It captures resolved JSON without printing secrets and
+restores process environment variables when finished. It never starts the stack.
+
+Test initializer behavior with the pinned image and a CLI double (no data volumes or network):
+
+```powershell
+docker run --rm --network none --user 0 --mount "type=bind,source=$PWD/deploy/influxdb/init-database.sh,target=/init-database.sh,readonly" --mount "type=bind,source=$PWD/scripts/Test-InfluxInitialization.sh,target=/test-init.sh,readonly" --entrypoint sh influxdb:3.11.6-core /test-init.sh
+```
+
+Validation on 2026-10-14: topology passed for base and development/app/emulator configuration. The
+pre-change check failed because the legacy composition still required the pending token file.
+Seven initializer cases passed: absent database creates with 60d retention; existing database is
+preserved; list/create failures propagate; wrong database, missing host and missing token stop before
+the CLI is called. Synthetic token contents never appeared in captured output or command arguments.
+The first stdin-based harness invocation added a Windows CR after successful checks; mounting both
+LF scripts produced exit zero. These are topology/CLI-control tests, not a real-server restart or
+persistence proof. T112 performs the Compose persistence/restart gate; historical T008/T009 dual-store
+results above do not validate this new topology.
+
+The current Docker inventory contained no project-labelled containers/volumes or volumes matching
+centralmobilidade/queryable/pending names. External catalogs were not inspected. No existing service
+was stopped or started, no project database was migrated and no volume was removed. Populated
+installations must complete the T106 reconciliation before applying this deployment.

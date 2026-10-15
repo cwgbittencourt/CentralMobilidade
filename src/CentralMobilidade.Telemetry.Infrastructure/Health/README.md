@@ -92,9 +92,9 @@ requires PostgreSQL and durable publication; worker readiness still requires Pos
 connectivity and a fresh consumer heartbeat. HTTP health requests cannot refresh that heartbeat.
 
 The worker template now contains only Queryable. The API template and writer registration already
-use only that store and needed no source changes. Service DNS stays `influxdb-queryable` until T109
-renames the Compose services together. `.env.example` removes obsolete pending settings and explains
-the temporary Compose prerequisite; existing private files and volumes must be preserved.
+use only that store and needed no source changes in T108. T109 subsequently aligns service DNS to
+`http://influxdb:8181` and removes the temporary legacy Compose prerequisite from `.env.example`.
+Existing private files and volumes must be preserved.
 
 Validation: the new registration regression first failed for the worker (two Influx checks instead
 of one). All 37 directed health/security/intake scenarios then passed, including migrated real

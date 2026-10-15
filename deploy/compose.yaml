@@ -35,7 +35,8 @@ services:
       timeout: 10s
       retries: 20
 
-  influxdb-queryable:
+  influxdb:
+    # Keep node-id and volume identity when reusing the existing queryable catalog.
     image: influxdb:3.11.6-core
     command: [influxdb3, serve, --node-id, queryable, --object-store, file, --data-dir, /var/lib/influxdb3/data, --admin-token-file, /run/secrets/influxdb_admin_token, --disable-authz, "health,ping"]
     secrets:
@@ -51,28 +52,11 @@ services:
       retries: 30
       start_period: 10s
 
-  influxdb-pending:
-    image: influxdb:3.11.6-core
-    command: [influxdb3, serve, --node-id, pending, --object-store, file, --data-dir, /var/lib/influxdb3/data, --admin-token-file, /run/secrets/influxdb_admin_token, --disable-authz, "health,ping"]
-    secrets:
-      - source: influxdb_pending_admin_token
-        target: influxdb_admin_token
-    volumes:
-      - influxdb_pending_data:/var/lib/influxdb3
-    # Grafana never joins this network; pending storage has no published port.
-    networks: [pending]
-    healthcheck:
-      test: [CMD, curl, --fail, --silent, http://localhost:8181/health]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
-
-  influxdb-queryable-init:
+  influxdb-init:
     image: influxdb:3.11.6-core
     entrypoint: [sh, /init-database.sh]
     environment:
-      INFLUXDB3_HOST_URL: http://influxdb-queryable:8181
+      INFLUXDB3_HOST_URL: http://influxdb:8181
       INFLUXDB3_DATABASE_NAME: telemetry
     secrets:
       - source: influxdb_queryable_admin_token
@@ -81,24 +65,7 @@ services:
       - ./influxdb/init-database.sh:/init-database.sh:ro
     networks: [backend]
     depends_on:
-      influxdb-queryable:
-        condition: service_healthy
-    restart: "no"
-
-  influxdb-pending-init:
-    image: influxdb:3.11.6-core
-    entrypoint: [sh, /init-database.sh]
-    environment:
-      INFLUXDB3_HOST_URL: http://influxdb-pending:8181
-      INFLUXDB3_DATABASE_NAME: telemetry_pending
-    secrets:
-      - source: influxdb_pending_admin_token
-        target: influxdb_admin_token
-    volumes:
-      - ./influxdb/init-database.sh:/init-database.sh:ro
-    networks: [pending]
-    depends_on:
-      influxdb-pending:
+      influxdb:
         condition: service_healthy
     restart: "no"
 
@@ -152,9 +119,7 @@ services:
       - grafana_data:/var/lib/grafana
     networks: [backend]
     depends_on:
-      influxdb-queryable-init:
-        condition: service_completed_successfully
-      influxdb-pending-init:
+      influxdb-init:
         condition: service_completed_successfully
       quarantine-init:
         condition: service_completed_successfully
@@ -184,19 +149,14 @@ secrets:
     environment: GRAFANA_ADMIN_PASSWORD
   influxdb_queryable_admin_token:
     file: ${INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE:?Set the absolute offline token JSON path}
-  influxdb_pending_admin_token:
-    file: ${INFLUXDB_PENDING_ADMIN_TOKEN_FILE:?Set the absolute offline token JSON path}
 
 networks:
   backend:
-  pending:
-    internal: true
 
 volumes:
   postgres_data:
   rabbitmq_data:
   influxdb_queryable_data:
-  influxdb_pending_data:
   prometheus_data:
   loki_data:
   grafana_data:

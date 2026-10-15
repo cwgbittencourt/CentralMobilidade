@@ -9,14 +9,9 @@ services:
       - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
       - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
 
-  influxdb-queryable:
+  influxdb:
     ports:
       - "127.0.0.1:${INFLUXDB_QUERYABLE_PORT:-8181}:8181"
-
-  influxdb-pending:
-    # Administrative debugging only; authentication and the separate pending network remain enabled.
-    ports:
-      - "127.0.0.1:${INFLUXDB_PENDING_PORT:-8182}:8181"
 
   prometheus:
     ports:
@@ -57,7 +52,7 @@ services:
       dockerfile: deploy/containers/worker.Dockerfile
     environment:
       DOTNET_ENVIRONMENT: Development
-    networks: [backend, pending]
+    networks: [backend]
     volumes:
       - quarantine_data:/quarantine
     depends_on:
@@ -65,9 +60,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      influxdb-queryable-init:
-        condition: service_completed_successfully
-      influxdb-pending-init:
+      influxdb-init:
         condition: service_completed_successfully
       quarantine-init:
         condition: service_completed_successfully

@@ -129,3 +129,15 @@ backups coordenados e a versão anterior após suspender novas escritas; não fa
 Validação automatizada usa bancos temporários e evidências de pontos sintéticos. Ela prova os
 checks de controle/migração; não substitui a leitura e reconciliação dos dois Influx reais. Nenhuma
 reconciliação de ambiente produtivo é presumida pela ausência de containers locais.
+
+## Aplicar a composição T109 após a reconciliação
+
+Somente após os checks acima, pare os servidores legados antes de iniciar o serviço `influxdb`.
+Preserve o mesmo nome de projeto Compose, o volume `influxdb_queryable_data` (nome físico padrão
+`centralmobilidade_influxdb_queryable_data`), o mount `/var/lib/influxdb3`, o node-id `queryable`
+e o arquivo de token queryable original. O novo nome do serviço não deve criar outro catálogo.
+`influxdb-init` aponta para `http://influxdb:8181` e inicializa somente `telemetry`; exit 0 é esperado.
+Atualize overrides externos e clientes que ainda usam o DNS antigo. O Compose novo não declara
+nem monta o volume pending; ele permanece no Docker e deve ser preservado com seus backups/token.
+Não execute remoção automática de volumes ou órfãos. A alteração dos YAMLs não reconcilia dados e
+não autoriza reaplicar esta composição sobre uma instalação legada ainda não verificada.
