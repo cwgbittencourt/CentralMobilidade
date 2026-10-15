@@ -9,8 +9,7 @@ incluindo três contra Influx real; T108 resolveu a prontidão que exigia promo�
 `influxdb` e `influxdb-init` e mantém volume/node-id queryable. T110 validou migração e guard; veja
 [o relatório de recovery](../Recovery/WorkerAcknowledgementBoundaryTests.md) para resultados e limites.
 
-Os três testes T050 e 21 cenários T051 continuam vermelhos por implementações ausentes. T112 ainda
-deve validar o conjunto; evidências da topologia dupla não comprovam persistência/reinício do Compose
+Os três testes T050 e 21 cenários T051 continuam vermelhos por implementações ausentes. O [gate T112](../../../artifacts/validation/foundation-single-influx/README.md) validou a fundação; evidências da topologia dupla não comprovam persistência/reinício do Compose
 atual. Configuração vigente em [deploy](../../../deploy/README.md) e
 [writer](../../../src/CentralMobilidade.Telemetry.Infrastructure/Influx/README.md).
 

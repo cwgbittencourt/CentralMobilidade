@@ -180,7 +180,9 @@ public sealed class AcceptedBatchSurvivalTests(RabbitMqContractBroker broker) : 
             process = Process.Start(start) ?? throw new InvalidOperationException("Could not launch the API.");
             outputDrain = process.StandardOutput.BaseStream.CopyToAsync(Stream.Null);
             errorDrain = process.StandardError.BaseStream.CopyToAsync(Stream.Null);
-            Client = new HttpClient { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(10) };
+            // This is a crash/durability proof, not a latency benchmark. Allow the configured
+            // 30-second upload budget plus publication/state work before the harness aborts.
+            Client = new HttpClient { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(45) };
         }
 
         internal static async Task<ApiProcess> Start(Uri brokerEndpoint, string postgres)

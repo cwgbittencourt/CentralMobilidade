@@ -113,8 +113,8 @@ Cadastral enrichment remains optional for presentation attributes and cannot gat
 Operator/viewer authorization remains enforced independently. No pending telemetry or promotion exists.
 
 Foundation amendment 2026-10-14 (constitution 2.0.0): complete T104-T112 before T050. These
-tasks reconcile already-built dual-store code and migrate existing data safely; no source or Compose
-change is included in this design amendment.
+tasks reconcile already-built dual-store code and migrate existing data safely. The design amendment
+itself was planning-only; tasks.md records the subsequent implementation and validation.
 
 The producer credential is accepted only for submission and status of batches submitted by that
 producer. Internal operator credentials are stored separately and carry explicit action permissions and

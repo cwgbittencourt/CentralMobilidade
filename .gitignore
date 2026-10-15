@@ -30,3 +30,12 @@ coverage/
 Thumbs.db
 *.tmp
 *.swp
+
+# Version only the reviewed T112 report; raw validation output and tokens stay private.
+!artifacts/
+artifacts/*
+!artifacts/validation/
+artifacts/validation/*
+!artifacts/validation/foundation-single-influx/
+artifacts/validation/foundation-single-influx/*
+!artifacts/validation/foundation-single-influx/README.md

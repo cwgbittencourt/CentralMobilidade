@@ -4,7 +4,7 @@ Plataforma de ingestão, processamento, consulta e observabilidade de telemetria
 
 O sistema deverá receber lotes compactados de eventos enviados por uma central interna, confirmar o recebimento somente depois que os dados estiverem duravelmente enfileirados, processar cada evento de forma assíncrona e disponibilizar a telemetria autorizada para consulta e visualização no Grafana.
 
-> **Estado atual:** projeto em construção. Ingestão durável, parser, guard de identidade, quarentena e writer já possuem implementação e testes. A adequação T104–T110 usa um único InfluxDB. T112 ainda deve validar o conjunto; T050/T051 (batching/processamento), consumo T052/T053, consultas e dashboards ainda não estão completos. Consulte [tasks.md](specs/001-telemetry-ingestion/tasks.md) para os limites de cada evidência.
+> **Estado atual:** projeto em construção. Ingestão durável, parser, guard de identidade, quarentena e writer já possuem implementação e testes. A adequação T104–T110 usa um único InfluxDB. O [gate T112](artifacts/validation/foundation-single-influx/README.md) foi validado; T050/T051 (batching/processamento), consumo T052/T053, consultas e dashboards ainda não estão completos. Consulte [tasks.md](specs/001-telemetry-ingestion/tasks.md) para os limites de cada evidência.
 
 ## O que o projeto deverá entregar
 

@@ -243,7 +243,9 @@ public sealed class RabbitMqPublisherContractTests : IClassFixture<RabbitMqContr
             ["Queue:RabbitMq:RetryQueue"] = name + ".retry.queue",
             ["Queue:RabbitMq:DeadLetterExchange"] = name + ".dead.exchange",
             ["Queue:RabbitMq:DeadLetterQueue"] = name + ".dead.queue",
-            ["Queue:RabbitMq:PublishTimeout"] = "00:00:00.500",
+            // Use the production deadline for topology + durable publication. Only the
+            // timeout fault case needs the shortened deadline to prove bounded failure.
+            ["Queue:RabbitMq:PublishTimeout"] = fault == "timeout" ? "00:00:00.500" : "00:00:05",
             ["Queue:RabbitMq:RetryDelay"] = "00:00:01",
             ["Telemetry:QueueRetention"] = "7.00:00:00"
         };

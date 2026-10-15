@@ -128,7 +128,6 @@ only after the target-load benchmark.
 | owner_line_number | integer | Stable source line |
 | lease_until | timestamp/null | Takeover boundary for incomplete work |
 | fencing_version | integer | Rejects stale owners after takeover |
-| storage_location | enum | `QueryableCommitted` only; no company-routing or promotion state |
 | guard_expires_at | timestamp | No earlier than telemetry expiration |
 | evidence_expires_at | timestamp | First seen plus 30 days |
 

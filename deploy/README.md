@@ -159,7 +159,7 @@ Every valid producer-supplied `empresa_id` is recognized as existing and targets
 `influxdb`. Optional driver enrichment cannot block storage or authorized visibility. Missing/invalid
 IDs retain parser rejection; presentation still enforces company scope. T050/T051 and T052/T053 are
 unfinished, so starting hosts does not prove processing. Grafana organizations/datasources/dashboards
-remain T071–T075. T112 still needs combined persistence/restart evidence. No IDE startup hook has
+remain T071–T075. [T112 persistence/restart evidence](../artifacts/validation/foundation-single-influx/README.md) is recorded. No IDE startup hook has
 been added: run Compose explicitly.
 
 ## Configuration templates

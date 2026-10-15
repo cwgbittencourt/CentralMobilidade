@@ -262,7 +262,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: Company or vehicle is unknown or not visible to the caller.
+          description: Telemetry is unavailable or the company/vehicle is outside the authorized scope.
   /api/v1/presentation/telemetry/trips/{vehicleId}:
     get:
       operationId: getVehicleTrip
@@ -301,7 +301,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: Company or vehicle is unknown or not visible to the caller.
+          description: Telemetry is unavailable or the company/vehicle is outside the authorized scope.
   /api/v1/presentation/telemetry/ingestion-health:
     get:
       operationId: getCompanyIngestionHealth
@@ -341,7 +341,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: Company is unknown or not visible to the caller.
+          description: Telemetry is unavailable or the company is outside the authorized scope.
 components:
   securitySchemes:
     producerBearer:
