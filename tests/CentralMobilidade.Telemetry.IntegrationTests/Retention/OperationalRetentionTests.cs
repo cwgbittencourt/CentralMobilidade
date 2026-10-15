@@ -5,8 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Reflection;
-using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -20,6 +18,7 @@ using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using CentralMobilidade.Telemetry.Infrastructure.Quarantine;
 using CentralMobilidade.Telemetry.IntegrationTests.Influx;
 using CentralMobilidade.Telemetry.IntegrationTests.Persistence;
+using CentralMobilidade.Telemetry.Worker.Retention;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,7 +32,7 @@ using WorkerProgram = CentralMobilidade.Telemetry.Worker.Program;
 namespace CentralMobilidade.Telemetry.IntegrationTests.Retention;
 
 [Trait("Category", "Integration")]
-public sealed class OperationalRetentionTests(OperationalRetentionDatabase database, OperationalRetentionInflux influx)
+public sealed partial class OperationalRetentionTests(OperationalRetentionDatabase database, OperationalRetentionInflux influx)
     : IClassFixture<OperationalRetentionDatabase>, IClassFixture<OperationalRetentionInflux>
 {
     [Theory]
@@ -94,7 +93,6 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T061")]
     [InlineData(-1, false)]
     [InlineData(0, true)]
     [InlineData(1, true)]
@@ -112,7 +110,6 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T061")]
     public async Task Repeated_and_concurrent_cleanup_preserves_fresh_data_and_is_idempotent()
     {
         await using var test = await Create();
@@ -129,7 +126,6 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T061")]
     public async Task Thirty_day_evidence_cleanup_does_not_delete_the_sixty_day_immutable_guard()
     {
         await using var test = await Create();
@@ -147,7 +143,6 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T061")]
     [InlineData(-1, false)]
     [InlineData(0, true)]
     [InlineData(1, true)]
@@ -164,7 +159,6 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T061")]
     public async Task Failed_raw_deletion_preserves_metadata_for_a_later_cleanup_attempt()
     {
         await using var test = await Create(failDeletion: true);
@@ -180,7 +174,6 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T061")]
     public async Task Removing_thirty_day_operational_rows_preserves_the_same_database_telemetry()
     {
         await using var test = await Create();
@@ -203,7 +196,6 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T061")]
     public async Task Aggregate_metrics_remain_exported_after_the_detailed_operational_rows_are_deleted()
     {
         await using var test = await Create();
@@ -237,7 +229,9 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
         return double.Parse(line.Split(' ', StringSplitOptions.RemoveEmptyEntries)[1], CultureInfo.InvariantCulture);
     }
 
-    private async Task<Fixture> Create(bool failDeletion = false)
+    private async Task<Fixture> Create(bool failDeletion = false,
+        Func<IQuarantineStore, IQuarantineStore>? decorate = null,
+        IReadOnlyDictionary<string, string?>? retentionSettings = null)
     {
         var postgres = await MigratedPostgresFixture.StartAsync(connectionOverride: database.Connection);
         var root = Path.Combine(Path.GetTempPath(), "centralmobilidade-t056-" + Guid.NewGuid().ToString("N"));
@@ -255,12 +249,12 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
             ["Quarantine:Path"] = root,
             ["Processing:DiagnosticKey"] = Convert.ToBase64String(Enumerable.Repeat((byte)0x56, 32).ToArray()),
             ["Observability:WorkerMetricsUrl"] = "http://127.0.0.1:0"
-        }).Build();
+        }).AddInMemoryCollection(retentionSettings ?? new Dictionary<string, string?>()).Build();
         var collection = new ServiceCollection().AddSingleton<IConfiguration>(config).AddSingleton<TimeProvider>(clock);
         WorkerProgram.ConfigureServices(collection, config);
         var quarantine = new FileSystemQuarantineStore(config, NullLogger<FileSystemQuarantineStore>.Instance);
         collection.RemoveAll<IQuarantineStore>();
-        collection.AddSingleton<IQuarantineStore>(failDeletion ? new FailedDeletion(quarantine) : quarantine);
+        collection.AddSingleton<IQuarantineStore>(decorate is not null ? decorate(quarantine) : failDeletion ? new FailedDeletion(quarantine) : quarantine);
         return new(postgres, collection.BuildServiceProvider(), quarantine, clock, root);
     }
 
@@ -335,34 +329,8 @@ public sealed class OperationalRetentionTests(OperationalRetentionDatabase datab
 
         internal async Task Cleanup(ServiceProvider? provider = null)
         {
-            // Bind to the future production component, never substitute deletion logic in the test.
-            var type = typeof(WorkerProgram).Assembly.GetType("CentralMobilidade.Telemetry.Worker.Retention.OperationalRetentionWorker");
-            type.ShouldNotBeNull("T061 must implement and register OperationalRetentionWorker");
-            var worker = (provider ?? Services).GetServices<IHostedService>().SingleOrDefault(type.IsInstanceOfType);
-            worker.ShouldNotBeNull("T061 must register the retention worker in the production composition");
-            var method = type.GetMethod("RunOnceAsync", [typeof(CancellationToken)]);
-            method.ShouldNotBeNull("Expose one awaitable cleanup pass RunOnceAsync(CancellationToken) for deterministic retention tests");
-            object? operation;
-            try
-            {
-                operation = method.Invoke(worker, [CancellationToken.None]);
-            }
-            catch (TargetInvocationException error) when (error.InnerException is not null)
-            {
-                ExceptionDispatchInfo.Capture(error.InnerException).Throw();
-                throw;
-            }
-            switch (operation)
-            {
-                case Task task:
-                    await task.WaitAsync(TimeSpan.FromSeconds(15));
-                    break;
-                case ValueTask task:
-                    await task.AsTask().WaitAsync(TimeSpan.FromSeconds(15));
-                    break;
-                default:
-                    throw new InvalidOperationException("The production cleanup pass must return Task or ValueTask.");
-            }
+            var worker = (provider ?? Services).GetServices<IHostedService>().OfType<OperationalRetentionWorker>().ShouldHaveSingleItem();
+            await worker.RunOnceAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(15));
         }
 
         public async ValueTask DisposeAsync()

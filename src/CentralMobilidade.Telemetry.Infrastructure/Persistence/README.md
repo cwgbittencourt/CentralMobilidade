@@ -109,3 +109,17 @@ transition timestamp atomically with the lifecycle compare-and-swap. Exact comma
 replays compare against that timestamp; ProcessingStartedAt still records the first
 processing attempt. Replayed resumes neither increment the row version nor retry
 count. A different timestamp is rejected, including from a new adapter instance.
+
+## Operational retention (T061)
+
+`PostgresOperationalRetentionCleanup` implements the application cleanup port, using
+a transaction-owned advisory lease scoped to the control database. It processes
+bounded pages with a fixed cutoff from the injected worker clock. File deletion
+precedes metadata removal; failed/no-op deletion retains recoverable metadata and
+blocks deletion of the associated batch. Missing bytes after an interrupted pass
+are reconciled idempotently. Batch rows are locked before the final quarantine check
+to serialize against result recording. Line-result cleanup follows the existing FK
+cascade. Evidence and guard expiry are independent; guards retain immutable identity
+protection until telemetry and guard deadlines, including active processing leases.
+The original guard trigger still prevents deletion before database time permits it.
+No telemetry or audit row is deleted and no additional migration is required.

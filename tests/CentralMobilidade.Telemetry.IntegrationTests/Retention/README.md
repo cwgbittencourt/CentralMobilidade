@@ -52,3 +52,19 @@ essas 11 mais a regressão anterior da T055, prevista para T058. Contratos: 80/8
 arquitetura: 47/47; zero skips. Build da solução sem avisos ou erros. A tentativa Windows
 foi bloqueada pelo Controle de Aplicativo na carga de DLL (0x800711C7); nenhuma política
 de segurança foi alterada. O benchmark de capacidade ADR-001 continua separado.
+
+## T061 — implementação e validação
+
+As 11 falhas TDD foram resolvidas pela rotina real OperationalRetentionWorker e seus
+marcadores PendingImplementation removidos. Os testes agora chamam diretamente a
+instância IHostedService registrada, sem reflexão nem fake de limpeza. Foram adicionados
+casos para exclusão mútua entre providers, liberação da posse no cancelamento, progresso
+apesar de um objeto com falha, recuperação após bytes excluídos sem commit, no-op do
+armazenamento, orçamento por página, prazo estendido/lease ativo de guards, proteção
+contra relógio da aplicação adiantado e execução automática/desligamento do hosted worker.
+
+O bloqueio transacional PostgreSQL é a posse distribuída usada pela implementação;
+a verificação nova prova exclusividade entre conexões e reaquisição após término ou
+cancelamento. Isso não simula perda física do host nem comprova capacidade de produção.
+O InfluxDB preserva a retenção nativa local de 60 dias; nenhum dado de telemetria é
+apagado pela rotina de 30 dias. Relatórios atuais: artifacts/validation/T061/ (ignorados).

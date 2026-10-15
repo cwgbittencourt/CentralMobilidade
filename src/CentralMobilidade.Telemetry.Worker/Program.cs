@@ -10,6 +10,7 @@ using CentralMobilidade.Telemetry.Infrastructure.Queue.RabbitMq;
 using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using CentralMobilidade.Telemetry.Infrastructure.Observability;
 using CentralMobilidade.Telemetry.Infrastructure.Health;
+using CentralMobilidade.Telemetry.Worker.Retention;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -60,6 +61,9 @@ public static class Program
         services.AddTelemetryObservability(configuration, TelemetryServiceRole.Worker);
         services.AddTelemetryHealthChecks(configuration, TelemetryServiceRole.Worker);
         services.AddTelemetryControlPersistence(connection);
+        services.AddOptions<OperationalRetentionOptions>().Bind(configuration.GetSection("Retention"))
+            .Validate(options => options.IsValid(), "Operational retention configuration is invalid.").ValidateOnStart();
+        services.AddSingleton<IOperationalRetentionCleanup, PostgresOperationalRetentionCleanup>();
         services.AddTelemetryStorageAdapters();
         services.AddSingleton<IClock, WorkerClock>();
         services.AddSingleton<IQuarantineStore, FileSystemQuarantineStore>();
@@ -71,6 +75,7 @@ public static class Program
         services.AddSingleton<IWorkerBatchProcessor, ScopedWorkerBatchProcessor>();
         services.Configure<HostOptions>(options => options.ShutdownTimeout = runtime.DrainTimeout + runtime.PublishTimeout + TimeSpan.FromSeconds(10));
         services.AddHostedService<TelemetryProcessingWorker>();
+        services.AddHostedService<OperationalRetentionWorker>();
     }
 
     private sealed class WorkerClock(TimeProvider time) : IClock
