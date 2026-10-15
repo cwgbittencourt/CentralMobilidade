@@ -23,3 +23,28 @@ A rota de ingestão ainda será implementada na T034 e conectada na T035.
 Na validação inicial, 12 casos falharam por lacunas no documento; após completar os headers
 e os schemas de erro, os 18 passaram no Docker Linux. A execução local da DLL de testes
 foi bloqueada pelo Controle de Aplicativo do Windows; a compilação local passou.
+
+## Consulta de lotes e quarentena (T054)
+
+`BatchStatusContractTests` acrescenta 22 casos sobre os três GETs de US3. Verifica
+status com produtor proprietário ou operador, permissão batch.read e escopo de todas
+as empresas ou cross_company.read explícito, rejeições exclusivas de operador,
+paginação opcional com padrão 50 e limite 200, estados públicos, contadores,
+timestamps e metadados permitidos. Falhas de visibilidade usam 404 com o mesmo schema
+Problem de recurso ausente; credencial ausente, inválida, desabilitada ou de tipo
+incorreto usa 401 com desafio Bearer.
+
+A consulta de conteúdo bruto exige UUID de quarentena associado ao lote, credencial
+de operador e quarantine.raw.read. O contrato exige auditoria durável antes de liberar
+conteúdo, incluindo tentativas bem-sucedidas, negadas, ausentes e expiradas. Documenta
+200 text/plain, 401/403/404 Problem Details e 503 AUDIT_UNAVAILABLE sem conteúdo bruto
+quando a auditoria falha. Os GETs de metadados não expõem a existência do lote via 403.
+
+```powershell
+dotnet test tests/CentralMobilidade.Telemetry.ContractTests --filter FullyQualifiedName~BatchStatusContractTests
+```
+
+Essas verificações leem o OpenAPI e serializam DTOs; não simulam uma política própria
+nem afirmam autorização, paginação ou auditoria em execução HTTP. Essas provas e os
+endpoints continuam nas T057–T060. A suíte completa de contratos tem 80 casos aprovados
+na validação da T054. Relatórios locais ficam ignorados em artifacts/validation/T054/.

@@ -121,10 +121,15 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: Batch does not exist, has expired, or is not visible to the caller.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /api/v1/telemetry/batches/{batchId}/rejections:
     get:
       operationId: listTelemetryBatchRejections
       summary: List privacy-safe rejection details
+      description: An operator needs batch.read and company scope for every company in the batch, or explicit cross_company.read. Producer credentials cannot read administrative rejection metadata. Unknown, expired, and unauthorized batches have the same not-found response.
       security:
         - operatorBearer: []
       x-required-permissions: [batch.read]
@@ -152,11 +157,15 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: Batch does not exist, has expired, or is not visible.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /api/v1/telemetry/batches/{batchId}/rejections/{quarantineId}/content:
     get:
       operationId: getQuarantinedRejectionContent
       summary: Retrieve protected raw rejection content with mandatory audit
-      description: Restricted administrative operation. Successful, denied, missing, and expired attempts are audited.
+      description: Restricted administrative operation. Successful, denied, missing, and expired attempts are audited. The audit record must be durably persisted before content is returned. Company scope and batch association are enforced; producer credentials cannot retrieve raw content.
       security:
         - operatorBearer: []
       x-required-permissions: [quarantine.raw.read]
@@ -180,8 +189,22 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           description: Caller lacks the administrative quarantine permission; the attempt is audited.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           description: Content is missing, expired, deleted, or not associated with the batch; the attempt is audited.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: Audit persistence is unavailable. No raw content is returned when audit cannot be durably confirmed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /api/v1/presentation/drivers/{driverId}:
     get:
       operationId: getDriverPresentation
