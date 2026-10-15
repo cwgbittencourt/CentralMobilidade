@@ -1,9 +1,10 @@
-# Optional cadastral enrichment contracts (T063)
+# Optional cadastral enrichment contracts (T063/T067)
 
-`CadastralAdapterContractTests` adds 22 cases. Six pass against existing production
-contracts/adapters; 16 remain active TDD failures tagged `PendingImplementation=T067`
-because the optional configured driver adapter has not been implemented. No production
-resolver, skip or fake implementation is added to make those assertions pass.
+All 22 original `CadastralAdapterContractTests` now pass against the T067 production
+adapter and existing contracts. The 16 original active TDD failures are resolved;
+their PendingImplementation traits were removed without weakening assertions.
+`DriverEnrichmentSafetyTests` adds 21 passing cases. The complete contract suite
+passes 123/123, without skips or expected failures.
 
 The passing cases cover the company-scoped driver port, minimal/redacted presentation,
 public CPF suffix validation, and absent/unavailable registry independence. The latter
@@ -14,7 +15,7 @@ denied. This proves the write-provider contract and visibility authorization dec
 not real Influx disk persistence or data returned by the future presentation API.
 Those runtime proofs remain in integration tests and T064/T069/T070.
 
-The active cases execute the future production ConfiguredCadastralAdapter through
+The adapter cases execute the production ConfiguredCadastralAdapter through
 IDriverResolver and controlled HTTP responses. They cover provider replacement,
 missing driver, optional source failure, CPF minimization, malformed CPF, changed
 cadastral data after cache expiry, tenant-separated cache keys, a mismatching driver
@@ -55,5 +56,15 @@ API or its database technology. Another provider can adapt its schema behind the
 same driver port without changing ingestion/storage contracts. No actual external
 HTTP request or Docker service is needed for these contract tests.
 
-Reports: ignored `artifacts/validation/T063/`. The default contract suite intentionally
-includes all active TDD failures until T067; no failed case is quarantined or skipped.
+Additional safety cases reject invalid Unicode/JSON, duplicate or malformed identity,
+oversized declared/chunked responses and invalid optional configuration. They verify
+in-flight source revocation/cancellation, disable/re-enable and a 4,096-entry positive
+cache bound. Three IntegrationTests/Cadastral loopback HTTP cases exercise the actual
+registration, no redirects/cookies, tenant/driver URL escaping and log minimization.
+The API registers the optional resolver, preserving any replacement IDriverResolver;
+the worker/writer registration remains independent. Runtime limits and defaults are
+documented in Infrastructure/Cadastral/README.md.
+
+Reports: ignored `artifacts/validation/T067/`; T063 retains the historical red-phase
+evidence. Passing resolver tests do not resolve the T064/T065 presentation/audit
+failures or prove an external cadastral provider's correctness.

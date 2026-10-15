@@ -7,6 +7,7 @@ using CentralMobilidade.Telemetry.Application.Configuration;
 using CentralMobilidade.Telemetry.Application.Ingestion;
 using CentralMobilidade.Telemetry.Contracts.Errors;
 using CentralMobilidade.Telemetry.Infrastructure.Health;
+using CentralMobilidade.Telemetry.Infrastructure.Cadastral;
 using CentralMobilidade.Telemetry.Infrastructure.Observability;
 using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using CentralMobilidade.Telemetry.Infrastructure.Queue.RabbitMq;
@@ -52,6 +53,7 @@ try
     builder.Services.AddTelemetryIngestion();
     builder.Services.AddTelemetryIntakeEndpoint();
     builder.Services.AddTelemetrySecurity(builder.Configuration);
+    builder.Services.AddOptionalDriverEnrichment();
     builder.Services.AddTelemetryObservability(builder.Configuration, TelemetryServiceRole.Api);
     builder.Services.AddTelemetryHealthChecks(builder.Configuration, TelemetryServiceRole.Api);
     var controlConnection = builder.Configuration.GetConnectionString("TelemetryControl");

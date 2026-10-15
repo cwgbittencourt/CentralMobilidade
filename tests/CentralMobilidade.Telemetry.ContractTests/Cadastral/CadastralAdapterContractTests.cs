@@ -102,7 +102,7 @@ public sealed class CadastralAdapterContractTests
         poison.Calls.ShouldBe(0);
     }
 
-    [Fact, Trait("PendingImplementation", "T067")]
+    [Fact]
     public async Task Provider_replacement_invalidates_cached_identity_without_changing_the_driver_port()
     {
         await using var test = new Fixture();
@@ -115,7 +115,7 @@ public sealed class CadastralAdapterContractTests
         test.Transport.Calls.ShouldBe(2);
     }
 
-    [Fact, Trait("PendingImplementation", "T067")]
+    [Fact]
     public async Task Missing_driver_is_optional_and_never_becomes_an_unknown_company_decision()
     {
         await using var test = new Fixture();
@@ -125,7 +125,7 @@ public sealed class CadastralAdapterContractTests
         test.Transport.Paths.ShouldAllBe(x => !x.Contains("/companies", StringComparison.Ordinal));
     }
 
-    [Theory, Trait("PendingImplementation", "T067")]
+    [Theory]
     [InlineData(500)]
     [InlineData(503)]
     [InlineData(0)]
@@ -138,7 +138,7 @@ public sealed class CadastralAdapterContractTests
         test.Log.Text.ShouldNotContain("PRIVATE_BACKEND_DIAGNOSTIC");
     }
 
-    [Theory, Trait("PendingImplementation", "T067")]
+    [Theory]
     [InlineData("11122233344")]
     [InlineData("111.222.333-44")]
     public async Task Source_cpf_is_reduced_to_four_digits_and_diagnostics_do_not_disclose_identity(string cpf)
@@ -157,7 +157,7 @@ public sealed class CadastralAdapterContractTests
         test.Log.Text.ShouldNotContain(cpf);
     }
 
-    [Theory, Trait("PendingImplementation", "T067")]
+    [Theory]
     [InlineData("123")]
     [InlineData("abcdefghijkl")]
     public async Task Invalid_cpf_data_cannot_become_a_long_or_unmasked_suffix(string cpf)
@@ -168,7 +168,7 @@ public sealed class CadastralAdapterContractTests
         result?.CpfLast4.ShouldBeNull();
     }
 
-    [Fact, Trait("PendingImplementation", "T067")]
+    [Fact]
     public async Task Positive_cache_expires_and_refreshes_changed_cadastral_data()
     {
         await using var test = new Fixture();
@@ -183,7 +183,7 @@ public sealed class CadastralAdapterContractTests
         test.Transport.Calls.ShouldBe(2);
     }
 
-    [Fact, Trait("PendingImplementation", "T067")]
+    [Fact]
     public async Task Cache_keys_include_company_and_source_requests_carry_tenant_scope()
     {
         await using var test = new Fixture();
@@ -195,7 +195,7 @@ public sealed class CadastralAdapterContractTests
         test.Transport.Paths.ShouldAllBe(x => x.Contains("empresaId=", StringComparison.Ordinal));
     }
 
-    [Fact, Trait("PendingImplementation", "T067")]
+    [Fact]
     public async Task A_source_identity_for_another_driver_is_never_disclosed()
     {
         await using var test = new Fixture();
@@ -207,7 +207,7 @@ public sealed class CadastralAdapterContractTests
         test.Log.Text.ShouldNotContain("PRIVATE_WRONG_IDENTITY");
     }
 
-    [Fact, Trait("PendingImplementation", "T067")]
+    [Fact]
     public async Task Timeout_is_bounded_and_is_not_cached_as_an_identity()
     {
         await using var test = new Fixture();
@@ -221,7 +221,7 @@ public sealed class CadastralAdapterContractTests
         (await resolver.ResolveAsync(Company, Driver, default)).ShouldNotBeNull().DisplayName.ShouldBe("Recovered");
     }
 
-    [Fact, Trait("PendingImplementation", "T067")]
+    [Fact]
     public async Task Caller_cancellation_is_propagated_without_a_source_request()
     {
         await using var test = new Fixture();
@@ -232,7 +232,7 @@ public sealed class CadastralAdapterContractTests
         test.Transport.Calls.ShouldBe(0);
     }
 
-    [Theory, Trait("PendingImplementation", "T067")]
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Disabled_or_absent_enrichment_requires_no_registry_connection(bool absent)
