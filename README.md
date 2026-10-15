@@ -4,7 +4,7 @@ Plataforma de ingestão, processamento, consulta e observabilidade de telemetria
 
 O sistema deverá receber lotes compactados de eventos enviados por uma central interna, confirmar o recebimento somente depois que os dados estiverem duravelmente enfileirados, processar cada evento de forma assíncrona e disponibilizar a telemetria autorizada para consulta e visualização no Grafana.
 
-> **Estado atual:** projeto em construção. Ingestão durável, parser, guard de identidade, quarentena, writer e batching/processamento T050/T051 possuem implementação e testes. A adequação T104–T110 usa um único InfluxDB. O [gate T112](artifacts/validation/foundation-single-influx/README.md) foi validado; consumo e ligação do worker T052/T053, consultas e dashboards ainda não estão completos. A T051 foi validada com entregas controladas, inclusive PostgreSQL, InfluxDB e quarentena reais. Consulte [tasks.md](specs/001-telemetry-ingestion/tasks.md) para os limites de cada evidência.
+> **Estado atual:** projeto em construção. Ingestão durável, parser, guard de identidade, quarentena, writer, batching/processamento T050/T051 e consumidor RabbitMQ T052 possuem implementação e testes. A adequação T104–T110 usa um único InfluxDB. O [gate T112](artifacts/validation/foundation-single-influx/README.md) foi validado; ligação do worker T053, consultas e dashboards ainda não estão completos. A T051 foi validada com entregas controladas, inclusive PostgreSQL, InfluxDB e quarentena reais; a T052 foi validada com RabbitMQ real. Consulte [tasks.md](specs/001-telemetry-ingestion/tasks.md) para os limites de cada evidência.
 
 ## O que o projeto deverá entregar
 

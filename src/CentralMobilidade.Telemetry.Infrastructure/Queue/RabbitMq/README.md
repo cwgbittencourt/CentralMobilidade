@@ -71,8 +71,52 @@ transitório; retorno sem rota e erros AMQP 403/406 são permanentes. Falhas usa
 DURABILITY_UNCONFIRMED com mensagem fixa e sem exceção interna. Envelope/corpo inválido
 usa REQUEST_INVALID. Cancelamento explícito do chamador permanece OperationCanceledException.
 
-Consumir entregas ainda pertence às tarefas do worker; ConsumeAsync não está implementado.
+Na T031, o publicador fornece apenas publicação; seu ConsumeAsync não é o ponto de entrada do worker.
 T031 não conecta o endpoint, não fornece readiness da API e não afirma aceitação HTTP.
 Validação atual: 12 testes de publicação passaram, incluindo confirmação correlacionada,
 mandatory sem rota, nack/timeout, integridade e preservação dos bytes. A suíte completa
 teve 289 aprovações e 36 falhas pendentes das T025/T027; as dez falhas da T026 foram resolvidas.
+
+## Consumidor T052
+
+`RabbitMqBatchConsumer(connections, configuration).ConsumeAsync(token)` fornece entregas
+`IQueueDelivery`. Cada enumeração possui canal exclusivo, prefetch limitado e ACK manual.
+O chamador deve descartar cada entrega e chamar CompleteAsync somente após os efeitos duráveis
+da T051. DisposeAsync nunca confirma implicitamente. A ligação ao host permanece T053.
+
+O callback copia os bytes antes de retornar, conforme a [API .NET v7 do RabbitMQ](https://www.rabbitmq.com/client-libraries/dotnet-api-guide).
+O limite v1 é 8 MiB por corpo; Prefetch aceita 1–64 (padrão 8), limitando os snapshots de
+corpos não confirmados a aproximadamente Prefetch × 8 MiB por enumeração, além dos buffers
+do SDK. Configure também o limite de mensagem do broker. Corpo acima do contrato encerra
+a sessão sem ACK; requer correção operacional, pois não é copiado para a memória da aplicação.
+
+RetryAsync mantém o original não confirmado durante backoff exponencial com jitter de ±20%,
+limitado por MaxRetryDelay; depois republica os mesmos bytes com mandatory e publisher confirms
+rastreados pelo SDK, e somente então confirma a entrega original. Não utiliza o salto DLX
+da fila classic de retry para estabelecer durabilidade. Uma falha entre confirmação da cópia
+e ACK pode duplicar a entrega; a identidade original e os resultados duráveis da T051 protegem
+o reprocessamento. O contador deliveryAttempt acompanha as republicações; reentregas por queda
+de conexão conservam esse contador e não provam uma nova tentativa concluída.
+
+Envelope inválido, excesso de tentativas e expiração do prazo original seguem para a DLQ
+por publicação persistente confirmada antes do ACK. DeadLetterAsync faz o mesmo para poison.
+A DLQ contém o gzip original e exige o mesmo controle de acesso/retenção da fila principal;
+não é uma saída de diagnóstico pública. Headers arbitrários não são copiados, códigos de erro
+são limitados e sanitizados, e o consumidor não registra o corpo nem exceções do provider.
+Retorno sem rota, nack, timeout ou perda de conexão deixam o original sem ACK e invalidam
+a sessão. Uma nova enumeração cria outro canal; entregas antigas não podem confirmar após recuperação.
+
+| Queue:RabbitMq | Padrão | Limite |
+|---|---|---|
+| Prefetch | 8 | 1–64 |
+| MaxAttempts | 10 | 1–1000 |
+| RetryDelay | 00:00:01 | ≥ 1 ms, até MaxRetryDelay |
+| MaxRetryDelay | 00:01:00 | até 10 minutos |
+| DrainTimeout | 00:00:30 | 0–5 minutos |
+| PublishTimeout | 00:00:05 | positivo, até 1 minuto no consumidor |
+
+O cancelamento encerra a leitura e cancela a assinatura, permitindo às entregas já cedidas
+concluir dentro de DrainTimeout. O processamento em andamento deve usar token próprio para
+poder terminar durante esse prazo. Ao expirar, o canal fecha, operações pendentes são canceladas
+e mensagens não confirmadas voltam ao broker. Entregas ainda no buffer não são processadas
+durante o drain. CompleteAsync é idempotente na mesma entrega; ações terminais conflitantes falham.
