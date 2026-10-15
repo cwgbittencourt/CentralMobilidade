@@ -173,27 +173,11 @@ public sealed class EventIdentityGuard
     {
         get; set;
     }
-    public PersistedTelemetryDestination Destination
-    {
-        get; set;
-    }
-    public PersistedIdentityStorageLocation StorageLocation
-    {
-        get; set;
-    }
     public DateTimeOffset GuardExpiresAt
     {
         get; set;
     }
     public DateTimeOffset TelemetryExpiresAt
-    {
-        get; set;
-    }
-    public Guid? PromotionOwner
-    {
-        get; set;
-    }
-    public DateTimeOffset? PromotionLeaseUntil
     {
         get; set;
     }
@@ -243,66 +227,6 @@ public sealed class OperatorAccessProfile
         get; set;
     }
 }
-public enum PromotionState
-{
-    Discovered, Copying, Copied, SourceDeleted, Completed, Retrying
-}
-public sealed class PendingTelemetryPromotion
-{
-    public Guid PromotionId
-    {
-        get; set;
-    }
-    public string CompanyId { get; set; } = "";
-    public Guid SourceBatchId
-    {
-        get; set;
-    }
-    public DateTimeOffset RangeStart
-    {
-        get; set;
-    }
-    public DateTimeOffset RangeEnd
-    {
-        get; set;
-    }
-    public PromotionState State
-    {
-        get; set;
-    }
-    public int Attempts
-    {
-        get; set;
-    }
-    public long ExpectedPointCount
-    {
-        get; set;
-    }
-    public long? ConfirmedPointCount
-    {
-        get; set;
-    }
-    public DateTimeOffset CreatedAt
-    {
-        get; set;
-    }
-    public DateTimeOffset UpdatedAt
-    {
-        get; set;
-    }
-    public DateTimeOffset? CompletedAt
-    {
-        get; set;
-    }
-    public string? LastErrorCode
-    {
-        get; set;
-    }
-    public long RowVersion
-    {
-        get; set;
-    }
-}
 public sealed class AuditEvent
 {
     public Guid EventId
@@ -344,15 +268,4 @@ public sealed class AuditEvent
     {
         get; set;
     }
-}
-
-// Legacy storage vocabulary stays inside Infrastructure until the T106 forward migration.
-// These values are not application routing choices and must continue decoding existing rows.
-public enum PersistedTelemetryDestination
-{
-    Queryable, Pending
-}
-public enum PersistedIdentityStorageLocation
-{
-    PendingCommitted, Promoting, QueryableCommitted
 }

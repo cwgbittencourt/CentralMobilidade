@@ -14,7 +14,6 @@ public sealed class TelemetryControlDbContext(DbContextOptions<TelemetryControlD
     public DbSet<EventIdentityGuard> IdentityGuards => Set<EventIdentityGuard>();
     public DbSet<EventIdentityEvidence> IdentityEvidence => Set<EventIdentityEvidence>();
     public DbSet<OperatorAccessProfile> OperatorProfiles => Set<OperatorAccessProfile>();
-    public DbSet<PendingTelemetryPromotion> Promotions => Set<PendingTelemetryPromotion>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>

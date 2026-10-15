@@ -27,4 +27,8 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.RabbitMq" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../deploy/postgres/runtime-grants.sql" Link="Upgrade/runtime-grants.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../scripts/sql/reconcile-single-influx-page.sql" Link="Upgrade/reconcile-single-influx-page.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

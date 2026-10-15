@@ -29,9 +29,7 @@ public sealed partial class ControlMigrationTests
         FencingVersion = 1,
         LeaseUntil = now.AddMinutes(10),
         TelemetryExpiresAt = now.AddDays(60),
-        GuardExpiresAt = now.AddDays(60),
-        Destination = PersistedTelemetryDestination.Pending,
-        StorageLocation = PersistedIdentityStorageLocation.PendingCommitted
+        GuardExpiresAt = now.AddDays(60)
     };
 
     [Fact]
@@ -40,7 +38,7 @@ public sealed partial class ControlMigrationTests
         await using var fixture = await MigratedPostgresFixture.StartAsync();
         await using var db = fixture.Create();
         await db.Database.MigrateAsync();
-        (await db.Database.GetAppliedMigrationsAsync()).Count().ShouldBe(2);
+        (await db.Database.GetAppliedMigrationsAsync()).Count().ShouldBe(3);
         var indexes = await db.Database.SqlQueryRaw<string>("SELECT indexname AS \"Value\" FROM pg_indexes WHERE schemaname = 'public'").ToListAsync();
         indexes.ShouldContain("IX_event_identity_guards_GuardExpiresAt");
         indexes.ShouldContain("IX_event_identity_evidence_EvidenceExpiresAt");
@@ -51,7 +49,7 @@ public sealed partial class ControlMigrationTests
         await db.Database.ExecuteSqlRawAsync(script);
         await db.Database.ExecuteSqlRawAsync(script);
         db.Database.HasPendingModelChanges().ShouldBeFalse();
-        (await db.Database.GetAppliedMigrationsAsync()).Count().ShouldBe(2);
+        (await db.Database.GetAppliedMigrationsAsync()).Count().ShouldBe(3);
     }
 
     [Fact]

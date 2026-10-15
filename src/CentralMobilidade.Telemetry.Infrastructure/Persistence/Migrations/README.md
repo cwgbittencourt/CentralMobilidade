@@ -1,4 +1,21 @@
-# Initial PostgreSQL migration (T019)
+# PostgreSQL control-plane migrations
+
+## Single telemetry store (T106)
+
+The current model has seven control tables and no promotion/routing fields.
+`20261014230000_SingleTelemetryStore` is a new forward migration; the two earlier migration
+sources are unchanged. Before applying it to a populated database, follow
+[the offline reconciliation runbook](../../../../docs/runbooks/single-influx-upgrade.md).
+The migration refuses any unreconciled guard or unarchived promotion row before dropping schema.
+Existing identities, evidence, batches, partitioning and invariant triggers are preserved.
+The Down path is restricted to empty guard/evidence ledgers; populated recovery uses coordinated
+backups. Runtime grants no longer reference the removed table. The health probe
+remains a T108 adaptation; do not deploy this intermediate foundation before T107–T112 pass.
+
+The sections below record the original T019 schema and validation; promotion transitions
+apply only to the pre-T106 schema.
+
+## Initial PostgreSQL migration (T019)
 
 `20261013182313_InitialControlPlane` creates all eight control tables, constraints and indexes;
 the designer and model snapshot were scaffolded with EF Core 10.0.12/Npgsql 10.0.3. PostgreSQL 17.11
@@ -79,3 +96,38 @@ Windows build passed with zero warnings/errors, and formatting verification pass
 grant template was also executed in the isolated validation database: audit INSERT and profile SELECT
 were granted, while audit UPDATE, profile UPDATE and schema CREATE were denied. Temporary containers
 were stopped/removed and validation volumes preserved. Architecture/load projects remain skeletons.
+
+## T106 implementation and validation
+
+The pre-change regression test failed because the pending table still existed. The new migration
+then passed fresh-schema/snapshot, populated upgrade, refusal/rollback, replay/conflict, provenance,
+retention, audit, owner/fencing, partition and truncate checks against PostgreSQL 17.11.
+The reconciliation test uses the real Line Protocol parser for fingerprints and executes the same
+literal SQL file documented in the runbook. Its imported source/destination fingerprints are
+synthetic test evidence; tests do not prove copying or reading a live InfluxDB catalog.
+
+On 2026-10-14, the local Docker context had no containers/volumes labeled as the `centralmobilidade`
+Compose project. External databases were not inspected and no project data was migrated.
+The previous applied migration sources/designer were left unchanged; only the current model
+snapshot and a new forward migration were added/updated. No volumes were deleted.
+
+The tests use isolated databases, preserving live services. Unit tests passed 242/242,
+contract tests 58/58, architecture tests 47/47, and directed PostgreSQL integration 38/38.
+An initial execution found an EF test-runner formatting error for the SQL regex `{64}`; the
+runner was corrected to send literal SQL and the final selection passed. Reports, including
+initial failures, are retained under ignored `artifacts/validation/T106/`.
+
+Reproduce from the repository root with .NET 10 and Docker available:
+
+```powershell
+dotnet build CentralMobilidade.slnx --no-restore
+dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter "FullyQualifiedName~SingleTelemetryStoreMigrationTests|FullyQualifiedName~ControlMigrationTests|FullyQualifiedName~PostgresAuditWriterTests|FullyQualifiedName~Partition_upgrade_preserves_committed_identity_and_protects_leaf_truncate|FullyQualifiedName~Concurrent_reservation_has_one_winner_and_conflicting_contender_cannot_replace_it|FullyQualifiedName~Owner_resume_retains_fence_and_takeover_fences_stale_writers|FullyQualifiedName~Expired_evidence_still_blocks_committed_identity|FullyQualifiedName~Resuming_owner_cannot_change_reserved_fingerprint"
+```
+
+T050/T051 remain unimplemented; their intentionally red tests were not included in this selection.
+Capacity approval and real Influx restart/copy verification are not claimed by these checks.
+
+The separately executed actual runtime-grant template test also passed 1/1 after rebuilding the
+integration project: grants apply to the seven-table schema while DDL, audit mutation and guard
+truncate remain denied. Thus the final directed integration checks cover 39 distinct passing
+scenarios (38 plus the new grants case), with no skips. No full integration suite claim is made.

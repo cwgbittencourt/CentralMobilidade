@@ -44,8 +44,6 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
         if (row?.State != IdentityGuardState.Committed)
             return null;
         var evidence = await Evidence(db, identity).AsNoTracking().SingleOrDefaultAsync(token);
-        if (row.Destination != PersistedTelemetryDestination.Queryable || row.StorageLocation != PersistedIdentityStorageLocation.QueryableCommitted)
-            throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Permanent); // T106 reconciliation required.
         return new(identity, row.GuardExpiresAt,
             evidence?.EvidenceExpiresAt > clock.UtcNow ? evidence.EvidenceExpiresAt : null);
     }
@@ -75,14 +73,12 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
         await using var db = await factory.CreateDbContextAsync(token);
         await using var transaction = await db.Database.BeginTransactionAsync(token);
         var id = request.Identity;
-        const string location = "QueryableCommitted";
-        const string destination = "Queryable";
         var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO event_identity_guards
             ("CompanyId","VehicleId","EventTimestamp","State","OwnerBatchId","OwnerLineNumber","LeaseUntil","FencingVersion",
-             "Destination","StorageLocation","GuardExpiresAt","TelemetryExpiresAt")
+             "GuardExpiresAt","TelemetryExpiresAt")
             VALUES ({id.CompanyId.Value},{id.VehicleId.Value},{id.Timestamp.Value},'Reserved',{request.Owner.BatchId.Value},
-             {request.Owner.LineNumber},{Normalize(request.LeaseUntil)},1,{destination},{location},{Normalize(request.GuardExpiresAt)},{Normalize(telemetryExpires)})
+             {request.Owner.LineNumber},{Normalize(request.LeaseUntil)},1,{Normalize(request.GuardExpiresAt)},{Normalize(telemetryExpires)})
             ON CONFLICT ("CompanyId","VehicleId","EventTimestamp") DO NOTHING
             """, token);
         var row = await Locked(db, id).SingleAsync(token);
@@ -116,9 +112,7 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
             return new IdentityReservationResult.Granted(Lease(row, id), false);
         }
         IdentityReservationResult result;
-        if (row.Destination != PersistedTelemetryDestination.Queryable || row.StorageLocation != PersistedIdentityStorageLocation.QueryableCommitted)
-            result = new IdentityReservationResult.Existing(ExistingIdentityOutcome.AlreadyExistsUnclassified); // Preserve legacy data until T106.
-        else if (evidence is null || evidence.EvidenceExpiresAt <= request.Now)
+        if (evidence is null || evidence.EvidenceExpiresAt <= request.Now)
             result = new IdentityReservationResult.Existing(ExistingIdentityOutcome.AlreadyExistsUnclassified);
         else if (!CryptographicOperations.FixedTimeEquals(evidence.CanonicalFingerprint, fingerprint))
             result = new IdentityReservationResult.Existing(ExistingIdentityOutcome.Conflict);
@@ -193,7 +187,7 @@ public sealed class SelectedEventIdentityGuard(IDbContextFactory<TelemetryContro
         """);
     private static IQueryable<EventIdentityGuard> Active(TelemetryControlDbContext db, IdentityLease lease, DateTimeOffset now) => Query(db, lease.Identity)
         .Where(row => row.OwnerBatchId == lease.Owner.BatchId.Value && row.OwnerLineNumber == lease.Owner.LineNumber && row.FencingVersion == lease.FencingVersion
-            && row.Destination == PersistedTelemetryDestination.Queryable && row.StorageLocation == PersistedIdentityStorageLocation.QueryableCommitted && row.State != IdentityGuardState.Committed && row.LeaseUntil > now && row.LeaseUntil > DateTimeOffset.UtcNow);
+            && row.State != IdentityGuardState.Committed && row.LeaseUntil > now && row.LeaseUntil > DateTimeOffset.UtcNow);
     private static IdentityLease Lease(EventIdentityGuard row, EventIdentity id) => new(id, new(new(row.OwnerBatchId), checked((int)row.OwnerLineNumber)), row.FencingVersion, row.LeaseUntil!.Value, row.State);
     private static DateTimeOffset Normalize(DateTimeOffset time) => new(time.Ticks - time.Ticks % 10, TimeSpan.Zero);
     private static void Utc(DateTimeOffset time)

@@ -84,9 +84,7 @@ public sealed class PostgresAuditWriterTests
             FencingVersion = 1,
             LeaseUntil = now.AddMinutes(1),
             GuardExpiresAt = now.AddDays(60),
-            TelemetryExpiresAt = now.AddDays(60),
-            Destination = PersistedTelemetryDestination.Pending,
-            StorageLocation = PersistedIdentityStorageLocation.PendingCommitted
+            TelemetryExpiresAt = now.AddDays(60)
         });
         db.IdentityEvidence.Add(new EventIdentityEvidence
         {
@@ -108,18 +106,6 @@ public sealed class PostgresAuditWriterTests
             CompanyIds = ["a"],
             CredentialIds = ["hashed-credential-reference"]
         });
-        var promotionId = Guid.NewGuid();
-        db.Promotions.Add(new PendingTelemetryPromotion
-        {
-            PromotionId = promotionId,
-            CompanyId = "a",
-            SourceBatchId = batch.BatchId,
-            RangeStart = now,
-            RangeEnd = now,
-            CreatedAt = now,
-            UpdatedAt = now,
-            ExpectedPointCount = 1
-        });
         await db.SaveChangesAsync();
         await using (var reload = await factory.CreateDbContextAsync())
         {
@@ -130,7 +116,6 @@ public sealed class PostgresAuditWriterTests
             reload.IdentityEvidence.Remove(evidence);
             await reload.SaveChangesAsync();
             (await reload.IdentityGuards.AnyAsync(e => e.EventTimestamp == now)).ShouldBeTrue();
-            (await reload.Promotions.SingleAsync(e => e.PromotionId == promotionId)).ExpectedPointCount.ShouldBe(1);
             (await reload.OperatorProfiles.SingleAsync(e => e.GrafanaOrganizationId == "org-test")).CompanyIds.ShouldBe(["a"]);
         }
         db.LineResults.Add(new LineProcessingResult { BatchId = batch.BatchId, LineNumber = 0 });

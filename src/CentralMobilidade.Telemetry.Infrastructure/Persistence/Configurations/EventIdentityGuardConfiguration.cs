@@ -12,8 +12,6 @@ public sealed class EventIdentityGuardConfiguration : IEntityTypeConfiguration<E
         b.Property(e => e.CompanyId).HasMaxLength(256);
         b.Property(e => e.VehicleId).HasMaxLength(256);
         b.Property(e => e.State).HasConversion<string>().HasMaxLength(32);
-        b.Property(e => e.Destination).HasConversion<string>().HasMaxLength(32);
-        b.Property(e => e.StorageLocation).HasConversion<string>().HasMaxLength(32);
         b.HasIndex(e => e.GuardExpiresAt);
         b.HasIndex(e => e.LeaseUntil);
         b.Property(e => e.FencingVersion).IsConcurrencyToken();
@@ -25,7 +23,6 @@ public sealed class EventIdentityGuardConfiguration : IEntityTypeConfiguration<E
             t.HasCheckConstraint("ck_guard_identity", "octet_length(\"CompanyId\") BETWEEN 1 AND 256 AND octet_length(\"VehicleId\") BETWEEN 1 AND 256 AND isfinite(\"EventTimestamp\") AND date_trunc('milliseconds', \"EventTimestamp\") = \"EventTimestamp\"");
             t.HasCheckConstraint("ck_guard_retention", "isfinite(\"TelemetryExpiresAt\") AND isfinite(\"GuardExpiresAt\") AND \"TelemetryExpiresAt\" > \"EventTimestamp\" AND \"GuardExpiresAt\" >= \"TelemetryExpiresAt\"");
             t.HasCheckConstraint("ck_guard_state", "(\"State\" IN ('Reserved','Writing') AND \"LeaseUntil\" IS NOT NULL AND isfinite(\"LeaseUntil\")) OR (\"State\" = 'Committed' AND \"LeaseUntil\" IS NULL)");
-            t.HasCheckConstraint("ck_guard_location", "\"Destination\" IN ('Queryable','Pending') AND ((\"StorageLocation\" IN ('PendingCommitted','QueryableCommitted') AND \"PromotionOwner\" IS NULL AND \"PromotionLeaseUntil\" IS NULL) OR (\"State\" = 'Committed' AND \"StorageLocation\" = 'Promoting' AND \"PromotionOwner\" IS NOT NULL AND \"PromotionLeaseUntil\" IS NOT NULL AND isfinite(\"PromotionLeaseUntil\")))");
         });
     }
 }

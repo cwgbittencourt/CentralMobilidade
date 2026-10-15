@@ -55,5 +55,4 @@ The obsolete company-visibility resolver/HTTP adapter and its registration were 
 with the application port. Driver resolution remains a separate port.
 
 The constructor still validates the legacy Pending configuration shown above; removing
-that configuration requirement is T107. PostgreSQL still retains its legacy schema until
-T106. Do not infer that the single-container Compose transition has happened (T109).
+that configuration requirement is T107. T106 provides the guarded PostgreSQL schema migration and offline reconciliation runbook. Do not infer that the single-container Compose transition has happened (T109).

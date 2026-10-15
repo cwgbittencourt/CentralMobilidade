@@ -23,42 +23,6 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Recovery;
 
 public sealed class SelectedEventIdentityGuardTests
 {
-    [Theory]
-    [InlineData(PersistedIdentityStorageLocation.PendingCommitted)]
-    [InlineData(PersistedIdentityStorageLocation.Promoting)]
-    public async Task Legacy_pending_identity_is_preserved_and_cannot_be_resumed_or_presented_as_queryable(PersistedIdentityStorageLocation location)
-    {
-        await using var postgres = await MigratedPostgresFixture.StartAsync();
-        await using var services = new ServiceCollection().AddTelemetryControlPersistence(postgres.Connection).BuildServiceProvider();
-        var guard = new SelectedEventIdentityGuard(services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>(), new Clock());
-        var request = Request("legacy");
-        await using var db = postgres.Create();
-        db.IdentityGuards.Add(new EventIdentityGuard
-        {
-            CompanyId = request.Identity.CompanyId.Value,
-            VehicleId = request.Identity.VehicleId.Value,
-            EventTimestamp = request.Identity.Timestamp.Value,
-            State = IdentityGuardState.Committed,
-            OwnerBatchId = request.Owner.BatchId.Value,
-            OwnerLineNumber = 1,
-            FencingVersion = 1,
-            Destination = PersistedTelemetryDestination.Pending,
-            StorageLocation = location,
-            GuardExpiresAt = request.GuardExpiresAt,
-            TelemetryExpiresAt = request.GuardExpiresAt,
-            PromotionOwner = location == PersistedIdentityStorageLocation.Promoting ? Guid.NewGuid() : null,
-            PromotionLeaseUntil = location == PersistedIdentityStorageLocation.Promoting ? request.LeaseUntil : null
-        });
-        await db.SaveChangesAsync();
-        (await guard.AcquireOrResumeAsync(request, default)).ShouldBeOfType<IdentityReservationResult.Existing>()
-            .Outcome.ShouldBe(ExistingIdentityOutcome.AlreadyExistsUnclassified);
-        await Should.ThrowAsync<ProviderOperationException>(() => guard.GetCommittedAsync(request.Identity, default).AsTask());
-        var persisted = await db.IdentityGuards.AsNoTracking().SingleAsync();
-        persisted.Destination.ShouldBe(PersistedTelemetryDestination.Pending);
-        persisted.StorageLocation.ShouldBe(location);
-        persisted.FencingVersion.ShouldBe(1);
-    }
-
     [Fact]
     public async Task Partition_upgrade_preserves_committed_identity_and_protects_leaf_truncate()
     {
@@ -69,12 +33,18 @@ public sealed class SelectedEventIdentityGuardTests
         await migrator.MigrateAsync("20261013182313_InitialControlPlane");
         var guard = new SelectedEventIdentityGuard(services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>(), new Clock());
         var request = Request("upgrade");
-        var lease = (await guard.AcquireOrResumeAsync(request, default)).ShouldBeOfType<IdentityReservationResult.Granted>().Lease;
-        (await guard.TryMarkWritingAsync(lease, DateTimeOffset.UtcNow, default)).ShouldBeTrue();
-        (await guard.TryCommitAsync(lease with
-        {
-            State = IdentityGuardState.Writing
-        }, DateTimeOffset.UtcNow, default)).ShouldBeTrue();
+        // Seed the applied legacy schema through its original SQL shape; the new adapter only
+        // runs after the single-store migration, which removes the old NOT NULL routing columns.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO event_identity_guards
+             ("CompanyId","VehicleId","EventTimestamp","State","OwnerBatchId","OwnerLineNumber","LeaseUntil","FencingVersion","Destination","StorageLocation","GuardExpiresAt","TelemetryExpiresAt")
+            VALUES ({request.Identity.CompanyId.Value},{request.Identity.VehicleId.Value},{request.Identity.Timestamp.Value},
+             'Committed',{request.Owner.BatchId.Value},1,NULL,1,'Queryable','QueryableCommitted',{request.GuardExpiresAt},{request.GuardExpiresAt});
+            INSERT INTO event_identity_evidence
+             ("CompanyId","VehicleId","EventTimestamp","CanonicalFingerprint","FirstBatchId","FirstSeenAt","EvidenceExpiresAt")
+            VALUES ({request.Identity.CompanyId.Value},{request.Identity.VehicleId.Value},{request.Identity.Timestamp.Value},
+             {Convert.FromHexString(request.Fingerprint)},{request.Owner.BatchId.Value},{request.Now},{request.EvidenceExpiresAt});
+            """);
         await db.Database.MigrateAsync();
         (await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM pg_inherits WHERE inhparent='event_identity_guards'::regclass").SingleAsync()).ShouldBe(16);
         (await guard.GetCommittedAsync(request.Identity, default)).ShouldNotBeNull();

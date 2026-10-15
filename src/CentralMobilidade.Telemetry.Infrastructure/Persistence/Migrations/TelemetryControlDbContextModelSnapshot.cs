@@ -138,11 +138,6 @@ namespace CentralMobilidade.Telemetry.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("EventTimestamp")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Destination")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.Property<long>("FencingVersion")
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
@@ -159,18 +154,7 @@ namespace CentralMobilidade.Telemetry.Infrastructure.Persistence.Migrations
                     b.Property<long>("OwnerLineNumber")
                         .HasColumnType("bigint");
 
-                    b.Property<DateTimeOffset?>("PromotionLeaseUntil")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("PromotionOwner")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("State")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("StorageLocation")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
@@ -187,8 +171,6 @@ namespace CentralMobilidade.Telemetry.Infrastructure.Persistence.Migrations
                     b.ToTable("event_identity_guards", null, t =>
                         {
                             t.HasCheckConstraint("ck_guard_identity", "octet_length(\"CompanyId\") BETWEEN 1 AND 256 AND octet_length(\"VehicleId\") BETWEEN 1 AND 256 AND isfinite(\"EventTimestamp\") AND date_trunc('milliseconds', \"EventTimestamp\") = \"EventTimestamp\"");
-
-                            t.HasCheckConstraint("ck_guard_location", "\"Destination\" IN ('Queryable','Pending') AND ((\"StorageLocation\" IN ('PendingCommitted','QueryableCommitted') AND \"PromotionOwner\" IS NULL AND \"PromotionLeaseUntil\" IS NULL) OR (\"State\" = 'Committed' AND \"StorageLocation\" = 'Promoting' AND \"PromotionOwner\" IS NOT NULL AND \"PromotionLeaseUntil\" IS NOT NULL AND isfinite(\"PromotionLeaseUntil\")))");
 
                             t.HasCheckConstraint("ck_guard_owner", "\"OwnerLineNumber\" > 0 AND \"FencingVersion\" > 0 AND \"OwnerBatchId\" <> '00000000-0000-0000-0000-000000000000'::uuid");
 
@@ -383,71 +365,6 @@ namespace CentralMobilidade.Telemetry.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_operator_permissions", "\"Permissions\" <@ ARRAY['batch.read','telemetry.read','driver.read','quarantine.raw.read','cross_company.read']::text[] AND array_position(\"Permissions\", NULL) IS NULL");
 
                             t.HasCheckConstraint("ck_operator_scope", "array_position(\"CompanyIds\", NULL) IS NULL AND array_position(\"CompanyIds\", '') IS NULL AND array_position(\"CredentialIds\", NULL) IS NULL AND array_position(\"CredentialIds\", '') IS NULL AND length(btrim(\"ActorId\")) > 0 AND \"RowVersion\" > 0");
-                        });
-                });
-
-            modelBuilder.Entity("CentralMobilidade.Telemetry.Infrastructure.Persistence.PendingTelemetryPromotion", b =>
-                {
-                    b.Property<Guid>("PromotionId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Attempts")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("CompanyId")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<DateTimeOffset?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("ConfirmedPointCount")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("ExpectedPointCount")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("LastErrorCode")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTimeOffset>("RangeEnd")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("RangeStart")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("SourceBatchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("State")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("PromotionId");
-
-                    b.HasIndex("State");
-
-                    b.HasIndex("CompanyId", "State", "UpdatedAt");
-
-                    b.ToTable("pending_telemetry_promotions", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_promotion_counts", "\"RangeEnd\" >= \"RangeStart\" AND \"ExpectedPointCount\" >= 0 AND \"Attempts\" >= 0 AND (\"ConfirmedPointCount\" IS NULL OR \"ConfirmedPointCount\" >= 0)");
-
-                            t.HasCheckConstraint("ck_promotion_state", "\"RowVersion\" > 0 AND \"State\" IN ('Discovered','Copying','Copied','SourceDeleted','Completed','Retrying')");
                         });
                 });
 

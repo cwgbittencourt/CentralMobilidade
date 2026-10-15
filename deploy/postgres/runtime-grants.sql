@@ -7,8 +7,7 @@ REVOKE ALL ON ALL TABLES IN SCHEMA public FROM :"runtime_role";
 GRANT USAGE ON SCHEMA public TO :"runtime_role";
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.ingestion_batches,
     public.line_processing_results, public.quarantined_rejections,
-    public.event_identity_guards, public.event_identity_evidence,
-    public.pending_telemetry_promotions TO :"runtime_role";
+    public.event_identity_guards, public.event_identity_evidence TO :"runtime_role";
 GRANT SELECT ON public.operator_access_profiles TO :"runtime_role";
 GRANT SELECT, INSERT ON public.audit_events TO :"runtime_role";
 COMMIT;

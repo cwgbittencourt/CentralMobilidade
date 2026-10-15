@@ -2,6 +2,8 @@ using System;
 using System.Threading.Tasks;
 using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -21,9 +23,9 @@ internal sealed class MigratedPostgresFixture : IAsyncDisposable
     }
     internal TelemetryControlDbContext Create() => new(new DbContextOptionsBuilder<TelemetryControlDbContext>().UseNpgsql(Connection).Options);
 
-    internal static async Task<MigratedPostgresFixture> StartAsync()
+    internal static async Task<MigratedPostgresFixture> StartAsync(string? targetMigration = null, string? connectionOverride = null)
     {
-        var connection = Environment.GetEnvironmentVariable("TELEMETRY_TEST_POSTGRES");
+        var connection = connectionOverride ?? Environment.GetEnvironmentVariable("TELEMETRY_TEST_POSTGRES");
         PostgreSqlContainer? container = null;
         if (connection is null)
         {
@@ -39,7 +41,7 @@ internal sealed class MigratedPostgresFixture : IAsyncDisposable
         try
         {
             await using var db = fixture.Create();
-            await db.Database.MigrateAsync();
+            await db.GetService<IMigrator>().MigrateAsync(targetMigration);
             return fixture;
         }
         catch

@@ -34,9 +34,9 @@ the guard must outlive its telemetry. Every mutation checks identity, owner, fen
 and lease atomically. Resume may repeat only the same physical write after ambiguous persistence.
 Company existence is authoritative from a valid producer-supplied `empresa_id`. The application
 ports expose no company lookup, destination selection, storage relocation or promotion lease.
-`IDriverResolver` remains independent of telemetry eligibility. Infrastructure temporarily decodes
-legacy persisted destinations/locations until the T106 migration; it must never grant a new write
-or report a legacy pending identity as queryable. The physical identity store remains governed by
+`IDriverResolver` remains independent of telemetry eligibility. The T106 schema has no persisted destination/location fields. Its forward migration refuses
+unreconciled legacy data; the offline upgrade procedure must verify telemetry before retiring
+those columns. The physical identity store remains governed by
 T041/ADR-001 and its unresolved capacity gate.
 
 Batch snapshots distinguish an incomplete company scope from an empty known scope; callers must not
