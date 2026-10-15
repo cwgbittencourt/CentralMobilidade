@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http.Headers;
 using CentralMobilidade.Telemetry.Application.Abstractions;
 using CentralMobilidade.Telemetry.Application.Security;
 using Microsoft.AspNetCore.Authentication;
@@ -21,7 +22,16 @@ public static class SecurityRegistration
         services.TryAddScoped<IOperatorAuthorizer, StoredOperatorAuthorizer>();
         services.AddAuthentication(options => options.DefaultChallengeScheme = OperatorAuthorizationPolicies.OperatorScheme)
             .AddScheme<AuthenticationSchemeOptions, ProducerBearerHandler>(OperatorAuthorizationPolicies.ProducerScheme, _ => { })
-            .AddScheme<AuthenticationSchemeOptions, OperatorBearerHandler>(OperatorAuthorizationPolicies.OperatorScheme, _ => { });
+            .AddScheme<AuthenticationSchemeOptions, OperatorBearerHandler>(OperatorAuthorizationPolicies.OperatorScheme, _ => { })
+            .AddPolicyScheme(OperatorAuthorizationPolicies.BatchStatusScheme, null, options =>
+                options.ForwardDefaultSelector = context =>
+                {
+                    var header = context.Request.Headers.Authorization;
+                    // Select one credential validator and one challenge; format never grants access.
+                    return header.Count == 1 && AuthenticationHeaderValue.TryParse(header[0], out var value)
+                        && value.Parameter is { } token && OpaqueBearerTokens.HasValidFormat(token, BearerCredentialKind.Producer)
+                        ? OperatorAuthorizationPolicies.ProducerScheme : OperatorAuthorizationPolicies.OperatorScheme;
+                });
         services.AddAuthorization(OperatorAuthorizationPolicies.Configure);
         services.AddScoped<IAuthorizationHandler, OperatorPermissionHandler>();
         services.AddScoped<IAuthorizationHandler, ProducerBatchOwnershipHandler>();

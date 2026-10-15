@@ -114,3 +114,13 @@ Run the security tests on Linux without writing build output into the repository
 ```powershell
 docker run --rm --mount "type=bind,source=$($PWD.Path),target=/source,readonly" --workdir /source mcr.microsoft.com/dotnet/sdk:10.0.401-noble dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests/CentralMobilidade.Telemetry.IntegrationTests.csproj --artifacts-path /tmp/test-artifacts --filter FullyQualifiedName~Security --verbosity minimal
 ```
+
+## Combined status authentication (T059)
+
+Only the batch-status route uses `BatchStatusRead`/`BatchStatusBearer`, selecting
+one producer or operator validator and emitting one challenge. Other routes retain
+their existing credential-specific policies. The endpoint derives its application
+identity solely from the authenticated server principal; caller-supplied company,
+producer or actor parameters cannot grant visibility. Viewer service tokens do not
+grant batch-status access. Status authorization failures are non-disclosing 404s;
+this metadata read does not perform a sensitive raw-content lookup.

@@ -74,6 +74,7 @@ try
 
     app.MapGet("/", () => "Central Mobilidade Telemetry API");
     app.MapIngestTelemetryBatchEndpoint();
+    app.MapGetBatchStatusEndpoint();
     app.MapTelemetryMetrics();
     app.MapTelemetryHealthEndpoints();
 

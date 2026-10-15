@@ -67,3 +67,14 @@ Outro teste recria o adaptador e confirma que um horário diferente não é repl
 projeção dos estados públicos, contadores, total desconhecido, timestamps, resposta
 não reveladora e exclusão de campos internos. A migração é validada com lote existente,
 snapshot, aplicação repetida, script idempotente e rollback em banco vazio isolado.
+
+## T059 — endpoint HTTP de status
+
+`BatchStatusEndpointTests` cobre 19 cenários HTTP com TestServer, PostgreSQL migrado,
+validadores reais de tokens opacos e perfis atuais. Inclui o produtor proprietário,
+outro produtor, operadores com todas/parte das empresas, permissão explícita
+cross-company, falta de batch.read, serviço viewer, expiração/revogação de credenciais,
+headers ausentes/malformados/duplicados, UUIDs inválidos e lotes ausentes/expirados
+ou não confirmados. Os testes validam uma única resposta Problem/challenge, DTO,
+content type, traceId e no-store em respostas de sucesso. Nenhum endpoint de rejeição
+ou conteúdo bruto é implementado nesta tarefa; isso permanece T060.
