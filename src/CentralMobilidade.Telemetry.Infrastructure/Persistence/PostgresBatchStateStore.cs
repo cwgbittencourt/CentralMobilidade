@@ -14,7 +14,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CentralMobilidade.Telemetry.Infrastructure.Persistence;
 
-public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDbContext> contextFactory) : IBatchStateStore
+public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDbContext> contextFactory, Microsoft.Extensions.Configuration.IConfiguration? configuration = null, IClock? clock = null) : IBatchStateStore
 {
     public async ValueTask<BatchSnapshot> CreateAsync(TelemetryBatchEnvelope metadata,
         DateTimeOffset expiresAt, CancellationToken cancellationToken)
@@ -205,7 +205,7 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
 
     public ValueTask<RejectionResultPage> GetRejectionsAsync(BatchId batchId, string? cursor, int limit,
         CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Rejection paging is implemented with batch inspection.");
+        new PostgresRejectionQuery(contextFactory, configuration, clock).GetRejectionsAsync(batchId, cursor, limit, cancellationToken);
 
     private static void EnsureSameCreation(IngestionBatch row, TelemetryBatchEnvelope metadata,
         DateTimeOffset receivedAt, DateTimeOffset expiresAt)

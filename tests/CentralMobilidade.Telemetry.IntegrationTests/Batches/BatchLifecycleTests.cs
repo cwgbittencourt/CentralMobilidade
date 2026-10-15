@@ -313,6 +313,8 @@ public sealed class BatchLifecycleDatabase : IAsyncLifetime
 {
     private MigratedPostgresFixture postgres = null!;
     private ServiceProvider services = null!;
+    internal string Connection => postgres.Connection;
+    internal IDbContextFactory<TelemetryControlDbContext> CreateFactory() => services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>();
     internal TelemetryControlDbContext CreateContext() => postgres.Create();
     internal IBatchStateStore Store() => new PostgresBatchStateStore(services.GetRequiredService<IDbContextFactory<TelemetryControlDbContext>>());
     public async Task InitializeAsync()

@@ -56,7 +56,7 @@ try
     builder.Services.AddTelemetryHealthChecks(builder.Configuration, TelemetryServiceRole.Api);
     var controlConnection = builder.Configuration.GetConnectionString("TelemetryControl");
     if (!string.IsNullOrWhiteSpace(controlConnection))
-        builder.Services.AddTelemetryControlPersistence(controlConnection);
+        builder.Services.AddTelemetryControlPersistence(controlConnection).AddTelemetryBatchInspection(builder.Configuration);
     if (string.Equals(builder.Configuration["Queue:Provider"], "RabbitMq", StringComparison.OrdinalIgnoreCase))
     {
         builder.Services.AddSingleton<RabbitMqTopology>();

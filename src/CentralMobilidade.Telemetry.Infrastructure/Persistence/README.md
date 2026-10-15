@@ -66,3 +66,29 @@ and database volume live outside versioned source. Architecture/load projects ar
 and provide no capacity evidence.
 
 Current schema and validation: [T106 migration](Migrations/README.md) and [T110 recovery evidence](../../../tests/CentralMobilidade.Telemetry.IntegrationTests/Recovery/WorkerAcknowledgementBoundaryTests.md). Legacy promotion checks exist only to guard upgrades; runtime has no promotion entity or routing columns. See the [offline upgrade](../../../docs/runbooks/single-influx-upgrade.md) for populated databases. Registration never applies migrations automatically.
+
+## Batch inspection (T057)
+
+The API registers `BatchVisibility`, `ListBatchRejectionsHandler` and
+`GetQuarantinedRejectionContentHandler` when control persistence is configured.
+Construct `BatchReadIdentity` exclusively from trusted authentication context.
+Producers can inspect their own unexpired batch status. Rejection lists and raw
+quarantine reads require human operator permissions and the entire batch company
+scope; incomplete scope requires explicit `cross_company.read`. Every page resolves
+current permissions again. HTTP endpoint integration belongs to T059/T060.
+
+Provision `BatchInspection__CursorKey` from a secret manager: Base64 of exactly
+32 cryptographically random bytes, persistent and shared across API replicas.
+No default key is supplied. Missing or invalid configuration fails closed when
+paging is requested. Rotation invalidates outstanding cursors. AES-GCM cursors
+are bound to the batch, expire after at most 15 minutes, and carry an immutable
+upper line boundary. Pages contain 1–200 rejections, ordered by line number,
+without raw content, storage paths or protected quarantine metadata. This boundary
+does not constitute a transaction snapshot; a fresh query sees later results.
+
+Raw retrieval checks batch ownership of the quarantine identifier, company scope,
+retention, deletion status and file metadata integrity. All allowed, denied,
+missing and expired outcomes require a matching durable audit receipt. Audit
+failure returns `AUDIT_UNAVAILABLE` without opening the content stream. Expiry,
+deletion and authorization are checked again before handing the stream to the
+caller, which must dispose the result. No database migration is required.

@@ -39,3 +39,20 @@ Esses testes validam persistência e concorrência, não a projeção HTTP, auto
 limpeza de retenção, throughput ou durabilidade de conteúdo bruto. A quarentena é
 representada aqui por seus metadados transacionais. Relatórios locais ficam ignorados
 em artifacts/validation/T055/. A falha TDD permanece visível na suíte padrão até a T058.
+
+## T057 — inspeção autorizada de lotes
+
+`BatchInspectionTests` exercita PostgreSQL migrado, o autorizador real com perfis
+revogáveis, o armazenamento de quarentena real e a auditoria PostgreSQL real.
+São 43 casos para propriedade do produtor, permissões e escopo completo/incompleto,
+paginação limitada com cursor autenticado vinculado ao lote e com validade,
+revogação entre páginas, fronteira superior estável e ausência de conteúdo protegido.
+A recuperação bruta cobre permissão humana, vínculo lote/quarentena, arquivo ausente
+ou corrompido, expiração, exclusão, recibo de auditoria inválido e falha de commit.
+Barreiras de auditoria comprovam que não há abertura antes do commit e que mudanças
+de prazo, permissão ou exclusão durante a espera impedem a entrega.
+
+A chave de cursor deve ser provisionada no ambiente da API; os testes usam apenas
+uma chave sintética. Ausência e configuração inválida falham sem impedir a consulta
+de visibilidade. Os endpoints HTTP serão conectados nas T059/T060. Os relatórios
+locais ficam ignorados em `artifacts/validation/T057/`.
