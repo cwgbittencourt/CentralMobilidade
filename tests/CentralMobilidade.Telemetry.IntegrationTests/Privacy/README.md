@@ -1,5 +1,43 @@
 # Presentation authorization and audit (T064)
 
+## Automated observability privacy gate (T079)
+
+`ObservabilityLeakTests` exercises the production `AddPrivacyLogging` and
+`AddTelemetryObservability` registrations for both API and worker. Synthetic plate,
+latitude, longitude, accented driver name, CPF (digits and formatted), and opaque
+bearer token are injected into request path/query/body/headers, logger category,
+scope/properties/exception, metric tags and span tags/baggage/name/status.
+
+The scanner checks structured application logs, the real Prometheus scrape
+(including labels), HTTP/protobuf OTLP export bytes, and real Loki query JSON plus
+decoded lines. Nonempty captures, a measured canary counter, preserved batch ID,
+operation/service and exact Loki line round-trip prevent empty-output passes.
+Twenty-eight scanner controls cover seven seeds in literal, JSON escaped, URL
+encoded and base64 forms on every surface; another case rejects empty captures.
+A real Loki negative control stores each seed deliberately and requires detection.
+Scanner errors identify only category/surface, without echoing captured content.
+Together with the two service roles these are 32 executable cases, with no skips.
+
+Run from the repository root with Docker running:
+
+```powershell
+dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter 'FullyQualifiedName~ObservabilityLeakTests|FullyQualifiedName~PrivacyCanaryScannerTests'
+```
+
+One disposable `grafana/loki:3.7.0` container uses the repository bootstrap config,
+ephemeral data and a random host port. The test uses root only to make that
+disposable filesystem writable; it does not test production filesystem hardening.
+Testcontainers owns cleanup. No existing deployment or volume is modified. The
+test explicitly pushes the production logger's output through Loki's HTTP API;
+it does not verify a deployed log shipper, Prometheus server configuration, Loki
+retention or alerts (separate tasks). The worker uses its production metrics
+listener; its HTTP probe is a test stimulus, not a production worker endpoint.
+The loopback collector receives actual OTLP HTTP/protobuf; string values are
+scanned in its UTF-8 byte representation without a separate tracing backend.
+This gate covers the seeded scenarios and four listed encodings, not arbitrary
+transformations, all application workflows or authorized presentation responses.
+Ignored evidence is under `artifacts/validation/T079/`.
+
 `PresentationAuthorizationTests` contains 100 executable cases. The existing security
 foundation is exercised separately from the future production presentation API. No
 tests are skipped, and no presentation handler or data endpoint is implemented here.

@@ -164,6 +164,10 @@ Expected:
 Use seeded fixture values for plate, coordinates, driver name, CPF, and bearer token. Run the privacy
 scanner over application logs, Loki query results, Prometheus labels, and exported traces.
 
+Run the [automated T079 privacy gate](../../tests/CentralMobilidade.Telemetry.IntegrationTests/Privacy/README.md#automated-observability-privacy-gate-t079)
+with Docker running. It includes both service roles, nonempty-output checks and
+deliberate-leak controls; its Loki transport is explicitly supplied by the test.
+
 Expected: none of the seeded sensitive values appears. `veiculo_id`, `batchId`, and safe keyed digests
 remain sufficient for correlation. The authorized driver-presentation request returns only display name
 and optional CPF suffix and produces an audit event.
