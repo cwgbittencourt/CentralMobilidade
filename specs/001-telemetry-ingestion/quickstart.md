@@ -8,6 +8,8 @@ provisioning, Pub/Sub parity and load/final-proof commands below are not all imp
 dashboards and their query/render proof are implemented in T072, and the bounded
 single-vehicle trip dashboards in T073; health/driver dashboards are implemented in T074.
 Follow [the configuration contract](../../deploy/grafana/README.md).
+Credential rotation, scope changes and audit review are covered by the
+[T075 access operations runbook](../../docs/operations/grafana-access.md).
 
 ## Prerequisites
 
@@ -51,7 +53,8 @@ are named and persistent. One server `influxdb` stays running; `influxdb-init` i
 `centralmobilidade-influxdb-1` and `centralmobilidade-influxdb-init-1`; the latter is a job.
 Base Compose publishes only Grafana on loopback. To publish development ports, include
 `-f deploy/compose.override.yaml` in start/status/stop commands. Starting the solution in the IDE
-does not invoke Compose. The following Grafana provisioning checks await T071–T075; the current
+does not invoke Compose. T071–T075 implement provisioning, dashboards and access documentation;
+the following checks still need to be performed for each intended deployment. The current
 bootstrap supplies the pinned image/plugin and internal datasource/provider YAML;
 latest-position, trip, health and driver templates have isolated query/render proof.
 The T071 reconciler installs all available viewer templates. Health uses event-time

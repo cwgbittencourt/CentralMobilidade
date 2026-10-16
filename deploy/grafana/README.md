@@ -4,8 +4,8 @@ The pinned Grafana 12.2.5 image contains signed Infinity 4.1.1. Compose mounts
 `provisioning/` and `dashboards/internal/` read-only. YAML targets only organization
 1, with immutable `internal-influx` (SQL/FlightSQL), `internal-prometheus` and
 `internal-loki` datasource UIDs and the internal file-dashboard provider. Business
-dashboard JSON is supplied by T072-T074; T072 now supplies the two latest-position
-views (see [dashboard behavior](dashboards/README.md)). An empty directory creates no placeholder
+dashboard JSON for all three internal and four viewer views is supplied by T072-T074
+(see [dashboard behavior](dashboards/README.md)). An empty directory creates no placeholder
 panels and does not establish rendering or query success.
 
 Supply `INFLUXDB_GRAFANA_READ_TOKEN` privately as a read-only token for the telemetry
@@ -15,6 +15,9 @@ into the provisioning environment before invoking Grafana's original entrypoint.
 Missing files fail startup with a generic message. The token is never baked into
 the image/YAML or printed. Existing data volumes and catalog identities remain
 unchanged. Set secrets before starting Compose; reconciliation does not start it.
+
+For scope provisioning, separate credential rotation/revocation, recovery, plugin
+upgrades and audit review, follow the [access operations runbook](../../docs/operations/grafana-access.md).
 
 ## Viewer reconciliation
 
