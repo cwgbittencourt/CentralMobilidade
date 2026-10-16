@@ -57,6 +57,23 @@ public sealed class LatestDashboardFixture : IAsyncLifetime
         return settings[audience];
     }
 
+    public async Task<JsonElement> GetTripSettingsAsync(string audience)
+    {
+        var original = await GetSettingsAsync(audience);
+        var variables = original.GetProperty("variables").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString()!);
+        variables["vehicleId"] = "vehicle-a";
+        variables["limit"] = "10000";
+        variables["from"] = Start.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        variables["to"] = Start.AddHours(1).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        return JsonSerializer.SerializeToElement(new
+        {
+            grafanaUrl = original.GetProperty("grafanaUrl").GetString(),
+            orgId = original.GetProperty("orgId").GetInt32(),
+            serviceToken = original.GetProperty("serviceToken").GetString(),
+            variables
+        });
+    }
+
     private async Task StartAsync()
     {
         Directory.CreateDirectory(directory);

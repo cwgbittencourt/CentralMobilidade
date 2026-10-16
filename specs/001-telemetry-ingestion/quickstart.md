@@ -5,8 +5,9 @@ This guide includes current startup and future acceptance scenarios. The
 provisioning, Pub/Sub parity and load/final-proof commands below are not all implemented. Sections
 4–10 are acceptance targets, not obtained results. Check tasks.md before running task-specific scripts;
 `Provision-GrafanaOrganizations.ps1` is implemented in T071. The latest-position
-dashboards and their query/render proof are implemented in T072;
-trip/health/driver dashboards remain T073-T074. Follow [the configuration contract](../../deploy/grafana/README.md).
+dashboards and their query/render proof are implemented in T072, and the bounded
+single-vehicle trip dashboards in T073; health/driver dashboards remain T074.
+Follow [the configuration contract](../../deploy/grafana/README.md).
 
 ## Prerequisites
 
@@ -52,7 +53,7 @@ Base Compose publishes only Grafana on loopback. To publish development ports, i
 `-f deploy/compose.override.yaml` in start/status/stop commands. Starting the solution in the IDE
 does not invoke Compose. The following Grafana provisioning checks await T071–T075; the current
 bootstrap supplies the pinned image/plugin and internal datasource/provider YAML;
-latest-position templates are implemented; trip/health/driver templates and their
+latest-position and trip templates are implemented; health/driver templates and their
 rendering remain unfinished. The T071 reconciler installs the available viewer
 templates and must not be treated as proof of the missing dashboards.
 

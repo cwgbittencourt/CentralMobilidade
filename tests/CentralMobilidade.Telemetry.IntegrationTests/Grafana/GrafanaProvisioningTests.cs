@@ -58,7 +58,7 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T072-T074")]
+    [Trait("PendingImplementation", "T074")]
     public async Task Internal_YAML_is_loaded_by_real_Grafana_and_creates_only_the_internal_organization()
     {
         var provisioning = Path.Combine(Root, "deploy/grafana/provisioning");
@@ -194,10 +194,8 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T073-T074")]
-    [InlineData("internal", "vehicle-trip")]
+    [Trait("PendingImplementation", "T074")]
     [InlineData("internal", "company-ingestion-health")]
-    [InlineData("viewer", "vehicle-trip")]
     [InlineData("viewer", "company-ingestion-health")]
     [InlineData("viewer", "driver-presentation")]
     public Task Every_production_panel_has_real_query_frames_and_renders_to_PNG(string audience, string dashboard) => AssertProductionPanelsAsync(audience, dashboard);
@@ -206,6 +204,11 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
     [InlineData("internal")]
     [InlineData("viewer")]
     public Task Latest_position_production_panel_has_real_query_frames_and_renders_to_PNG(string audience) => AssertProductionPanelsAsync(audience, "latest-vehicle-position");
+
+    [Theory]
+    [InlineData("internal")]
+    [InlineData("viewer")]
+    public Task Trip_production_panel_has_real_query_frames_and_renders_to_PNG(string audience) => AssertProductionPanelsAsync(audience, "vehicle-trip");
 
     private async Task AssertProductionPanelsAsync(string audience, string dashboard)
     {
@@ -222,6 +225,8 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
         JsonElement settings;
         if (dashboard == "latest-vehicle-position")
             settings = await latest.GetSettingsAsync(audience);
+        else if (dashboard == "vehicle-trip")
+            settings = await latest.GetTripSettingsAsync(audience);
         else
         {
             var statePath = Environment.GetEnvironmentVariable("TELEMETRY_TEST_GRAFANA_RENDER_STATE");
@@ -279,7 +284,7 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
             var png = await response.Content.ReadAsByteArrayAsync();
             png.Length.ShouldBeGreaterThan(1000);
             png.Take(8).ShouldBe(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
-            var output = Path.Combine(Root, dashboard == "latest-vehicle-position" ? "artifacts/validation/T072/render" : "artifacts/validation/T066/render", audience, dashboard);
+            var output = Path.Combine(Root, dashboard == "latest-vehicle-position" ? "artifacts/validation/T072/render" : dashboard == "vehicle-trip" ? "artifacts/validation/T073/render" : "artifacts/validation/T066/render", audience, dashboard);
             Directory.CreateDirectory(output);
             await File.WriteAllBytesAsync(Path.Combine(output, panel.GetProperty("id").GetInt32() + ".png"), png);
         }
@@ -351,6 +356,109 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
         }
     }
 
+    [Theory]
+    [InlineData("internal", 60, 2)]
+    [InlineData("viewer", 60, 2)]
+    [InlineData("internal", 10, 1)]
+    [InlineData("viewer", 10, 1)]
+    [InlineData("internal", 1440, 2)]
+    [InlineData("viewer", 1440, 2)]
+    public async Task Trip_dashboard_orders_historical_events_and_applies_single_vehicle_company_and_half_open_bounds(string audience, int minutes, int count)
+    {
+        using var response = await QueryTripAsync(audience, minutes);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        response.IsSuccessStatusCode.ShouldBeTrue(json.RootElement.ToString());
+        var result = json.RootElement.GetProperty("results").GetProperty("A");
+        if (result.TryGetProperty("error", out var error))
+            error.ValueKind.ShouldBe(JsonValueKind.Null, error.ToString());
+        var frame = result.GetProperty("frames").EnumerateArray().Single();
+        var names = frame.GetProperty("schema").GetProperty("fields").EnumerateArray().Select(f => f.GetProperty("name").GetString()).ToArray();
+        var values = frame.GetProperty("data").GetProperty("values");
+        values[Array.IndexOf(names, "latitude")].EnumerateArray().Select(v => v.GetDouble()).ShouldBe(new[] { 1d, 11d }.Take(count));
+        values[Array.IndexOf(names, "vehicleId")].EnumerateArray().ShouldAllBe(v => v.GetString() == "vehicle-a");
+        values[Array.IndexOf(names, "empresaId")].EnumerateArray().ShouldAllBe(v => v.GetString() == LatestDashboardFixture.Company);
+        names.ShouldBe(new[] { "empresaId", "vehicleId", "eventTime", "latitude", "longitude", "speed", "ignition" }, ignoreOrder: true);
+        (DateTimeOffset.UtcNow - latest.Start).ShouldBeGreaterThan(TimeSpan.FromDays(20));
+    }
+
+    [Theory]
+    [InlineData("internal", 0)]
+    [InlineData("internal", -1)]
+    [InlineData("internal", 1441)]
+    [InlineData("viewer", 0)]
+    [InlineData("viewer", -1)]
+    [InlineData("viewer", 1441)]
+    public async Task Trip_dashboard_cannot_expand_the_time_window(string audience, int minutes)
+    {
+        using var response = await QueryTripAsync(audience, minutes);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = json.RootElement.GetProperty("results").GetProperty("A");
+        if (audience == "viewer")
+            AssertUpstreamFailure(result, 400);
+        else
+        {
+            response.IsSuccessStatusCode.ShouldBeTrue(json.RootElement.ToString());
+            if (result.TryGetProperty("error", out var error))
+                error.ValueKind.ShouldBe(JsonValueKind.Null, error.ToString());
+        }
+        foreach (var frame in result.GetProperty("frames").EnumerateArray())
+            frame.GetProperty("data").GetProperty("values").EnumerateArray().ShouldAllBe(v => v.GetArrayLength() == 0);
+    }
+
+    [Theory]
+    [InlineData("1", 0)]
+    [InlineData("10001", 400)]
+    public async Task Viewer_trip_enforces_point_limits_after_event_ordering(string limit, int status)
+    {
+        using var response = await QueryTripAsync("viewer", limit: limit);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = json.RootElement.GetProperty("results").GetProperty("A");
+        if (status != 0)
+            AssertUpstreamFailure(result, status);
+        else
+        {
+            response.IsSuccessStatusCode.ShouldBeTrue(json.RootElement.ToString());
+            var frame = result.GetProperty("frames")[0];
+            var names = frame.GetProperty("schema").GetProperty("fields").EnumerateArray().Select(f => f.GetProperty("name").GetString()).ToArray();
+            var latitude = frame.GetProperty("data").GetProperty("values")[Array.IndexOf(names, "latitude")];
+            latitude.EnumerateArray().Select(v => v.GetDouble()).ShouldBe(new[] { 1d });
+        }
+    }
+
+    [Fact]
+    public async Task Viewer_trip_company_variable_cannot_expand_authorized_scope()
+    {
+        using var response = await QueryTripAsync("viewer", company: LatestDashboardFixture.OtherCompany);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertUpstreamFailure(json.RootElement.GetProperty("results").GetProperty("A"), 404);
+    }
+
+    private static void AssertUpstreamFailure(JsonElement result, int status)
+    {
+        result.GetProperty("error").GetString().ShouldNotBeNullOrWhiteSpace();
+        result.GetProperty("frames")[0].GetProperty("schema").GetProperty("meta").GetProperty("custom").GetProperty("responseCodeFromServer").GetInt32().ShouldBe(status);
+        foreach (var frame in result.GetProperty("frames").EnumerateArray())
+            frame.GetProperty("data").GetProperty("values").EnumerateArray().ShouldAllBe(v => v.GetArrayLength() == 0);
+    }
+
+    private async Task<HttpResponseMessage> QueryTripAsync(string audience, int minutes = 60, string company = LatestDashboardFixture.Company, string limit = "10000")
+    {
+        var settings = await latest.GetTripSettingsAsync(audience);
+        var values = settings.GetProperty("variables").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString()!);
+        values["empresaId"] = company;
+        values["limit"] = limit;
+        values["to"] = latest.Start.AddMinutes(minutes).ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        using var model = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(Root, "deploy/grafana/dashboards", audience, "vehicle-trip.json")));
+        var targets = ResolveVariables(model.RootElement.GetProperty("panels")[0].GetProperty("targets"), JsonSerializer.SerializeToElement(values));
+        using var client = DashboardClient(settings);
+        return await client.PostAsJsonAsync("/api/ds/query", new
+        {
+            queries = targets,
+            from = values["from"],
+            to = values["to"]
+        });
+    }
+
     private async Task<HttpResponseMessage> QueryLatestAsync(string audience, string company = LatestDashboardFixture.Company, string limit = "500")
     {
         var settings = await latest.GetSettingsAsync(audience);
@@ -385,6 +493,12 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
         if (model.ValueKind != JsonValueKind.String)
             return model.Clone();
         var text = model.GetString()!;
+        foreach (var bound in new[] { "from", "to" })
+        {
+            var milliseconds = variables.GetProperty(bound).GetString()!;
+            text = text.Replace("${__" + bound + ":date:iso}", DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(milliseconds, System.Globalization.CultureInfo.InvariantCulture)).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
+                .Replace("${__" + bound + "}", milliseconds, StringComparison.Ordinal);
+        }
         foreach (var variable in variables.EnumerateObject())
         {
             var value = variable.Value.GetString()!;

@@ -182,3 +182,26 @@ The fixture exposed two real provider requirements: Influx SQL targets use
 `rawSql`/`format: table`, and Infinity base URLs belong to the datasource's top-level
 `url`. Custom absolute-URL health alone had not tested relative query resolution.
 Both production models/provisioning were corrected and covered through real queries.
+
+## T073 trip query/render evidence
+
+The two original trip rendering cases now use the same lazy isolated fixture,
+with a historical range and one vehicle. They no longer require private external
+render state or carry PendingImplementation. Production global time variables are
+interpolated for direct `/api/ds/query` assertions; real browser rendering also
+tests Grafana's own interpolation. Both PNGs were visually reviewed and display
+the same two historical points in ascending event-time order.
+
+Fifteen additional semantic cases cover internal/viewer historical ordering,
+company/vehicle separation, inclusive start/exclusive end, exactly 24 hours,
+empty/reversed/over-24-hour ranges, viewer point limits and unauthorized company.
+Invalid internal windows return no points; viewer failures must retain the real
+upstream 400/404 and no business data. The allowlisted field assertion also
+prevents identity columns from appearing. Point-limit one must return the earliest
+event, despite later arrival order. The fixture imports the actual new JSON files
+through production YAML/reconciliation and uses Viewer-role Grafana credentials.
+
+Ignored reports/PNGs are under `artifacts/validation/T073/`. Four original cases
+remain pending T074: combined three-internal-dashboard loading and the three
+health/driver render cases. No case is skipped. Historical T066/T071/T072 evidence
+above describes those stages, not the current number of missing dashboards.

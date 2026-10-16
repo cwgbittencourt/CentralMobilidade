@@ -53,3 +53,45 @@ Official references:
 - [Grafana SQL string and URL variable formatting](https://grafana.com/docs/grafana/latest/dashboards/variables/variable-syntax/)
 - [Infinity backend parser](https://grafana.com/docs/plugins/yesoreyeram-infinity-datasource/latest/query/backend/)
 - [Remote image rendering](https://grafana.com/docs/grafana/latest/setup-grafana/image-rendering/)
+
+# Single-vehicle trip (T073)
+
+Both `vehicle-trip.json` dashboards display an ordered coordinate table for one
+exact company/vehicle pair, with UTC event time, speed and ignition. Enter the
+stable vehicle ID, then select an absolute or relative range in Grafana's time
+picker (default: last hour). Historical windows are supported; their age does not
+change the 24-hour duration ceiling. Start is inclusive and end is exclusive.
+Neither model resolves a driver or includes plate, name or CPF.
+
+The internal SQL uses escaped `:sqlstring` company/vehicle values, millisecond
+Grafana time bounds converted with `to_timestamp_millis`, a positive-duration
+guard of at most 86,400,000 milliseconds, and `ORDER BY time ASC LIMIT 10000`.
+An empty, reversed or over-24-hour window produces no rows; it is not silently
+clamped. This template guard is for privileged operators, not an authorization
+boundary against users who already have direct datasource access. The retained
+file query envelope still applies; errors are not proof of an empty trip.
+
+The viewer uses only the closed `/api/v1/presentation/telemetry/trips/{vehicleId}`
+endpoint through Infinity backend JSON. Company and vehicle values are URL
+encoded; time bounds use Grafana's UTC ISO formatter. The API enforces current
+company scope and configured duration/point ceilings. Invalid ranges yield an
+API error, and a changed unauthorized company yields a non-disclosing 404.
+The point-limit textbox defaults to 10,000 and can be reduced for deployments
+with tighter configured limits. No SQL or automatic pagination is exposed.
+
+Both paths order events before limiting. At the point ceiling the displayed
+trajectory can be incomplete: narrow the time window to inspect later events.
+The table's sorting/filtering affects displayed points only. The selected range
+has millisecond precision. Refresh is manual by default to keep a historical
+inspection stable; the time picker also offers bounded refresh intervals.
+Provisioning uses the same internal YAML and viewer reconciler as T072.
+
+Validation queries the actual production targets through both real datasources,
+then renders their PNGs with the test-only renderer. Unordered 28-day-old points,
+another vehicle and another company verify event order and isolation; cases cover
+exactly 24 hours, half-open bounds, empty/reversed/over-ceiling windows, viewer
+point limits and unauthorized scope. Reviewed PNGs and reports are ignored under
+`artifacts/validation/T073/`. This is query/render evidence, not a capacity claim.
+
+- [Grafana global time variables and UTC ISO formatting](https://grafana.com/docs/grafana/latest/visualizations/dashboards/variables/global-variables/)
+- [InfluxDB SQL time conversion](https://docs.influxdata.com/influxdb3/core/reference/sql/functions/time-and-date/#to_timestamp_millis)
