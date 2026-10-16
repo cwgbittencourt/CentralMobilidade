@@ -12,6 +12,7 @@ namespace CentralMobilidade.Telemetry.Api.Security;
 
 // Authentication denials on the raw endpoint must be audited before the challenge is returned.
 public sealed record RawQuarantineAuditMetadata;
+public sealed record PresentationAuditMetadata(AuditAction Action, AuditResourceCategory Category);
 
 public sealed class AuditedAuthorizationResultHandler(IClock clock) : IAuthorizationMiddlewareResultHandler
 {
@@ -19,8 +20,12 @@ public sealed class AuditedAuthorizationResultHandler(IClock clock) : IAuthoriza
     public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
     {
         var rawEndpoint = context.GetEndpoint()?.Metadata.GetMetadata<RawQuarantineAuditMetadata>() is not null;
-        if (rawEndpoint)
+        var presentation = context.GetEndpoint()?.Metadata.GetMetadata<PresentationAuditMetadata>();
+        if (rawEndpoint || presentation is not null)
+        {
             context.Response.Headers.CacheControl = "no-store";
+            context.Response.Headers.XContentTypeOptions = "nosniff";
+        }
         // Combined policies must retain the sensitive operation's audit category.
         var requirement = policy.Requirements.OfType<OperatorPermissionRequirement>()
             .OrderByDescending(item => item.Permission switch
@@ -35,12 +40,12 @@ public sealed class AuditedAuthorizationResultHandler(IClock clock) : IAuthoriza
             await SecurityProblemResponses.WriteAsync(context, TelemetryErrorCodes.ResourceNotFound);
             return;
         }
-        if (authorizeResult.Succeeded || requirement is null && !rawEndpoint)
+        if (authorizeResult.Succeeded || requirement is null && !rawEndpoint && presentation is null)
         {
             await fallback.HandleAsync(next, context, policy, authorizeResult);
             return;
         }
-        var (action, category) = rawEndpoint ? (AuditAction.ReadQuarantineContent, AuditResourceCategory.Quarantine) : requirement!.Permission switch
+        var (action, category) = rawEndpoint ? (AuditAction.ReadQuarantineContent, AuditResourceCategory.Quarantine) : presentation is not null ? (presentation.Action, presentation.Category) : requirement!.Permission switch
         {
             OperatorPermission.DriverRead => (AuditAction.ResolveDriver, AuditResourceCategory.Driver),
             OperatorPermission.QuarantineRawRead => (AuditAction.ReadQuarantineContent, AuditResourceCategory.Quarantine),

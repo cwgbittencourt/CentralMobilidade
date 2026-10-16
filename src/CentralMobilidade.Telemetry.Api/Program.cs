@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using CentralMobilidade.Telemetry.Api.Endpoints.V1;
+using CentralMobilidade.Telemetry.Api.Endpoints.V1.Presentation;
 using CentralMobilidade.Telemetry.Api.Security;
 using CentralMobilidade.Telemetry.Application.Abstractions;
 using CentralMobilidade.Telemetry.Application.Configuration;
@@ -83,6 +84,7 @@ try
     app.MapGetBatchStatusEndpoint();
     app.MapListBatchRejectionsEndpoint();
     app.MapGetQuarantinedRejectionContentEndpoint();
+    app.MapPresentationEndpoints();
     app.MapTelemetryMetrics();
     app.MapTelemetryHealthEndpoints();
 

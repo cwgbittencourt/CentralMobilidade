@@ -89,7 +89,6 @@ public sealed class VehicleTripQueryTests(HistoricalTripServer server) : IClassF
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T069-T070")]
     [InlineData(10000, 4)]
     [InlineData(2, 2)]
     public async Task Production_trip_returns_old_single_vehicle_points_in_event_order(int limit, int expected)
@@ -108,7 +107,6 @@ public sealed class VehicleTripQueryTests(HistoricalTripServer server) : IClassF
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T069-T070")]
     public async Task Production_empty_old_window_is_an_empty_successful_array()
     {
         await using var host = await TripHost.StartAsync(server);
@@ -119,13 +117,31 @@ public sealed class VehicleTripQueryTests(HistoricalTripServer server) : IClassF
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T069-T070")]
     public async Task Production_enforces_24_hours_even_when_sparse_Core_query_would_succeed()
     {
         await using var host = await TripHost.StartAsync(server);
         using var response = await host.GetAsync(server.Start, server.Start.AddHours(24).AddTicks(1), 10000);
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).ShouldContain("REQUEST_INVALID");
+    }
+
+    [Fact]
+    public async Task Latest_endpoint_pages_real_stored_positions_and_returns_continuation_only_when_needed()
+    {
+        await using var host = await TripHost.StartAsync(server);
+        using var first = await host.GetLatestAsync();
+        first.StatusCode.ShouldBe(HttpStatusCode.OK);
+        first.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        var rows = JsonSerializer.Deserialize<TelemetryPosition[]>(await first.Content.ReadAsStringAsync()).ShouldNotBeNull();
+        rows.ShouldHaveSingleItem().VehicleId.ShouldBe("different-vehicle");
+        var cursor = first.Headers.GetValues("X-Next-Cursor").Single();
+        using var second = await host.GetLatestAsync(cursor);
+        second.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var last = JsonSerializer.Deserialize<TelemetryPosition[]>(await second.Content.ReadAsStringAsync()).ShouldNotBeNull().ShouldHaveSingleItem();
+        last.EmpresaId.ShouldBe("unregistered-company");
+        last.VehicleId.ShouldBe("trip-vehicle");
+        last.EventTime.ShouldBe(server.Start.AddMinutes(20));
+        second.Headers.Contains("X-Next-Cursor").ShouldBeFalse();
     }
 
     private void AssertTrip(DateTimeOffset[] times, int count)
@@ -191,6 +207,14 @@ public sealed class VehicleTripQueryTests(HistoricalTripServer server) : IClassF
         {
             var path = "/api/v1/presentation/telemetry/trips/trip-vehicle?empresaId=unregistered-company&fromUtc=" + Uri.EscapeDataString(from.ToString("O"))
                 + "&toUtc=" + Uri.EscapeDataString(to.ToString("O")) + "&limit=" + limit.ToString(CultureInfo.InvariantCulture);
+            return await GetPathAsync(path);
+        }
+
+        public Task<HttpResponseMessage> GetLatestAsync(string? cursor = null) => GetPathAsync("/api/v1/presentation/telemetry/latest?empresaId=unregistered-company&limit=1"
+            + (cursor is null ? "" : "&cursor=" + Uri.EscapeDataString(cursor)));
+
+        private async Task<HttpResponseMessage> GetPathAsync(string path)
+        {
             using var request = new HttpRequestMessage(HttpMethod.Get, path);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             return await client.SendAsync(request);

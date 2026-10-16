@@ -111,3 +111,9 @@ driver handler, configured authorizer and durable audit writer through DI.
 The T065 HTTP tests remain active until T070 provides `MapPresentationEndpoints`.
 Adapter configuration and evidence limits are documented in
 `src/CentralMobilidade.Telemetry.Infrastructure/Presentation/README.md`.
+
+T070 maps the real routes: all four original HTTP trip cases now pass and no
+longer carry PendingImplementation. A new HTTP latest-position test pages the
+real historical Parquet rows, checks the correct company/latest event, follows
+`X-Next-Cursor` and verifies its absence on the final page. No test endpoint or
+synthetic production query handler substitutes for the implementation.

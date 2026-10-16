@@ -184,7 +184,6 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T070")]
     [InlineData(Latest)]
     [InlineData(Trip)]
     [InlineData(Health)]
@@ -202,7 +201,6 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T070")]
     [InlineData("human", Latest)]
     [InlineData("service", Latest)]
     [InlineData("human", Trip)]
@@ -242,7 +240,6 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T069-T070")]
     [MemberData(nameof(NumericBoundaries))]
     public async Task Every_numeric_query_boundary_is_enforced_by_production_before_backend_IO(string route, string query, bool valid)
     {
@@ -257,7 +254,6 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T069-T070")]
     [InlineData(Latest, "LatestPositionMaxVehicles", "2", "limit=3", false)]
     [InlineData(Latest, "LatestPositionMaxVehicles", "2", "limit=2", true)]
     [InlineData(Trip, "TripMaxPoints", "2", "limit=3", false)]
@@ -280,7 +276,6 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T069-T070")]
     [InlineData("human", Latest)]
     [InlineData("human", Trip)]
     [InlineData("human", Health)]
@@ -298,7 +293,6 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T068-T070")]
     [InlineData("human")]
     [InlineData("service")]
     public async Task Driver_identity_is_minimal_and_audited_with_company_and_trusted_actor_before_disclosure(string actor)
@@ -325,7 +319,6 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T068-T070")]
     [InlineData("throw")]
     [InlineData("wrong-event")]
     [InlineData("missing-time")]
@@ -342,7 +335,6 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T068-T070")]
     public async Task Driver_response_waits_for_durable_audit_commit()
     {
         await using var host = await Host.StartAsync(database, production: true);
@@ -360,7 +352,6 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T068-T070")]
     public async Task Human_cross_company_identity_read_requires_both_permissions_and_audits_the_expansion()
     {
         await using var host = await Host.StartAsync(database, production: true, cross: true);
@@ -376,6 +367,107 @@ public sealed class PresentationAuthorizationTests(PresentationAuthorizationData
             await host.AssertPersistedAsync(record);
             AssertPrivate(JsonSerializer.Serialize(record), host);
         }
+    }
+
+    [Theory]
+    [InlineData(Latest, "missing")]
+    [InlineData(Trip, "missing")]
+    [InlineData(Health, "invalid")]
+    [InlineData(DriverRoute, "invalid")]
+    public async Task Presentation_challenges_are_audited_and_never_cached(string route, string actor)
+    {
+        await using var host = await Host.StartAsync(database, production: true);
+        using var response = await host.GetAsync(Query(route), actor);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        response.Headers.WwwAuthenticate.ToString().ShouldBe("Bearer");
+        response.Content.Headers.ContentType!.MediaType.ShouldBe("application/problem+json");
+        var record = host.Audit.Records.ShouldHaveSingleItem();
+        record.Actor.Kind.ShouldBe(OperatorActorKind.Unidentified);
+        await host.AssertPersistedAsync(record);
+        host.Driver.Calls.ShouldBe(0);
+        host.Backend.Calls.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(Latest, "empresaId=duplicate-company")]
+    [InlineData(Latest, "limit=1&limit=2")]
+    [InlineData(Latest, "limit=")]
+    [InlineData(Latest, "Limit=2")]
+    [InlineData(Latest, "cursor=!")]
+    [InlineData(Latest, "vehicleId=")]
+    [InlineData(Latest, "sql=SELECT%20private-data")]
+    [InlineData(Trip, "fromUtc=2026-10-01T00:00:00Z")]
+    [InlineData(Trip, "toUtc=2026-10-01")]
+    [InlineData(Trip, "toUtc=2026-10-01T01:00:00")]
+    [InlineData(Trip, "toUtc=2026-10-01T01:00:00%2B01:00")]
+    [InlineData(Health, "granularitySeconds=60&granularitySeconds=120")]
+    [InlineData(DriverRoute, "empresaId=duplicate-company")]
+    public async Task Ambiguous_empty_or_unsupported_query_parameters_fail_before_backend_IO(string route, string extra)
+    {
+        await using var host = await Host.StartAsync(database, production: true);
+        using var response = await host.GetAsync(Query(route, extra: extra), "service");
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        response.Content.Headers.ContentType!.MediaType.ShouldBe("application/problem+json");
+        var body = await response.Content.ReadAsStringAsync();
+        body.ShouldContain("REQUEST_INVALID");
+        body.ShouldNotContain("SELECT");
+        AssertPrivate(body, host);
+        host.Driver.Calls.ShouldBe(0);
+        host.Backend.Calls.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(Latest)]
+    [InlineData(Trip)]
+    [InlineData(Health)]
+    [InlineData(DriverRoute)]
+    public async Task Missing_company_is_a_stable_problem_before_backend_IO(string route)
+    {
+        await using var host = await Host.StartAsync(database, production: true);
+        using var response = await host.GetAsync(route, "human");
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).ShouldContain("REQUEST_INVALID");
+        host.Driver.Calls.ShouldBe(0);
+        host.Backend.Calls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Presentation_authentication_denial_fails_closed_when_audit_is_unavailable()
+    {
+        await using var host = await Host.StartAsync(database, production: true);
+        host.Audit.Mode = "throw";
+        using var response = await host.GetAsync(Query(DriverRoute), "producer");
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        (await response.Content.ReadAsStringAsync()).ShouldContain("AUDIT_UNAVAILABLE");
+        host.Driver.Calls.ShouldBe(0);
+        host.Backend.Calls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Health_endpoint_serializes_real_persisted_company_outcomes_as_a_bounded_array()
+    {
+        await using var host = await Host.StartAsync(database, production: true);
+        var start = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+        var batch = Guid.NewGuid();
+        await using (var db = database.Create())
+        {
+            db.Batches.Add(new IngestionBatch { BatchId = batch, ProducerId = "producer", TraceId = "trace", ReceivedAt = start, ExpiresAt = start.AddDays(30) });
+            db.LineResults.Add(new LineProcessingResult { BatchId = batch, LineNumber = 1, CompanyId = Company, Outcome = LineOutcome.Accepted, OccurredAt = start, SafeDigest = "digest" });
+            db.LineResults.Add(new LineProcessingResult { BatchId = batch, LineNumber = 2, CompanyId = OtherCompany, Outcome = LineOutcome.Rejected, OccurredAt = start, SafeDigest = "digest" });
+            await db.SaveChangesAsync();
+        }
+        using var response = await host.GetAsync(Health + "?empresaId=" + Company + "&fromUtc=2026-09-01T00:00:00Z&toUtc=2026-09-01T00:01:00Z", "service");
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var point = json.RootElement.EnumerateArray().ShouldHaveSingleItem();
+        point.EnumerateObject().Select(property => property.Name).Order().ShouldBe(new[] { "accepted", "empresaId", "rejected", "time" });
+        point.GetProperty("empresaId").GetString().ShouldBe(Company);
+        point.GetProperty("accepted").GetInt64().ShouldBe(1);
+        point.GetProperty("rejected").GetInt64().ShouldBe(0);
     }
 
     private static string Query(string route, string company = Company, string? extra = null)

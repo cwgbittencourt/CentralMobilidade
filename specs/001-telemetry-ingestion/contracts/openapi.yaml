@@ -233,6 +233,12 @@ paths:
             type: string
             maxLength: 128
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/PresentationFailure'
+        '503':
+          $ref: '#/components/responses/AuditUnavailable'
         '200':
           description: Masked driver presentation; access is audited.
           content:
@@ -275,6 +281,12 @@ paths:
             type: string
             maxLength: 128
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/PresentationFailure'
+        '503':
+          $ref: '#/components/responses/AuditUnavailable'
         '200':
           description: Latest authorized vehicle positions.
           headers:
@@ -319,6 +331,12 @@ paths:
             maximum: 10000
             default: 10000
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/PresentationFailure'
+        '503':
+          $ref: '#/components/responses/AuditUnavailable'
         '200':
           description: Authorized trip points in ascending event-time order.
           content:
@@ -359,6 +377,12 @@ paths:
             maximum: 10000
             default: 10000
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/PresentationFailure'
+        '503':
+          $ref: '#/components/responses/AuditUnavailable'
         '200':
           description: Authorized ingestion-health series.
           content:
@@ -421,8 +445,20 @@ components:
         type: string
         format: date-time
   responses:
+    PresentationFailure:
+      description: Presentation backend failed. No provider diagnostics or partial data are returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    AuditUnavailable:
+      description: Durable audit could not be confirmed. No identity or cross-company data are disclosed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     BadRequest:
-      description: The request metadata or body is malformed before durable acceptance.
+      description: The request parameters, metadata or body are malformed. No operation is performed.
       content:
         application/problem+json:
           schema:

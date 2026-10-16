@@ -78,3 +78,7 @@ is propagated; partially transmitted responses are not replaced with JSON.
 
 The status endpoint now supplies the rejection-list link only to authorized human
 operators; producers receive no administrative link. No new migration is needed.
+
+The T070 presentation routes are documented in [Presentation/README.md](Presentation/README.md).
+They accept operator/viewer service credentials, enforce company scope in the
+T069 handlers and retain durable audit barriers for identity and cross-company reads.

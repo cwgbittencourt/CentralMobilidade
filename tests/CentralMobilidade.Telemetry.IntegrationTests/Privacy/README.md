@@ -97,3 +97,9 @@ T069 now supplies the production registration and application handlers, tested
 directly in UnitTests/Presentation and IntegrationTests/Queries. The T064 HTTP
 assertions remain active: their missing seam is `MapPresentationEndpoints`, owned
 by T070. No sentinel route replaces the production presentation endpoints.
+
+T070 completes that mapping: all original 75 production HTTP cases now pass and
+their obsolete PendingImplementation traits were removed. Additional production
+route cases cover audited/no-store challenges, missing/duplicate/empty/unsupported
+parameters, malformed/non-UTC dates, SQL rejection, audit failure on producer
+denial and populated company-scoped health JSON from real PostgreSQL rows.

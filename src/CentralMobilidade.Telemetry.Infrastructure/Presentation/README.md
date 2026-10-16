@@ -5,7 +5,8 @@ handlers and closed query ports. The API composes these services when its contro
 database is configured, alongside durable audit persistence. Authentication,
 `IAuthenticationCredentialStore`, `IOperatorAuthorizer` and `IAuditWriter` must be
 provided by the host. Custom query ports and the optional driver resolver can be
-registered first; registration preserves them. HTTP routes belong to T070.
+registered first; registration preserves them. T070 maps the HTTP routes through
+`Api/Endpoints/V1/Presentation/PresentationEndpoints.cs`.
 
 Every operation checks the enabled server-side profile and its independent
 `telemetry.read` or `driver.read` permission. A company absent from the allowlist
@@ -62,4 +63,4 @@ Validation is in `UnitTests/Presentation` and
 revocation, audit barrier/failures, bounds, cursor, query injection and malformed
 provider controls; real Influx 3.11.6 historical Parquet/optional-column queries;
 real PostgreSQL buckets and DI-composed identity disclosure using the durable
-writer. T064/T065 HTTP cases stay active until T070 maps the production routes.
+writer. T070 now maps the production routes and resolves the T064/T065 HTTP cases.
