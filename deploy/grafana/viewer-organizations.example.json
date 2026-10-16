@@ -1,0 +1,22 @@
+{
+  "bootstrap": {
+    "usernameEnv": "GRAFANA_ADMIN_USER",
+    "passwordEnv": "GRAFANA_ADMIN_PASSWORD"
+  },
+  "readinessTimeoutSeconds": 60,
+  "organizations": [
+    {
+      "name": "Mobilidade Viewer A",
+      "companyIds": ["company-a"],
+      "members": [{"login": "viewer-a@example.invalid", "role": "Viewer"}],
+      "serviceAccount": {"name": "centralmobilidade-reconciler-a", "role": "Admin"},
+      "presentation": {
+        "baseUrl": "http://api:8080",
+        "credentialEnv": "GRAFANA_VIEWER_A_API_TOKEN",
+        "permissions": ["telemetry.read", "driver.read"]
+      },
+      "datasourceUid": "viewer-api-a",
+      "dashboardDirectory": "../deploy/grafana/dashboards/viewer"
+    }
+  ]
+}

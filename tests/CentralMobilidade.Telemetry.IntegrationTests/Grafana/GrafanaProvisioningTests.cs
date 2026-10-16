@@ -57,7 +57,7 @@ public sealed class GrafanaProvisioningTests
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T071-T074")]
+    [Trait("PendingImplementation", "T072-T074")]
     public async Task Internal_YAML_is_loaded_by_real_Grafana_and_creates_only_the_internal_organization()
     {
         var provisioning = Path.Combine(Root, "deploy/grafana/provisioning");
@@ -87,7 +87,6 @@ public sealed class GrafanaProvisioningTests
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T071")]
     public async Task Reconciler_converges_twice_with_Basic_bootstrap_org_local_tokens_and_separate_presentation_secrets()
     {
         RequireScript();
@@ -109,7 +108,7 @@ public sealed class GrafanaProvisioningTests
         foreach (var request in api.Requests.Where(r => r.Path.StartsWith("/api/datasources", StringComparison.Ordinal) || r.Path == "/api/dashboards/db"))
         {
             request.Authorization.ShouldStartWith("Bearer gsa-test-");
-            api.TokenOrganizations[request.Authorization[7..]].ShouldBe(request.Organization);
+            api.TokenHistory[request.Authorization[7..]].ShouldBe(request.Organization);
         }
         foreach (var (org, datasource) in api.Datasources)
         {
@@ -119,7 +118,7 @@ public sealed class GrafanaProvisioningTests
             secret.ShouldBe(api.Presentation[org - 2]);
             var serialized = datasource.GetRawText();
             serialized.ShouldNotContain(api.Password);
-            foreach (var token in api.TokenOrganizations.Keys)
+            foreach (var token in api.TokenHistory.Keys)
                 serialized.ShouldNotContain(token);
             datasource.GetProperty("jsonData").GetProperty("allowedHosts").GetArrayLength().ShouldBeGreaterThan(0);
         }
@@ -129,7 +128,6 @@ public sealed class GrafanaProvisioningTests
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T071")]
     [InlineData("grafana-version")]
     [InlineData("plugin-version")]
     [InlineData("plugin-missing")]
@@ -144,7 +142,6 @@ public sealed class GrafanaProvisioningTests
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T071")]
     [InlineData("bootstrap")]
     [InlineData("other-viewer")]
     public async Task Reconciler_rejects_reused_credentials_without_disclosing_them(string collision)
@@ -156,7 +153,6 @@ public sealed class GrafanaProvisioningTests
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T071")]
     [InlineData("service-token-as-bootstrap")]
     [InlineData("organization-mismatch")]
     public async Task Reconciler_cannot_expand_scope_or_use_a_service_token_for_admin_organization_calls(string fault)
@@ -165,6 +161,34 @@ public sealed class GrafanaProvisioningTests
         await using var api = await ProvisioningApi.StartAsync(fault);
         await api.RunAsync(success: false);
         api.Datasources.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Reconciler_removes_only_previously_managed_members_absent_from_the_new_configuration()
+    {
+        await using var api = await ProvisioningApi.StartAsync("member-removal");
+        await api.RunAsync(success: true);
+        api.MembershipCount.ShouldBe(2);
+        await api.RunAsync(success: true);
+        api.MembershipCount.ShouldBe(0);
+        api.Requests.Count(request => request.Method == "DELETE" && request.Path.Contains("/users/", StringComparison.Ordinal)).ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData("weak-account")]
+    [InlineData("privileged-presentation")]
+    [InlineData("privileged-member")]
+    [InlineData("empty-scope")]
+    [InlineData("bad-dashboard")]
+    [InlineData("internal-member")]
+    [InlineData("direct-source")]
+    public async Task Reconciler_refuses_unsafe_configuration_or_contaminated_viewer_organizations(string fault)
+    {
+        await using var api = await ProvisioningApi.StartAsync(fault);
+        await api.RunAsync(success: false);
+        api.Datasources.ShouldBeEmpty();
+        api.Requests.ShouldNotContain(request => (request.Method == "POST" || request.Method == "PUT") && (request.Path.StartsWith("/api/datasources", StringComparison.Ordinal) || request.Path == "/api/dashboards/db"));
+        api.TokenOrganizations.ShouldBeEmpty();
     }
 
     [Theory]
@@ -292,11 +316,14 @@ public sealed class GrafanaProvisioningTests
         public Dictionary<string, int> TokenOrganizations { get; } = new();
         public Dictionary<int, JsonElement> Datasources { get; } = new();
         public Dictionary<int, JsonElement> Dashboards { get; } = new();
+        public Dictionary<string, int> TokenHistory { get; } = new();
         private readonly Dictionary<int, HashSet<string>> memberships = new();
         private readonly Dictionary<int, JsonElement> accounts = new();
         private readonly Dictionary<string, int> tokenIds = new();
         private readonly List<string> mintedTokens = new();
         private int nextToken;
+        private int runs;
+        public int MembershipCount => memberships.Values.Sum(m => m.Count);
         private bool healthy;
         public bool HealthyBeforeMutation { get; private set; } = true;
         public (int, int, int, int, int) Resources => (Organizations.Count, accounts.Count, Datasources.Count, Dashboards.Count, memberships.Values.Sum(m => m.Count));
@@ -313,7 +340,10 @@ public sealed class GrafanaProvisioningTests
             var url = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
             var directory = Path.Combine(Path.GetTempPath(), "t066-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
-            return api = new(app, url, fault, directory);
+            api = new(app, url, fault, directory);
+            if (fault == "internal-member")
+                api.memberships[1] = new() { "viewer-0" };
+            return api;
         }
 
         private async Task HandleAsync(HttpContext context)
@@ -412,6 +442,14 @@ public sealed class GrafanaProvisioningTests
                     memberships[org] = members = new();
                 if (request.Method == "GET")
                     await context.Response.WriteAsJsonAsync(members.Select(m => new { userId = 42, login = m, email = m, role = "Viewer" }));
+                else if (request.Method == "DELETE")
+                {
+                    members.Clear();
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        message = "User removed"
+                    });
+                }
                 else
                 {
                     var login = data.GetProperty("loginOrEmail").GetString()!;
@@ -465,6 +503,7 @@ public sealed class GrafanaProvisioningTests
                 }
                 var key = "gsa-test-" + org + "-" + Guid.NewGuid().ToString("N");
                 TokenOrganizations[key] = org;
+                TokenHistory[key] = org;
                 tokenIds[key] = ++nextToken;
                 mintedTokens.Add(key);
                 await context.Response.WriteAsJsonAsync(new
@@ -507,7 +546,7 @@ public sealed class GrafanaProvisioningTests
                 if (request.Method == "GET")
                 {
                     if (path == "/api/datasources")
-                        await context.Response.WriteAsJsonAsync(store.TryGetValue(org, out var item) ? new[] { item } : []);
+                        await context.Response.WriteAsJsonAsync(fault == "direct-source" ? new[] { JsonSerializer.SerializeToElement(new { uid = "foreign", type = "influxdb" }) } : store.TryGetValue(org, out var item) ? new[] { item } : []);
                     else if (store.TryGetValue(org, out var item))
                         await context.Response.WriteAsJsonAsync(item);
                     else
@@ -529,6 +568,7 @@ public sealed class GrafanaProvisioningTests
 
         public async Task RunAsync(bool success)
         {
+            runs++;
             if (fault == "bootstrap")
                 Presentation[0] = Password;
             if (fault == "other-viewer")
@@ -536,6 +576,8 @@ public sealed class GrafanaProvisioningTests
             var dashboards = Path.Combine(directory, "dashboards");
             Directory.CreateDirectory(dashboards);
             await File.WriteAllTextAsync(Path.Combine(dashboards, "fixture.json"), """{"uid":"fixture-dashboard","title":"Fixture only","schemaVersion":41,"panels":[]}""");
+            if (fault == "bad-dashboard")
+                await File.WriteAllTextAsync(Path.Combine(dashboards, "fixture.json"), """{"uid":"fixture-dashboard","title":"Unsafe fixture","rawSql":"SELECT private","panels":[]}""");
             var config = new
             {
                 bootstrap = new
@@ -547,18 +589,18 @@ public sealed class GrafanaProvisioningTests
                 organizations = Enumerable.Range(0, 2).Select(i => new
                 {
                     name = "Viewer " + (char)('A' + i),
-                    companyIds = new[] { "company-" + (char)('a' + i) },
-                    members = new[] { new { login = "viewer-" + i, role = "Viewer" } },
+                    companyIds = fault == "empty-scope" ? [] : new[] { "company-" + (char)('a' + i) },
+                    members = fault == "member-removal" && runs > 1 ? [] : new[] { new { login = "viewer-" + i, role = fault == "privileged-member" ? "Admin" : "Viewer" } },
                     serviceAccount = new
                     {
                         name = "reconciler-" + i,
-                        role = "Admin"
+                        role = fault == "weak-account" ? "Editor" : "Admin"
                     },
                     presentation = new
                     {
                         baseUrl = "https://presentation.invalid",
                         credentialEnv = "T066_PRESENTATION_" + i,
-                        permissions = new[] { "telemetry.read", "driver.read" }
+                        permissions = fault == "privileged-presentation" ? new[] { "telemetry.read", "cross_company.read" } : new[] { "telemetry.read", "driver.read" }
                     },
                     datasourceUid = "viewer-api-" + i,
                     dashboardDirectory = dashboards
@@ -584,7 +626,7 @@ public sealed class GrafanaProvisioningTests
             var output = await stdout + await stderr;
             foreach (var secret in Presentation.Concat(mintedTokens).Append(Password).Append(Basic))
                 output.ShouldNotContain(secret);
-            (process.ExitCode == 0).ShouldBe(success, "Production reconciler must converge or fail closed without secrets in diagnostics.");
+            (process.ExitCode == 0).ShouldBe(success, "Production reconciler must converge or fail closed without secrets in diagnostics. Safe output: " + output);
         }
 
         public async ValueTask DisposeAsync()

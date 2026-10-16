@@ -4,7 +4,8 @@ This guide includes current startup and future acceptance scenarios. The
 [T112 foundation gate](../../artifacts/validation/foundation-single-influx/README.md) passed; T050–T053 processing and RabbitMQ worker wiring are implemented, including a mixed-batch host test with real storage. Status/presentation endpoints, Grafana
 provisioning, Pub/Sub parity and load/final-proof commands below are not all implemented. Sections
 4–10 are acceptance targets, not obtained results. Check tasks.md before running task-specific scripts;
-`Provision-GrafanaOrganizations.ps1` is planned for T071.
+`Provision-GrafanaOrganizations.ps1` is implemented in T071; its business-dashboard
+templates and rendering remain T072-T074. Follow [the configuration contract](../../deploy/grafana/README.md).
 
 ## Prerequisites
 
@@ -49,7 +50,9 @@ are named and persistent. One server `influxdb` stays running; `influxdb-init` i
 Base Compose publishes only Grafana on loopback. To publish development ports, include
 `-f deploy/compose.override.yaml` in start/status/stop commands. Starting the solution in the IDE
 does not invoke Compose. The following Grafana provisioning checks await T071–T075; the current
-bootstrap supplies the pinned image/plugin, not the finished dashboards or reconciler.
+bootstrap supplies the pinned image/plugin and internal datasource/provider YAML;
+business dashboard templates and rendering remain unfinished. The T071 reconciler
+requires those viewer templates before claiming complete reconciliation.
 
 After initial startup, YAML must provision only the internal default organization and its direct InfluxDB
 datasource and dashboards. Confirm the image reports the pinned Grafana and signed Infinity versions.

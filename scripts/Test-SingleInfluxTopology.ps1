@@ -1,7 +1,7 @@
 param()
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$keys = @('POSTGRES_PASSWORD', 'RABBITMQ_PASSWORD', 'GRAFANA_ADMIN_PASSWORD', 'INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE', 'INFLUXDB_PENDING_ADMIN_TOKEN_FILE')
+$keys = @('POSTGRES_PASSWORD', 'RABBITMQ_PASSWORD', 'GRAFANA_ADMIN_PASSWORD', 'INFLUXDB_GRAFANA_READ_TOKEN', 'INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE', 'INFLUXDB_PENDING_ADMIN_TOKEN_FILE')
 $saved = @{}
 foreach ($key in $keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process') }
 function Assert-Topology($condition, $message) {
@@ -9,7 +9,7 @@ function Assert-Topology($condition, $message) {
 }
 try {
     # Resolve configuration only. Never load the user's .env, print resolved secrets, or start services.
-    foreach ($key in $keys[0..2]) { [Environment]::SetEnvironmentVariable($key, [guid]::NewGuid().ToString('N'), 'Process') }
+    foreach ($key in $keys[0..3]) { [Environment]::SetEnvironmentVariable($key, [guid]::NewGuid().ToString('N'), 'Process') }
     [Environment]::SetEnvironmentVariable('INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE', (Join-Path $root '.env.example'), 'Process')
     [Environment]::SetEnvironmentVariable('INFLUXDB_PENDING_ADMIN_TOKEN_FILE', $null, 'Process')
     foreach ($development in @($false, $true)) {

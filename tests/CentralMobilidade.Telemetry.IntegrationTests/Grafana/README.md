@@ -127,3 +127,27 @@ Final functional integration regression (separate ADR measurement probe excluded
 zero skips and no unexpected failures. Unit 244/244 and architecture 47/47 passed;
 contracts retained 86 passes and the 16 existing T067 failures. Build and whitespace
 verification passed without warnings/errors. No capacity benchmark was run.
+
+## T071 implementation evidence
+
+The production internal YAML/provider, Compose read-only mounts, secret-file image
+wrapper and `Provision-GrafanaOrganizations.ps1` are implemented. The original ten
+reconciler cases pass and no longer carry PendingImplementation. The harness now
+keeps token attribution history separately from active tokens: a rotated/revoked
+token must still be attributable in old captured requests. This preserves the
+original reuse-or-revoke requirement while checking active-token convergence.
+
+Eight additional protocol cases verify managed-member removal and refusal of
+privileged presentation/member permissions, insufficient service-account role,
+empty company scope, unsafe viewer SQL dashboards, internal-org viewer membership
+and contamination by a direct Influx datasource. Two real-container tests load
+the production YAML and execute the production script twice against pinned Grafana,
+proving scoped resource convergence, actual token replacement, datasource-secret
+non-export and authenticated Infinity backend health against a synthetic local API.
+These are not business-dashboard rendering or API company-scope claims.
+
+The combined original internal-loading test now reaches the absent three business
+dashboards; its pending dependency is T072-T074. It and the seven production
+panel/frame/render cases remain active. No dummy business dashboards were added.
+Configuration/runtime constraints are documented in `deploy/grafana/README.md`;
+reports are ignored under `artifacts/validation/T071/`.

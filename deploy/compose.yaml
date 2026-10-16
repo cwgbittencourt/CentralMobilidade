@@ -112,11 +112,14 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
-    secrets: [grafana_admin_password]
+      INFLUXDB_GRAFANA_READ_TOKEN_FILE: /run/secrets/influxdb_grafana_read_token
+    secrets: [grafana_admin_password, influxdb_grafana_read_token]
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards/internal:/var/lib/grafana/dashboards/internal:ro
     networks: [backend]
     depends_on:
       influxdb-init:
@@ -147,6 +150,8 @@ secrets:
     environment: POSTGRES_PASSWORD
   grafana_admin_password:
     environment: GRAFANA_ADMIN_PASSWORD
+  influxdb_grafana_read_token:
+    environment: INFLUXDB_GRAFANA_READ_TOKEN
   influxdb_queryable_admin_token:
     file: ${INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE:?Set the absolute offline token JSON path}
 
