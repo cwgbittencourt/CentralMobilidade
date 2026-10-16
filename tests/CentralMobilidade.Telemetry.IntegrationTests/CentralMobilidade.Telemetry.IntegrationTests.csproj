@@ -28,6 +28,7 @@
     <PackageReference Include="Testcontainers.RabbitMq" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="../CentralMobilidade.Telemetry.ContractTests/Queue/DurableBatchQueueContractTests.cs" Link="Queue/Shared/DurableBatchQueueContractTests.cs" />
     <Content Include="../../deploy/postgres/runtime-grants.sql" Link="Upgrade/runtime-grants.sql" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../scripts/sql/reconcile-single-influx-page.sql" Link="Upgrade/reconcile-single-influx-page.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -63,3 +63,18 @@ A suíte completa teve 289 aprovações e somente 36 falhas de intake ainda pend
 
 Esta etapa não comprova reinício/perda do host, implementação do consumidor ou durabilidade
 de Pub/Sub. Relatórios TRX locais ficam em `artifacts/validation/T026/`, ignorado pelo Git.
+
+## T076 — contrato reutilizável de provedores
+
+`RabbitMqReusableQueueContractTests` executa os 16 casos herdados da
+[suíte compartilhada](../../CentralMobilidade.Telemetry.ContractTests/Queue/README.md)
+contra publicador/consumidor de produção e um broker isolado. O arquivo de contrato
+é vinculado no projeto de integração, sem cópia de asserções nem referência entre
+assemblies de testes. Inspeção nativa verifica os bytes gzip e atributos reais,
+além das propriedades AMQP de persistência, conteúdo e correlação.
+
+A confirmação retida/nack/timeout reutiliza o interceptor controlado já existente;
+não representa falha física do RabbitMQ. Os demais fluxos usam o broker real.
+Recursos têm nomes exclusivos e são removidos após cada caso. Não há fila em memória,
+caso ignorado ou implementação antecipada de Pub/Sub. T077/T080 continuam necessários
+para comprovar paridade. As notas T026/T031 acima são evidência histórica.

@@ -165,6 +165,10 @@ and optional CPF suffix and produces an audit event.
 
 ## 8. Validate provider parity
 
+T076 provides the [shared queue contract suite](../../tests/CentralMobilidade.Telemetry.ContractTests/Queue/README.md)
+and an executable real-RabbitMQ binding. Pub/Sub emulator binding/adapter remain
+T077/T080; a passing RabbitMQ run alone does not establish parity.
+
 Start the Google Pub/Sub emulator profile and execute the queue contract suite against RabbitMQ and the
 emulator.
 
