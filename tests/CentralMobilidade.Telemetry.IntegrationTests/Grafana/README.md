@@ -151,3 +151,34 @@ dashboards; its pending dependency is T072-T074. It and the seven production
 panel/frame/render cases remain active. No dummy business dashboards were added.
 Configuration/runtime constraints are documented in `deploy/grafana/README.md`;
 reports are ignored under `artifacts/validation/T071/`.
+
+## T072 latest-position query/render fixture
+
+The two latest-position rendering cases now start `LatestDashboardFixture` lazily,
+without requiring a manually supplied render-state file. It creates a unique
+Docker network, pinned InfluxDB 3.11.6, migrated PostgreSQL, production T069/T070
+API composition on Kestrel, pinned Grafana 12.2.5/Infinity 4.1.1 and a test-only
+`grafana/grafana-image-renderer:v4.0.17`. It exposes the API host port before creating
+Grafana, imports internal JSON through the production YAML and viewer JSON through
+the production T071 reconciler, and queries/renders with org-local Viewer accounts.
+No test datasource data or substitute dashboard query handler replaces production.
+
+The dataset has unordered 28-day-old points, two vehicles and another company.
+Semantic assertions prove the latest event is chosen before the 500-row limit,
+old last-known positions remain visible, company separation holds, viewer limit
+one yields one row, limit 501 is rejected by the API, and the viewer cannot discover
+the internal datasource. Denial checks inspect the actual upstream 404/400 codes
+and empty frame data, allowing Infinity's diagnostic-only empty frame.
+
+Every latest-position panel must produce real frames before requesting its real
+PNG. Images go under ignored `artifacts/validation/T072/render/` and receive visual
+review in addition to PNG signature/size checks. This establishes the two latest
+views, not capacity/retention approval or the later trip/health/driver views.
+The remaining five rendering cases still require their production JSON/fixture
+wiring; the combined internal loading case still expects all three internal files.
+Their pending dependency is T073-T074. No case is skipped or replaced with a mock.
+
+The fixture exposed two real provider requirements: Influx SQL targets use
+`rawSql`/`format: table`, and Infinity base URLs belong to the datasource's top-level
+`url`. Custom absolute-URL health alone had not tested relative query resolution.
+Both production models/provisioning were corrected and covered through real queries.

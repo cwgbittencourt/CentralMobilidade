@@ -4,7 +4,8 @@ The pinned Grafana 12.2.5 image contains signed Infinity 4.1.1. Compose mounts
 `provisioning/` and `dashboards/internal/` read-only. YAML targets only organization
 1, with immutable `internal-influx` (SQL/FlightSQL), `internal-prometheus` and
 `internal-loki` datasource UIDs and the internal file-dashboard provider. Business
-dashboard JSON is supplied by T072-T074; an empty directory creates no placeholder
+dashboard JSON is supplied by T072-T074; T072 now supplies the two latest-position
+views (see [dashboard behavior](dashboards/README.md)). An empty directory creates no placeholder
 panels and does not establish rendering or query success.
 
 Supply `INFLUXDB_GRAFANA_READ_TOKEN` privately as a read-only token for the telemetry
@@ -22,7 +23,11 @@ Resolve dashboard paths relative to that configuration file. The shown path work
 when the private file is directly under `data/`. Populate the viewer directory
 with the T072-T074 templates before running: the script rejects missing/empty
 dashboard directories rather than reporting finished dashboards. Viewer templates
-may use `${VIEWER_DATASOURCE_UID}`, which is replaced for each organization.
+may use `${VIEWER_DATASOURCE_UID}`, which is replaced for each organization, and
+`${VIEWER_COMPANY_ID}` as an entire JSON string value for the first permitted
+company's initial selection. Company replacement is JSON-escaped, not executable
+template text. Infinity's base URL is the datasource's top-level `url`, separate
+from its bearer/allowlist settings in `jsonData`.
 
 Run from PowerShell 7.4+ with secret environment variables already supplied by the
 operator's secret source (no secret arguments):

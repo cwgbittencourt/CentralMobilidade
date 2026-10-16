@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
+using DotNet.Testcontainers.Networks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -27,7 +28,7 @@ using Xunit;
 
 namespace CentralMobilidade.Telemetry.IntegrationTests.Grafana;
 
-public sealed class GrafanaProvisioningTests
+public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IClassFixture<LatestDashboardFixture>
 {
     internal const string Plugin = "yesoreyeram-infinity-datasource";
     internal static string Root
@@ -121,6 +122,7 @@ public sealed class GrafanaProvisioningTests
             foreach (var token in api.TokenHistory.Keys)
                 serialized.ShouldNotContain(token);
             datasource.GetProperty("jsonData").GetProperty("allowedHosts").GetArrayLength().ShouldBeGreaterThan(0);
+            api.Dashboards[org].GetProperty("dashboard").GetProperty("templating").GetProperty("list")[0].GetProperty("current").GetProperty("value").GetString().ShouldBe("company-" + (char)('a' + org - 2));
         }
         api.Requests.Where(r => r.Path == "/api/serviceaccounts" && r.Method == "POST").ShouldAllBe(r => r.Organization > 1 && !r.Body.Contains("GrafanaAdmin", StringComparison.Ordinal));
         api.Requests.ShouldContain(r => r.Path.EndsWith("/users", StringComparison.Ordinal) && r.Method == "POST");
@@ -192,15 +194,20 @@ public sealed class GrafanaProvisioningTests
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T072-T074")]
-    [InlineData("internal", "latest-vehicle-position")]
+    [Trait("PendingImplementation", "T073-T074")]
     [InlineData("internal", "vehicle-trip")]
     [InlineData("internal", "company-ingestion-health")]
-    [InlineData("viewer", "latest-vehicle-position")]
     [InlineData("viewer", "vehicle-trip")]
     [InlineData("viewer", "company-ingestion-health")]
     [InlineData("viewer", "driver-presentation")]
-    public async Task Every_production_panel_has_real_query_frames_and_renders_to_PNG(string audience, string dashboard)
+    public Task Every_production_panel_has_real_query_frames_and_renders_to_PNG(string audience, string dashboard) => AssertProductionPanelsAsync(audience, dashboard);
+
+    [Theory]
+    [InlineData("internal")]
+    [InlineData("viewer")]
+    public Task Latest_position_production_panel_has_real_query_frames_and_renders_to_PNG(string audience) => AssertProductionPanelsAsync(audience, "latest-vehicle-position");
+
+    private async Task AssertProductionPanelsAsync(string audience, string dashboard)
     {
         var file = Path.Combine(Root, "deploy/grafana/dashboards", audience, dashboard + ".json");
         File.Exists(file).ShouldBeTrue("T072-T074 must provide this production dashboard; a mock dashboard is not rendering evidence.");
@@ -212,10 +219,16 @@ public sealed class GrafanaProvisioningTests
         panelIds.Distinct().Count().ShouldBe(panelIds.Length);
         RequireScript();
         // Real datasource provisioning/data must accompany these dashboards before rendering can pass.
-        var statePath = Environment.GetEnvironmentVariable("TELEMETRY_TEST_GRAFANA_RENDER_STATE");
-        File.Exists(statePath).ShouldBeTrue("Provide private render state from the isolated T071 + T069/T070 fixture: grafanaUrl, orgId, serviceToken, variables.");
-        using var state = JsonDocument.Parse(await File.ReadAllTextAsync(statePath!));
-        var settings = state.RootElement.GetProperty(audience);
+        JsonElement settings;
+        if (dashboard == "latest-vehicle-position")
+            settings = await latest.GetSettingsAsync(audience);
+        else
+        {
+            var statePath = Environment.GetEnvironmentVariable("TELEMETRY_TEST_GRAFANA_RENDER_STATE");
+            File.Exists(statePath).ShouldBeTrue("Provide private render state from the isolated T071 + T069/T070 fixture: grafanaUrl, orgId, serviceToken, variables.");
+            using var state = JsonDocument.Parse(await File.ReadAllTextAsync(statePath!));
+            settings = state.RootElement.GetProperty(audience).Clone();
+        }
         using var client = new HttpClient { BaseAddress = new Uri(settings.GetProperty("grafanaUrl").GetString()!), Timeout = TimeSpan.FromSeconds(60) };
         client.DefaultRequestHeaders.Authorization = new("Bearer", settings.GetProperty("serviceToken").GetString());
         client.DefaultRequestHeaders.Add("X-Grafana-Org-Id", settings.GetProperty("orgId").ToString());
@@ -247,7 +260,7 @@ public sealed class GrafanaProvisioningTests
                 from = variables.GetProperty("from").GetString(),
                 to = variables.GetProperty("to").GetString()
             });
-            query.EnsureSuccessStatusCode();
+            query.IsSuccessStatusCode.ShouldBeTrue(await query.Content.ReadAsStringAsync());
             using var frames = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
             var results = frames.RootElement.GetProperty("results").EnumerateObject().ToArray();
             results.ShouldNotBeEmpty();
@@ -266,13 +279,104 @@ public sealed class GrafanaProvisioningTests
             var png = await response.Content.ReadAsByteArrayAsync();
             png.Length.ShouldBeGreaterThan(1000);
             png.Take(8).ShouldBe(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
-            var output = Path.Combine(Root, "artifacts/validation/T066/render", audience, dashboard);
+            var output = Path.Combine(Root, dashboard == "latest-vehicle-position" ? "artifacts/validation/T072/render" : "artifacts/validation/T066/render", audience, dashboard);
             Directory.CreateDirectory(output);
             await File.WriteAllBytesAsync(Path.Combine(output, panel.GetProperty("id").GetInt32() + ".png"), png);
         }
     }
 
-    private static JsonElement ResolveVariables(JsonElement model, JsonElement variables)
+    [Theory]
+    [InlineData("internal")]
+    [InlineData("viewer")]
+    public async Task Latest_dashboard_queries_select_old_latest_events_per_vehicle_without_tenant_or_arrival_order_mixups(string audience)
+    {
+        using var response = await QueryLatestAsync(audience);
+        response.IsSuccessStatusCode.ShouldBeTrue(await response.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = json.RootElement.GetProperty("results").GetProperty("A");
+        if (result.TryGetProperty("error", out var error))
+            error.ValueKind.ShouldBe(JsonValueKind.Null, error.ToString());
+        var frame = result.GetProperty("frames").EnumerateArray().Single();
+        var fields = frame.GetProperty("schema").GetProperty("fields").EnumerateArray().Select(field => field.GetProperty("name").GetString()).ToArray();
+        var values = frame.GetProperty("data").GetProperty("values");
+        values[Array.IndexOf(fields, "vehicleId")].EnumerateArray().Select(value => value.GetString()).ShouldBe(new[] { "vehicle-a", "vehicle-b" });
+        values[Array.IndexOf(fields, "empresaId")].EnumerateArray().ShouldAllBe(value => value.GetString() == LatestDashboardFixture.Company);
+        values[Array.IndexOf(fields, "latitude")].EnumerateArray().Select(value => value.GetDouble()).ShouldBe(new[] { 11d, 22d });
+        fields.ShouldNotContain("placa");
+        fields.ShouldNotContain("cpf");
+        fields.ShouldNotContain("displayName");
+        (DateTimeOffset.UtcNow - latest.Start).ShouldBeGreaterThan(TimeSpan.FromDays(20));
+    }
+
+    [Fact]
+    public async Task Viewer_dashboard_cannot_query_another_company_by_changing_its_variable()
+    {
+        using var response = await QueryLatestAsync("viewer", LatestDashboardFixture.OtherCompany);
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+        var result = json.RootElement.GetProperty("results").GetProperty("A");
+        result.GetProperty("error").GetString().ShouldNotBeNullOrWhiteSpace();
+        result.GetProperty("frames")[0].GetProperty("schema").GetProperty("meta").GetProperty("custom").GetProperty("responseCodeFromServer").GetInt32().ShouldBe(404);
+        if (result.TryGetProperty("frames", out var frames))
+            foreach (var frame in frames.EnumerateArray())
+                frame.GetProperty("data").GetProperty("values").EnumerateArray().ShouldAllBe(values => values.GetArrayLength() == 0);
+    }
+
+    [Fact]
+    public async Task Viewer_dashboard_reader_cannot_discover_the_internal_Influx_datasource()
+    {
+        var settings = await latest.GetSettingsAsync("viewer");
+        using var client = DashboardClient(settings);
+        using var response = await client.GetAsync("/api/datasources/uid/internal-influx");
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Theory]
+    [InlineData("1", true)]
+    [InlineData("501", false)]
+    public async Task Viewer_dashboard_limit_is_enforced_by_the_real_API(string limit, bool valid)
+    {
+        using var response = await QueryLatestAsync("viewer", limit: limit);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = json.RootElement.GetProperty("results").GetProperty("A");
+        if (valid)
+        {
+            response.IsSuccessStatusCode.ShouldBeTrue(json.RootElement.ToString());
+            result.GetProperty("frames")[0].GetProperty("data").GetProperty("values")[0].GetArrayLength().ShouldBe(1);
+        }
+        else
+        {
+            result.GetProperty("error").GetString().ShouldNotBeNullOrWhiteSpace();
+            result.GetProperty("frames")[0].GetProperty("schema").GetProperty("meta").GetProperty("custom").GetProperty("responseCodeFromServer").GetInt32().ShouldBe(400);
+        }
+    }
+
+    private async Task<HttpResponseMessage> QueryLatestAsync(string audience, string company = LatestDashboardFixture.Company, string limit = "500")
+    {
+        var settings = await latest.GetSettingsAsync(audience);
+        var values = settings.GetProperty("variables").EnumerateObject().ToDictionary(property => property.Name, property => property.Value.GetString()!);
+        values["empresaId"] = company;
+        values["limit"] = limit;
+        using var model = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(Root, "deploy/grafana/dashboards", audience, "latest-vehicle-position.json")));
+        var targets = ResolveVariables(model.RootElement.GetProperty("panels")[0].GetProperty("targets"), JsonSerializer.SerializeToElement(values));
+        using var client = DashboardClient(settings);
+        return await client.PostAsJsonAsync("/api/ds/query", new
+        {
+            queries = targets,
+            from = values["from"],
+            to = values["to"]
+        });
+    }
+
+    private static HttpClient DashboardClient(JsonElement settings)
+    {
+        var client = new HttpClient { BaseAddress = new Uri(settings.GetProperty("grafanaUrl").GetString()!), Timeout = TimeSpan.FromSeconds(60) };
+        client.DefaultRequestHeaders.Authorization = new("Bearer", settings.GetProperty("serviceToken").GetString());
+        client.DefaultRequestHeaders.Add("X-Grafana-Org-Id", settings.GetProperty("orgId").ToString());
+        return client;
+    }
+
+    internal static JsonElement ResolveVariables(JsonElement model, JsonElement variables)
     {
         if (model.ValueKind == JsonValueKind.Object)
             return JsonSerializer.SerializeToElement(model.EnumerateObject().ToDictionary(p => p.Name, p => ResolveVariables(p.Value, variables)));
@@ -284,7 +388,8 @@ public sealed class GrafanaProvisioningTests
         foreach (var variable in variables.EnumerateObject())
         {
             var value = variable.Value.GetString()!;
-            text = text.Replace("${" + variable.Name + ":sqlstring}", "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'", StringComparison.Ordinal)
+            text = text.Replace("${" + variable.Name + ":percentencode}", Uri.EscapeDataString(value), StringComparison.Ordinal)
+                .Replace("${" + variable.Name + ":sqlstring}", "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'", StringComparison.Ordinal)
                 .Replace("${" + variable.Name + "}", value, StringComparison.Ordinal)
                 .Replace("$" + variable.Name, value, StringComparison.Ordinal);
         }
@@ -575,7 +680,7 @@ public sealed class GrafanaProvisioningTests
                 Presentation[1] = Presentation[0];
             var dashboards = Path.Combine(directory, "dashboards");
             Directory.CreateDirectory(dashboards);
-            await File.WriteAllTextAsync(Path.Combine(dashboards, "fixture.json"), """{"uid":"fixture-dashboard","title":"Fixture only","schemaVersion":41,"panels":[]}""");
+            await File.WriteAllTextAsync(Path.Combine(dashboards, "fixture.json"), """{"uid":"fixture-dashboard","title":"Fixture only","schemaVersion":41,"panels":[],"templating":{"list":[{"name":"empresaId","current":{"value":"${VIEWER_COMPANY_ID}"}}]}}""");
             if (fault == "bad-dashboard")
                 await File.WriteAllTextAsync(Path.Combine(dashboards, "fixture.json"), """{"uid":"fixture-dashboard","title":"Unsafe fixture","rawSql":"SELECT private","panels":[]}""");
             var config = new
@@ -757,7 +862,7 @@ public sealed class GrafanaRuntimeFixture : IAsyncLifetime
 internal sealed class GrafanaServer(IFutureDockerImage image, IContainer container, HttpClient client) : IAsyncDisposable
 {
     public HttpClient Client => client;
-    public static async Task<GrafanaServer> StartAsync(string? provisioning = null)
+    public static async Task<GrafanaServer> StartAsync(string? provisioning = null, INetwork? network = null, string? rendererToken = null)
     {
         var image = new ImageFromDockerfileBuilder().WithName("centralmobilidade-t066-" + Guid.NewGuid().ToString("N"))
             .WithDockerfileDirectory(Path.Combine(GrafanaProvisioningTests.Root, "deploy/grafana")).WithDockerfile("Dockerfile").Build();
@@ -777,6 +882,13 @@ internal sealed class GrafanaServer(IFutureDockerImage image, IContainer contain
                 if (Directory.Exists(dashboards))
                     builder = builder.WithResourceMapping(dashboards, "/var/lib/grafana/dashboards/internal");
             }
+            if (network is not null)
+                builder = builder.WithNetwork(network).WithNetworkAliases("grafana");
+            if (rendererToken is not null)
+                builder = builder.WithEnvironment("GF_RENDERING_SERVER_URL", "http://renderer:8081/render")
+                    .WithEnvironment("GF_RENDERING_CALLBACK_URL", "http://grafana:3000/")
+                    .WithEnvironment("GF_RENDERING_RENDERER_TOKEN", rendererToken)
+                    .WithEnvironment("INFLUXDB_GRAFANA_READ_TOKEN", "test-only-token");
             var container = builder.Build();
             try
             {

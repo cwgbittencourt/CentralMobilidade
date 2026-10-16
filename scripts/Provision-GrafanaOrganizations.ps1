@@ -93,6 +93,9 @@ try {
             foreach ($secret in $secretSet) { Assert-Configuration (-not $text.Contains($secret, [StringComparison]::Ordinal)) }
             Assert-Configuration ($text -notmatch '"(?:rawSql|secureJsonData|bearerToken)"' -and $text -notmatch '"type":"(?:influxdb|prometheus|loki)"')
             $text = $text.Replace('${VIEWER_DATASOURCE_UID}', $organization.datasourceUid)
+            # Replace an entire JSON string token so quotes/Unicode in a company ID cannot change the model.
+            $companyJson = ConvertTo-Json -InputObject ([string]$organization.companyIds[0]) -Compress
+            $text = $text.Replace('"${VIEWER_COMPANY_ID}"', $companyJson)
             $dashboards += ,($text | ConvertFrom-Json -AsHashtable -Depth 64)
         }
         Assert-Configuration ($dashboards.Count -gt 0)
@@ -195,8 +198,8 @@ try {
             Assert-Configuration ([int]$current.id -eq $orgId)
             $sources = @(Invoke-Grafana GET '/api/datasources' $bearer $orgId)
             foreach ($source in $sources) { Assert-Configuration ($source.type -ceq 'yesoreyeram-infinity-datasource' -and $source.uid -ceq $organization.datasourceUid) }
-            $body = @{uid = $organization.datasourceUid; name = $organization.datasourceUid; type = 'yesoreyeram-infinity-datasource'; access = 'proxy'; isDefault = $true
-                jsonData = @{auth_method = 'bearerToken'; url = $plan.ApiUrl; allowedHosts = @($plan.ApiUrl); customHealthCheckEnabled = $true; customHealthCheckUrl = $plan.ApiUrl + '/health/ready'}
+            $body = @{uid = $organization.datasourceUid; name = $organization.datasourceUid; type = 'yesoreyeram-infinity-datasource'; access = 'proxy'; isDefault = $true; url = $plan.ApiUrl
+                jsonData = @{auth_method = 'bearerToken'; allowedHosts = @($plan.ApiUrl); customHealthCheckEnabled = $true; customHealthCheckUrl = $plan.ApiUrl + '/health/ready'}
                 secureJsonData = @{bearerToken = $plan.Secret}}
             $existing = Invoke-Grafana GET ('/api/datasources/uid/' + $organization.datasourceUid) $bearer $orgId -AllowMissing
             if ($null -eq $existing) { $null = Invoke-Grafana POST '/api/datasources' $bearer $orgId $body }

@@ -1,0 +1,312 @@
+{
+  "uid": "viewer-latest-position",
+  "title": "Última posição dos veículos — Viewer",
+  "description": "Primeira página da última posição por veículo da empresa autorizada. A API aplica as permissões e os limites. Para empresas maiores, siga X-Next-Cursor na API; esta tabela não faz paginação automática.",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "mobilidade",
+    "viewer",
+    "telemetria"
+  ],
+  "timezone": "utc",
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "empresaId",
+        "label": "Empresa",
+        "type": "textbox",
+        "query": "${VIEWER_COMPANY_ID}",
+        "current": {
+          "text": "${VIEWER_COMPANY_ID}",
+          "value": "${VIEWER_COMPANY_ID}"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "limit",
+        "label": "Limite da página (1–500)",
+        "type": "textbox",
+        "query": "500",
+        "current": {
+          "text": "500",
+          "value": "500"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Última posição por veículo · primeira página",
+      "description": "Informe uma empresa permitida. O limite deve respeitar a configuração da API (máximo 500). O filtro visual não concede acesso a outra empresa. Hora do evento em UTC; sem nome, CPF ou placa.",
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${VIEWER_DATASOURCE_UID}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${VIEWER_DATASOURCE_UID}"
+          },
+          "type": "json",
+          "source": "url",
+          "url": "/api/v1/presentation/telemetry/latest?empresaId=${empresaId:percentencode}&limit=${limit:percentencode}",
+          "url_options": {
+            "method": "GET"
+          },
+          "parser": "backend",
+          "format": "table",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "empresaId",
+              "text": "empresaId",
+              "type": "string"
+            },
+            {
+              "selector": "vehicleId",
+              "text": "vehicleId",
+              "type": "string"
+            },
+            {
+              "selector": "eventTime",
+              "text": "eventTime",
+              "type": "timestamp"
+            },
+            {
+              "selector": "latitude",
+              "text": "latitude",
+              "type": "number"
+            },
+            {
+              "selector": "longitude",
+              "text": "longitude",
+              "type": "number"
+            },
+            {
+              "selector": "speed",
+              "text": "speed",
+              "type": "number"
+            },
+            {
+              "selector": "ignition",
+              "text": "ignition",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "empresaId"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Empresa"
+              },
+              {
+                "id": "custom.width",
+                "value": 230
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "vehicleId"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Veículo"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "eventTime"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Evento (UTC)"
+              },
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "latitude"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Latitude"
+              },
+              {
+                "id": "decimals",
+                "value": 5
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "longitude"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Longitude"
+              },
+              {
+                "id": "decimals",
+                "value": 5
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "speed"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Velocidade"
+              },
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              },
+              {
+                "id": "custom.width",
+                "value": 125
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ignition"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Ignição"
+              },
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "text": "Desligada"
+                      },
+                      "true": {
+                        "text": "Ligada"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Veículo",
+            "desc": false
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "options": {
+            "renameByName": {},
+            "indexByName": {
+              "ignition": 6,
+              "longitude": 4,
+              "speed": 5,
+              "vehicleId": 1,
+              "empresaId": 0,
+              "latitude": 3,
+              "eventTime": 2
+            },
+            "excludeByName": {}
+          },
+          "id": "organize"
+        }
+      ]
+    }
+  ]
+}

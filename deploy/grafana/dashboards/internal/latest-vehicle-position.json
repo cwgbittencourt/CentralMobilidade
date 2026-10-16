@@ -1,0 +1,257 @@
+{
+  "uid": "internal-latest-position",
+  "title": "Última posição dos veículos — Interno",
+  "description": "Último evento disponível de cada veículo da empresa, ordenado por veículo. Até 500 veículos; a faixa de tempo do Grafana não descarta veículos com posição antiga. Acesso direto exclusivo da organização interna.",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "mobilidade",
+    "internal",
+    "telemetria"
+  ],
+  "timezone": "utc",
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "empresaId",
+        "label": "Empresa",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Última posição por veículo · até 500 veículos",
+      "description": "Informe o identificador da empresa. A hora exibida é UTC; não representa a hora de chegada. Nenhuma consulta cadastral é necessária. A tabela não contém nome, CPF ou placa.",
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "internal-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "internal-influx"
+          },
+          "rawSql": "SELECT empresa_id AS \"empresaId\", veiculo_id AS \"vehicleId\", time AS \"eventTime\", latitude, longitude, velocidade AS speed, ignicao AS ignition FROM (SELECT time, empresa_id, veiculo_id, latitude, longitude, velocidade, ignicao, ROW_NUMBER() OVER (PARTITION BY empresa_id, veiculo_id ORDER BY time DESC) AS position_rank FROM telemetria WHERE empresa_id = ${empresaId:sqlstring}) WHERE position_rank = 1 ORDER BY veiculo_id ASC LIMIT 500",
+          "rawQuery": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "empresaId"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Empresa"
+              },
+              {
+                "id": "custom.width",
+                "value": 230
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "vehicleId"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Veículo"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "eventTime"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Evento (UTC)"
+              },
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "latitude"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Latitude"
+              },
+              {
+                "id": "decimals",
+                "value": 5
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "longitude"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Longitude"
+              },
+              {
+                "id": "decimals",
+                "value": 5
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "speed"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Velocidade"
+              },
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              },
+              {
+                "id": "custom.width",
+                "value": 125
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ignition"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Ignição"
+              },
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "text": "Desligada"
+                      },
+                      "true": {
+                        "text": "Ligada"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Veículo",
+            "desc": false
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "options": {
+            "renameByName": {},
+            "indexByName": {
+              "ignition": 6,
+              "longitude": 4,
+              "speed": 5,
+              "vehicleId": 1,
+              "empresaId": 0,
+              "latitude": 3,
+              "eventTime": 2
+            },
+            "excludeByName": {}
+          },
+          "id": "organize"
+        }
+      ]
+    }
+  ]
+}
