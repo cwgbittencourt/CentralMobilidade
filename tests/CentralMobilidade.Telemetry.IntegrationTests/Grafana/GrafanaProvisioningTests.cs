@@ -58,7 +58,6 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
     }
 
     [Fact]
-    [Trait("PendingImplementation", "T074")]
     public async Task Internal_YAML_is_loaded_by_real_Grafana_and_creates_only_the_internal_organization()
     {
         var provisioning = Path.Combine(Root, "deploy/grafana/provisioning");
@@ -194,7 +193,6 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
     }
 
     [Theory]
-    [Trait("PendingImplementation", "T074")]
     [InlineData("internal", "company-ingestion-health")]
     [InlineData("viewer", "company-ingestion-health")]
     [InlineData("viewer", "driver-presentation")]
@@ -229,10 +227,7 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
             settings = await latest.GetTripSettingsAsync(audience);
         else
         {
-            var statePath = Environment.GetEnvironmentVariable("TELEMETRY_TEST_GRAFANA_RENDER_STATE");
-            File.Exists(statePath).ShouldBeTrue("Provide private render state from the isolated T071 + T069/T070 fixture: grafanaUrl, orgId, serviceToken, variables.");
-            using var state = JsonDocument.Parse(await File.ReadAllTextAsync(statePath!));
-            settings = state.RootElement.GetProperty(audience).Clone();
+            settings = await latest.GetHealthSettingsAsync(audience);
         }
         using var client = new HttpClient { BaseAddress = new Uri(settings.GetProperty("grafanaUrl").GetString()!), Timeout = TimeSpan.FromSeconds(60) };
         client.DefaultRequestHeaders.Authorization = new("Bearer", settings.GetProperty("serviceToken").GetString());
@@ -278,13 +273,16 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
                     f.GetProperty("data").GetProperty("values").EnumerateArray().Any(v => v.GetArrayLength() > 0));
             }
             var queryString = string.Join("&", variables.EnumerateObject().Select(p => Uri.EscapeDataString(p.Name is "from" or "to" ? p.Name : "var-" + p.Name) + "=" + Uri.EscapeDataString(p.Value.GetString()!)));
+            var driverAuditsBeforeRender = dashboard == "driver-presentation" ? (await latest.DriverAuditsAsync()).Count(a => a.Outcome == CentralMobilidade.Telemetry.Application.Abstractions.AuditOutcome.Allowed) : 0;
             using var response = await client.GetAsync($"/render/d-solo/{Uri.EscapeDataString(uid)}/_?panelId={panel.GetProperty("id").GetInt32()}&width=1000&height=600&{queryString}");
             response.StatusCode.ShouldBe(HttpStatusCode.OK);
             response.Content.Headers.ContentType!.MediaType.ShouldBe("image/png");
             var png = await response.Content.ReadAsByteArrayAsync();
             png.Length.ShouldBeGreaterThan(1000);
             png.Take(8).ShouldBe(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
-            var output = Path.Combine(Root, dashboard == "latest-vehicle-position" ? "artifacts/validation/T072/render" : dashboard == "vehicle-trip" ? "artifacts/validation/T073/render" : "artifacts/validation/T066/render", audience, dashboard);
+            if (dashboard == "driver-presentation")
+                (await latest.DriverAuditsAsync()).Count(a => a.Outcome == CentralMobilidade.Telemetry.Application.Abstractions.AuditOutcome.Allowed).ShouldBeGreaterThan(driverAuditsBeforeRender, "Rendering must make its own successful audited identity request, not just return an error PNG.");
+            var output = Path.Combine(Root, dashboard == "latest-vehicle-position" ? "artifacts/validation/T072/render" : dashboard == "vehicle-trip" ? "artifacts/validation/T073/render" : "artifacts/validation/T074/render", audience, dashboard);
             Directory.CreateDirectory(output);
             await File.WriteAllBytesAsync(Path.Combine(output, panel.GetProperty("id").GetInt32() + ".png"), png);
         }
@@ -439,6 +437,147 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
         result.GetProperty("frames")[0].GetProperty("schema").GetProperty("meta").GetProperty("custom").GetProperty("responseCodeFromServer").GetInt32().ShouldBe(status);
         foreach (var frame in result.GetProperty("frames").EnumerateArray())
             frame.GetProperty("data").GetProperty("values").EnumerateArray().ShouldAllBe(v => v.GetArrayLength() == 0);
+    }
+
+    [Theory]
+    [InlineData("internal")]
+    [InlineData("viewer")]
+    public async Task Health_dashboard_counts_only_its_company_with_explicit_storage_or_processing_semantics(string audience)
+    {
+        using var response = await QueryHealthOrDriverAsync(audience);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        response.IsSuccessStatusCode.ShouldBeTrue(json.RootElement.ToString());
+        var result = json.RootElement.GetProperty("results").GetProperty("A");
+        if (result.TryGetProperty("error", out var error))
+            error.ValueKind.ShouldBe(JsonValueKind.Null, error.ToString());
+        var frame = result.GetProperty("frames")[0];
+        var fields = frame.GetProperty("schema").GetProperty("fields").EnumerateArray().Select(f => f.GetProperty("name").GetString()).ToArray();
+        var values = frame.GetProperty("data").GetProperty("values");
+        values[Array.IndexOf(fields, "empresaId")].EnumerateArray().ShouldAllBe(v => v.GetString() == LatestDashboardFixture.Company);
+        if (audience == "internal")
+        {
+            fields.ShouldBe(new[] { "empresaId", "time", "storedPoints" }, ignoreOrder: true);
+            values[Array.IndexOf(fields, "storedPoints")].EnumerateArray().Select(v => v.GetDouble()).ShouldBe(new[] { 1d, 1d, 1d });
+        }
+        else
+        {
+            fields.ShouldBe(new[] { "empresaId", "time", "accepted", "rejected" }, ignoreOrder: true);
+            values[Array.IndexOf(fields, "accepted")].EnumerateArray().Select(v => v.GetDouble()).ShouldBe(new[] { 1d, 1d });
+            values[Array.IndexOf(fields, "rejected")].EnumerateArray().Select(v => v.GetDouble()).ShouldBe(new[] { 1d, 0d });
+        }
+    }
+
+    [Theory]
+    [InlineData("internal", 0)]
+    [InlineData("internal", -1)]
+    [InlineData("internal", 10081)]
+    [InlineData("viewer", 0)]
+    [InlineData("viewer", -1)]
+    [InlineData("viewer", 10081)]
+    public async Task Health_dashboard_rejects_invalid_or_over_seven_day_windows(string audience, int minutes)
+    {
+        using var response = await QueryHealthOrDriverAsync(audience, minutes: minutes);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = json.RootElement.GetProperty("results").GetProperty("A");
+        if (audience == "viewer")
+            AssertUpstreamFailure(result, 400);
+        else
+        {
+            response.IsSuccessStatusCode.ShouldBeTrue(json.RootElement.ToString());
+            foreach (var frame in result.GetProperty("frames").EnumerateArray())
+                frame.GetProperty("data").GetProperty("values").EnumerateArray().ShouldAllBe(v => v.GetArrayLength() == 0);
+        }
+    }
+
+    [Theory]
+    [InlineData("59", "10000", 400)]
+    [InlineData("60", "10001", 400)]
+    [InlineData("60", "1", 0)]
+    public async Task Viewer_health_enforces_granularity_and_point_limits(string granularity, string limit, int status)
+    {
+        using var response = await QueryHealthOrDriverAsync("viewer", granularity: granularity, limit: limit);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = json.RootElement.GetProperty("results").GetProperty("A");
+        if (status != 0)
+            AssertUpstreamFailure(result, status);
+        else
+        {
+            response.IsSuccessStatusCode.ShouldBeTrue(json.RootElement.ToString());
+            result.GetProperty("frames")[0].GetProperty("data").GetProperty("values")[0].GetArrayLength().ShouldBe(1);
+        }
+    }
+
+    [Theory]
+    [InlineData("company-ingestion-health", 404)]
+    [InlineData("driver-presentation", 403)]
+    public async Task Viewer_health_and_driver_variables_cannot_grant_another_company(string dashboard, int status)
+    {
+        using var response = await QueryHealthOrDriverAsync("viewer", dashboard, company: LatestDashboardFixture.OtherCompany);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertUpstreamFailure(json.RootElement.GetProperty("results").GetProperty("A"), status);
+    }
+
+    [Fact]
+    public async Task Driver_dashboard_returns_only_minimal_identity_after_real_durable_service_attributed_audit()
+    {
+        await latest.GetHealthSettingsAsync("viewer");
+        var count = (await latest.DriverAuditsAsync()).Count(a => a.Outcome == CentralMobilidade.Telemetry.Application.Abstractions.AuditOutcome.Allowed);
+        using var response = await QueryHealthOrDriverAsync("viewer", "driver-presentation");
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        response.IsSuccessStatusCode.ShouldBeTrue(json.RootElement.ToString());
+        var frame = json.RootElement.GetProperty("results").GetProperty("A").GetProperty("frames")[0];
+        var fields = frame.GetProperty("schema").GetProperty("fields").EnumerateArray().Select(f => f.GetProperty("name").GetString()).ToArray();
+        fields.ShouldBe(new[] { "displayName", "cpfLast4" }, ignoreOrder: true);
+        var values = frame.GetProperty("data").GetProperty("values");
+        values[Array.IndexOf(fields, "displayName")][0].GetString().ShouldBe("Motorista de exemplo");
+        values[Array.IndexOf(fields, "cpfLast4")][0].GetString().ShouldBe("1234");
+        var audits = (await latest.DriverAuditsAsync()).Where(a => a.Outcome == CentralMobilidade.Telemetry.Application.Abstractions.AuditOutcome.Allowed).ToArray();
+        audits.Length.ShouldBe(count + 1);
+        audits.ShouldAllBe(a => a.ActorId == "t072-account" && a.GrafanaOrganizationId == "2" && a.CommittedAt != default && a.OpaqueResourceId == null);
+        audits.ShouldAllBe(a => a.CompanyScope.SequenceEqual(new[] { LatestDashboardFixture.Company }));
+    }
+
+    [Fact]
+    public async Task Driver_dashboard_discloses_no_identity_if_audit_storage_refuses_the_commit()
+    {
+        await latest.GetHealthSettingsAsync("viewer");
+        await latest.SetAuditFailureAsync(true);
+        try
+        {
+            using var response = await QueryHealthOrDriverAsync("viewer", "driver-presentation");
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            AssertUpstreamFailure(json.RootElement.GetProperty("results").GetProperty("A"), 503);
+            json.RootElement.GetRawText().ShouldNotContain("Motorista de exemplo");
+        }
+        finally { await latest.SetAuditFailureAsync(false); }
+    }
+
+    [Fact]
+    public async Task Driver_dashboard_handles_missing_cadastral_identity_without_fallback_disclosure()
+    {
+        using var response = await QueryHealthOrDriverAsync("viewer", "driver-presentation", driver: "missing-driver");
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertUpstreamFailure(json.RootElement.GetProperty("results").GetProperty("A"), 404);
+    }
+
+    private async Task<HttpResponseMessage> QueryHealthOrDriverAsync(string audience, string dashboard = "company-ingestion-health", int minutes = 60, string company = LatestDashboardFixture.Company, string granularity = "60", string limit = "10000", string driver = "driver-example")
+    {
+        var settings = await latest.GetHealthSettingsAsync(audience);
+        var values = settings.GetProperty("variables").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString()!);
+        values["empresaId"] = company;
+        values["limit"] = limit;
+        values["granularitySeconds"] = granularity;
+        values["driverId"] = driver;
+        values["to"] = latest.Start.AddMinutes(minutes).ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        using var model = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(Root, "deploy/grafana/dashboards", audience, dashboard + ".json")));
+        var targets = ResolveVariables(model.RootElement.GetProperty("panels")[0].GetProperty("targets"), JsonSerializer.SerializeToElement(values));
+        using var client = DashboardClient(settings);
+        return await client.PostAsJsonAsync("/api/ds/query", new
+        {
+            queries = targets,
+            from = values["from"],
+            to = values["to"]
+        });
     }
 
     private async Task<HttpResponseMessage> QueryTripAsync(string audience, int minutes = 60, string company = LatestDashboardFixture.Company, string limit = "10000")

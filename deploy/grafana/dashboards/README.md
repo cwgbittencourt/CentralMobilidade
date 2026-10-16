@@ -95,3 +95,57 @@ point limits and unauthorized scope. Reviewed PNGs and reports are ignored under
 
 - [Grafana global time variables and UTC ISO formatting](https://grafana.com/docs/grafana/latest/visualizations/dashboards/variables/global-variables/)
 - [InfluxDB SQL time conversion](https://docs.influxdata.com/influxdb3/core/reference/sql/functions/time-and-date/#to_timestamp_millis)
+
+# Company ingestion health and driver presentation (T074)
+
+The two `company-ingestion-health.json` tables deliberately label their different
+clocks and sources. Internal users query `internal-influx` directly: stored points
+per company and minute of **event time**, including delayed historical events.
+These are not rejected counts, receipt-time throughput or process counters. Viewer
+users query the bounded ingestion-health API: persisted Accepted/Rejected line
+results by **processing time** in PostgreSQL. Identical replays and results with no
+company are excluded; rejected events do not exist in the telemetry table. Metadata
+retention can therefore make the viewer series shorter than retained telemetry.
+Do not reconcile these two series as if they measured the same events/time window.
+
+Both default to the last hour, refresh every 30 seconds, use UTC and half-open
+positive windows, and cap the range at seven days and output at 10,000 intervals.
+Internal intervals are fixed at one minute, aligned to the selected start. Its SQL
+returns no rows for an invalid window. The viewer interval and point limit can be
+adjusted to the API's configured ceilings (minimum interval: 60 seconds); invalid
+values produce an API error. Both omit empty intervals. Absence of a row does not
+prove a healthy dependency or a measured zero. At the output ceiling, narrow the
+range or increase the viewer interval; filtering/sorting only affects returned
+rows. Queries remain subject to Core's file envelope and control-data retention.
+The tables expose no coordinates or driver identity.
+
+`viewer/driver-presentation.json` is a separate, manually refreshed lookup with a
+blank initial driver ID. It uses only the authenticated driver presentation API,
+with URL-encoded company/driver IDs. The table projects only `displayName` and
+optional `cpfLast4`, labeled as the last four digits; it never reconstructs a full
+CPF or joins identity to telemetry. The pseudonymous driver ID participates in
+Grafana variable URL synchronization so saved selections/render links work. This
+is an explicit authorized identity disclosure, not an anonymous/public panel.
+The organization credential needs independent `driver.read` permission and the
+requested company scope, in addition to `telemetry.read` for fleet/health views.
+Provision these permissions server-side; importing a dashboard grants none.
+
+Driver enrichment must be configured using the [optional adapter](../../../src/CentralMobilidade.Telemetry.Infrastructure/Cadastral/README.md).
+Unavailable/missing identities yield 404, unauthorized identity requests 403, and
+an unavailable audit commit 503 with no identity. Every successful API lookup
+passes the durable audit barrier, including when the optional adapter caches an
+identity. Attribution is to the organization/service credential, not an individual
+Grafana user. Automatic refresh is disabled to avoid repeated background lookups;
+changing inputs or manually refreshing performs a new audited request. Authorized
+results are visible to members of that organization in their Grafana session.
+
+The three production files are loaded through the existing YAML/reconciler. The
+isolated test fixture uses real storage, API security/handlers, Grafana/Infinity
+and renderer; only the external cadastral resolver is synthetic. It checks sparse
+counts, replay/company/time bounds, viewer limits, minimal identity, committed
+service-attributed audits, missing/forbidden identities and a real database trigger
+refusing audit inserts. Reports and visually reviewed PNGs are ignored under
+`artifacts/validation/T074/`; production Compose gains no renderer or new datasource.
+
+- [InfluxDB SQL date bins](https://docs.influxdata.com/influxdb3/core/reference/sql/functions/time-and-date/#date_bin)
+- [Infinity backend JSON projection](https://grafana.com/docs/plugins/yesoreyeram-infinity-datasource/latest/query/backend/)

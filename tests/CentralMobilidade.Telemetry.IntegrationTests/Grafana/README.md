@@ -205,3 +205,31 @@ Ignored reports/PNGs are under `artifacts/validation/T073/`. Four original cases
 remain pending T074: combined three-internal-dashboard loading and the three
 health/driver render cases. No case is skipped. Historical T066/T071/T072 evidence
 above describes those stages, not the current number of missing dashboards.
+
+## T074 health/driver query and render fixture
+
+All three remaining production render cases now use the lazy isolated fixture;
+manual render-state wiring and PendingImplementation traits have been removed.
+The original internal YAML test loads all three internal production dashboards.
+No existing datasource, API route or authorization handler is replaced for these
+tests. An external cadastral resolver supplies only a synthetic display name and
+four-digit suffix; authorization, projection and audit persistence use production
+code and real PostgreSQL. This is not proof of a deployment's cadastral service.
+
+Sixteen new cases cover native Influx per-company stored counts, API Accepted/
+Rejected processing-time counts, excluded replay/other-company/end-boundary rows,
+empty/reversed/over-seven-day ranges, viewer granularity/point limits and forbidden
+company selection. Driver cases inspect exactly the two projected frame fields,
+the committed service/organization/company audit, missing identity and a real
+database trigger refusing audit inserts. That trigger is scoped to the unique test
+database and removed in finally; the resulting upstream 503 must carry no identity.
+
+Every production panel produces real query frames and a PNG. Driver rendering
+additionally requires a new successful audit after the preflight query: an error
+PNG cannot satisfy the test. Visual review caught an initially blank driver render
+caused by skipUrlSync ignoring its URL variable, despite a successful preflight.
+Variable synchronization was corrected and the render assertion strengthened.
+Images/reports are private under ignored `artifacts/validation/T074/`. Historical
+pending-count statements above describe their original task stages; T074 closes
+the four original remaining Grafana failures. Production Compose gains no renderer,
+new datasource, company metric labels or identity-bearing telemetry.

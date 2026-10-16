@@ -1,0 +1,165 @@
+{
+  "uid": "viewer-driver-presentation",
+  "title": "Motorista — apresentação autorizada",
+  "description": "Informe empresa e identificador de motorista. Consulta manual e auditada, condicionada a driver.read e ao escopo da credencial desta organização. Exibe somente nome e os quatro últimos dígitos do CPF, quando disponíveis. Sem atualização automática.",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "mobilidade",
+    "viewer",
+    "telemetria"
+  ],
+  "timezone": "utc",
+  "refresh": "",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "empresaId",
+        "label": "Empresa",
+        "type": "textbox",
+        "query": "${VIEWER_COMPANY_ID}",
+        "current": {
+          "text": "${VIEWER_COMPANY_ID}",
+          "value": "${VIEWER_COMPANY_ID}"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": 0,
+        "type": "textbox",
+        "label": "Motorista",
+        "query": "",
+        "name": "driverId",
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Motorista · nome e sufixo do CPF",
+      "description": "Informe empresa e identificador de motorista. Consulta manual e auditada, condicionada a driver.read e ao escopo da credencial desta organização. Exibe somente nome e os quatro últimos dígitos do CPF, quando disponíveis. Sem atualização automática.",
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${VIEWER_DATASOURCE_UID}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${VIEWER_DATASOURCE_UID}"
+          },
+          "type": "json",
+          "source": "url",
+          "url": "/api/v1/presentation/drivers/${driverId:percentencode}?empresaId=${empresaId:percentencode}",
+          "url_options": {
+            "method": "GET"
+          },
+          "parser": "backend",
+          "format": "table",
+          "root_selector": "",
+          "columns": [
+            {
+              "text": "displayName",
+              "type": "string",
+              "selector": "displayName"
+            },
+            {
+              "text": "cpfLast4",
+              "type": "string",
+              "selector": "cpfLast4"
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Nome"
+              },
+              {
+                "id": "custom.width",
+                "value": 550
+              }
+            ],
+            "matcher": {
+              "id": "byName",
+              "options": "displayName"
+            }
+          },
+          {
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "CPF (somente últimos 4 dígitos)"
+              },
+              {
+                "id": "custom.width",
+                "value": 400
+              }
+            ],
+            "matcher": {
+              "id": "byName",
+              "options": "cpfLast4"
+            }
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {},
+            "excludeByName": {},
+            "indexByName": {
+              "displayName": 0,
+              "cpfLast4": 1
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

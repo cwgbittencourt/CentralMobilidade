@@ -92,7 +92,9 @@ managed-member removal and the real image: internal YAML loading, two reconcilia
 actual token replacement, non-export of datasource secrets and an authenticated
 Infinity backend health request. The real health target is a synthetic local API,
 not a claim of company authorization, dashboard rendering or Influx query capacity.
-No existing user's stack is changed by tests. T072-T074 rendering tests remain active.
+No existing user's stack is changed by tests. T072-T074 production query/render
+tests now use the isolated storage/API/Grafana fixture; see the
+[dashboard evidence and limits](dashboards/README.md).
 
 Official references (pinned behavior is independently tested):
 

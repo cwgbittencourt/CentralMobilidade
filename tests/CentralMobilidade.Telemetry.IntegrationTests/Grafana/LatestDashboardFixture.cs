@@ -9,10 +9,13 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using CentralMobilidade.Telemetry.Api.Endpoints.V1.Presentation;
 using CentralMobilidade.Telemetry.Api.Security;
 using CentralMobilidade.Telemetry.Application.Configuration;
+using CentralMobilidade.Telemetry.Application.Abstractions;
+using CentralMobilidade.Telemetry.Domain.ValueObjects;
 using CentralMobilidade.Telemetry.Application.Security;
 using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using CentralMobilidade.Telemetry.Infrastructure.Presentation;
@@ -29,6 +32,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 using Shouldly;
 using Xunit;
 
@@ -74,6 +78,36 @@ public sealed class LatestDashboardFixture : IAsyncLifetime
         });
     }
 
+    public async Task<JsonElement> GetHealthSettingsAsync(string audience)
+    {
+        var original = await GetTripSettingsAsync(audience);
+        var variables = original.GetProperty("variables").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString()!);
+        variables["granularitySeconds"] = "60";
+        variables["driverId"] = "driver-example";
+        return JsonSerializer.SerializeToElement(new
+        {
+            grafanaUrl = original.GetProperty("grafanaUrl").GetString(),
+            orgId = original.GetProperty("orgId").GetInt32(),
+            serviceToken = original.GetProperty("serviceToken").GetString(),
+            variables
+        });
+    }
+
+    internal async Task<AuditEvent[]> DriverAuditsAsync()
+    {
+        await using var db = postgres!.Create();
+        return await db.AuditEvents.Where(a => a.Action == AuditAction.ResolveDriver).ToArrayAsync();
+    }
+
+    internal async Task SetAuditFailureAsync(bool enabled)
+    {
+        await using var db = postgres!.Create();
+        if (enabled)
+            await db.Database.ExecuteSqlRawAsync("CREATE FUNCTION t074_refuse_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic audit failure'; END $$; CREATE TRIGGER t074_refuse_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION t074_refuse_audit();");
+        else
+            await db.Database.ExecuteSqlRawAsync("DROP TRIGGER IF EXISTS t074_refuse_audit ON audit_events; DROP FUNCTION IF EXISTS t074_refuse_audit();");
+    }
+
     private async Task StartAsync()
     {
         Directory.CreateDirectory(directory);
@@ -105,6 +139,15 @@ public sealed class LatestDashboardFixture : IAsyncLifetime
         var apiToken = OpaqueBearerTokens.Generate(BearerCredentialKind.ViewerPresentationService);
         var hash = BearerTokenHash.Create(apiToken);
         postgres = await MigratedPostgresFixture.StartAsync();
+        await using (var db = postgres.Create())
+        {
+            var batch = Guid.NewGuid();
+            db.Batches.Add(new IngestionBatch { BatchId = batch, TraceId = "t074", ProducerId = "synthetic", ReceivedAt = Start, ExpiresAt = Start.AddDays(30) });
+            var outcomes = new[] { LineOutcome.Accepted, LineOutcome.Rejected, LineOutcome.IdenticalReplay, LineOutcome.Accepted, LineOutcome.Accepted, LineOutcome.Rejected };
+            for (var i = 0; i < outcomes.Length; i++)
+                db.LineResults.Add(new LineProcessingResult { BatchId = batch, LineNumber = i + 1, Outcome = outcomes[i], CompanyId = i == 3 ? OtherCompany : Company, SafeDigest = "synthetic-digest", OccurredAt = Start.AddMinutes(i == 5 ? 60 : i == 4 ? 1 : 0) });
+            await db.SaveChangesAsync();
+        }
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
@@ -122,6 +165,7 @@ public sealed class LatestDashboardFixture : IAsyncLifetime
             ["Authentication:Profiles:0:GrafanaOrganizationId"] = orgId.ToString(CultureInfo.InvariantCulture),
             ["Authentication:Profiles:0:CompanyIds:0"] = Company,
             ["Authentication:Profiles:0:Permissions:0"] = "telemetry.read",
+            ["Authentication:Profiles:0:Permissions:1"] = "driver.read",
             ["InfluxDb:Queryable:Url"] = influxUrl,
             ["InfluxDb:Queryable:Database"] = "telemetry",
             ["InfluxDb:Queryable:Token"] = "test-only-token"
@@ -129,6 +173,7 @@ public sealed class LatestDashboardFixture : IAsyncLifetime
         builder.Services.AddTelemetryOptions(builder.Configuration);
         builder.Services.AddTelemetrySecurity(builder.Configuration);
         builder.Services.AddTelemetryControlPersistence(postgres.Connection);
+        builder.Services.AddSingleton<IDriverResolver, SyntheticDriverResolver>();
         builder.Services.AddTelemetryPresentation(builder.Configuration);
         api = builder.Build();
         api.UseAuthentication();
@@ -158,7 +203,7 @@ public sealed class LatestDashboardFixture : IAsyncLifetime
             readinessTimeoutSeconds = 30,
             organizations = new[] { new { name = "T072 restricted viewer", companyIds = new[] { Company }, members = Array.Empty<object>(),
                 serviceAccount = new { name = "t072-reconciler", role = "Admin" },
-                presentation = new { baseUrl = $"http://host.testcontainers.internal:{apiPort}", credentialEnv = "T072_PRESENTATION", permissions = new[] { "telemetry.read" } },
+                presentation = new { baseUrl = $"http://host.testcontainers.internal:{apiPort}", credentialEnv = "T072_PRESENTATION", permissions = new[] { "telemetry.read", "driver.read" } },
                 datasourceUid = "viewer-api-latest", dashboardDirectory = Path.Combine(GrafanaProvisioningTests.Root, "deploy/grafana/dashboards/viewer") } }
         };
         var configurationPath = Path.Combine(directory, "configuration.json");
@@ -205,6 +250,12 @@ public sealed class LatestDashboardFixture : IAsyncLifetime
                 variables = new Dictionary<string, string> { ["empresaId"] = Company, ["limit"] = "500", ["VIEWER_DATASOURCE_UID"] = "viewer-api-latest", ["from"] = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), ["to"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) }
             });
         }
+    }
+
+    private sealed class SyntheticDriverResolver : IDriverResolver
+    {
+        public ValueTask<DriverIdentityPresentation?> ResolveAsync(CompanyId company, DriverId driver, CancellationToken token)
+            => ValueTask.FromResult<DriverIdentityPresentation?>(company.Value == Company && driver.Value == "driver-example" ? new(driver, "Motorista de exemplo", "1234") : null);
     }
 
     public async Task DisposeAsync()

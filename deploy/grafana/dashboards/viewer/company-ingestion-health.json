@@ -1,0 +1,253 @@
+{
+  "uid": "viewer-ingestion-health",
+  "title": "Saúde da ingestão — viewer",
+  "description": "Resultados persistidos por horário de processamento: aceitos e rejeitados da empresa autorizada. Não usa o horário do evento nem contadores do processo. Janela de até sete dias, intervalos de no mínimo 60 segundos e até 10.000 intervalos iniciais. Lacunas são omitidas; no limite, reduza o período.",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "mobilidade",
+    "viewer",
+    "telemetria"
+  ],
+  "timezone": "utc",
+  "refresh": "30s",
+  "time": {
+    "to": "now",
+    "from": "now-1h"
+  },
+  "timepicker": {
+    "time_options": [
+      5,
+      15,
+      30,
+      60,
+      180,
+      360,
+      720,
+      1440
+    ],
+    "hidden": false,
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "empresaId",
+        "label": "Empresa",
+        "type": "textbox",
+        "query": "${VIEWER_COMPANY_ID}",
+        "current": {
+          "text": "${VIEWER_COMPANY_ID}",
+          "value": "${VIEWER_COMPANY_ID}"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "current": {
+          "text": "60",
+          "value": "60"
+        },
+        "hide": 0,
+        "type": "textbox",
+        "label": "Intervalo em segundos (mínimo 60)",
+        "query": "60",
+        "name": "granularitySeconds",
+        "skipUrlSync": false
+      },
+      {
+        "current": {
+          "text": "10000",
+          "value": "10000"
+        },
+        "hide": 0,
+        "type": "textbox",
+        "label": "Limite de intervalos (1–10.000)",
+        "query": "10000",
+        "name": "limit",
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Processamento · aceitos e rejeitados por intervalo",
+      "description": "Resultados persistidos por horário de processamento: aceitos e rejeitados da empresa autorizada. Não usa o horário do evento nem contadores do processo. Janela de até sete dias, intervalos de no mínimo 60 segundos e até 10.000 intervalos iniciais. Lacunas são omitidas; no limite, reduza o período.",
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${VIEWER_DATASOURCE_UID}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${VIEWER_DATASOURCE_UID}"
+          },
+          "type": "json",
+          "source": "url",
+          "url": "/api/v1/presentation/telemetry/ingestion-health?empresaId=${empresaId:percentencode}&fromUtc=${__from:date:iso}&toUtc=${__to:date:iso}&granularitySeconds=${granularitySeconds:percentencode}&limit=${limit:percentencode}",
+          "url_options": {
+            "method": "GET"
+          },
+          "parser": "backend",
+          "format": "table",
+          "root_selector": "",
+          "columns": [
+            {
+              "text": "empresaId",
+              "type": "string",
+              "selector": "empresaId"
+            },
+            {
+              "text": "time",
+              "type": "timestamp",
+              "selector": "time"
+            },
+            {
+              "text": "accepted",
+              "type": "number",
+              "selector": "accepted"
+            },
+            {
+              "text": "rejected",
+              "type": "number",
+              "selector": "rejected"
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Empresa"
+              },
+              {
+                "id": "custom.width",
+                "value": 300
+              }
+            ],
+            "matcher": {
+              "id": "byName",
+              "options": "empresaId"
+            }
+          },
+          {
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Janela (UTC)"
+              },
+              {
+                "id": "custom.width",
+                "value": 240
+              },
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ],
+            "matcher": {
+              "id": "byName",
+              "options": "time"
+            }
+          },
+          {
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Aceitos"
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ],
+            "matcher": {
+              "id": "byName",
+              "options": "accepted"
+            }
+          },
+          {
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Rejeitados"
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ],
+            "matcher": {
+              "id": "byName",
+              "options": "rejected"
+            }
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Janela (UTC)"
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {},
+            "excludeByName": {},
+            "indexByName": {
+              "empresaId": 0,
+              "time": 1,
+              "accepted": 2,
+              "rejected": 3
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
