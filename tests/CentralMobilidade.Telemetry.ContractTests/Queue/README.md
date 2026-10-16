@@ -71,8 +71,9 @@ Polling/consumption/confirmation waits are bounded; no sleeps for queue retentio
 or claims of host-loss protection are made. Existing provider-specific topology,
 restart and fault tests remain in IntegrationTests.
 
-T077 binds the suite to the Pub/Sub emulator and T080 implements that adapter;
-neither is supplied by T076. Emulator session state is not production durability,
+T077 now binds the suite to the Pub/Sub emulator; its 22 adapter cases intentionally
+fail until T080 supplies the production adapter (see the [emulator evidence](../../CentralMobilidade.Telemetry.IntegrationTests/Queue/README.md)).
+Neither was supplied by T076. Emulator session state is not production durability,
 and passing only the RabbitMQ binding is not provider parity. The separate restart,
 cutover and final acceptance gates remain necessary. Reports are ignored under
 `artifacts/validation/T076/`.

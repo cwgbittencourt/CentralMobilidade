@@ -78,3 +78,87 @@ não representa falha física do RabbitMQ. Os demais fluxos usam o broker real.
 Recursos têm nomes exclusivos e são removidos após cada caso. Não há fila em memória,
 caso ignorado ou implementação antecipada de Pub/Sub. T077/T080 continuam necessários
 para comprovar paridade. As notas T026/T031 acima são evidência histórica.
+
+## T077 — emulador Pub/Sub e testes ativos do adaptador
+
+`PubSubEmulatorTests.cs` conecta os mesmos 16 contratos T076 ao adaptador esperado
+`CentralMobilidade.Telemetry.Infrastructure.Queue.PubSub.PubSubBatchQueue` e adiciona
+seis casos de tradução de erros gRPC. A classe de produção ainda pertence à T080:
+os 22 casos ficam ativos, com PendingImplementation=T080, e falham explicitamente
+quando ela não existe. Nenhum publicador/fila em memória assume seu lugar. A trait
+documenta a dependência; não ignora nem transforma falhas em sucesso.
+
+Quatro controles independentes usam Google.Cloud.PubSub.V1 3.39.0 e o emulador real:
+bytes gzip/atributos/ID confirmado, nack/reentrega até ack explícito, NotFound real
+para tópico ausente e perda de tópico/assinatura após reinício. Antes do reinício,
+o controle publica e recebe uma mensagem sem confirmar; depois exige NotFound,
+não aceita Unavailable como prova de perda de estado. Os controles do SDK não são
+evidência de conformidade do adaptador inexistente.
+
+A coleção xUnit compartilha um único contêiner
+`gcr.io/google.com/cloudsdktool/google-cloud-cli:588.0.0-emulators`, a mesma versão
+do perfil Compose, com projeto UUID e porta aleatória. Cada caso que cria recursos
+recebe tópicos/assinaturas únicos, removidos ao terminar. O teste de reinício atua
+somente nesse contêiner descartável, sem volumes persistentes, nunca no Compose
+ou em recursos de uma conta Google. Os testes da coleção são sequenciais entre si.
+O canal HTTP/2 é explícito, local e de propriedade da fixture: não usa ADC,
+variáveis de emulador globais, pools globais nem fallback para Pub/Sub de produção.
+Após reiniciar, a fixture relê a porta mapeada e recria o canal/clientes; ignorar essa
+etapa produzia conexão recusada e foi corrigido antes da validação final.
+
+### Composição esperada na T080
+
+O bootstrap usa reflexão apenas para localizar a classe de produção, verifica
+IDurableBatchQueue e a instancia com ActivatorUtilities. Oferece IConfiguration,
+PublisherServiceApiClient e SubscriberServiceApiClient por injeção. Isso não implementa
+o registro de provedor T081. As chaves sob Queue:PubSub são ProjectId, Endpoint,
+UseEmulator, Topic, Subscription, DeadLetterTopic, DeadLetterSubscription,
+PublishTimeout, PullTimeout, MaxAttempts e DrainTimeout. Recursos são nomes completos
+`projects/.../topics/...` e `projects/.../subscriptions/...` já criados pela fixture.
+Se a implementação escolher outra composição pública, adapte o bootstrap mantendo
+as asserções e os clientes locais; não crie um adaptador de teste substituto.
+
+A inspeção nativa faz Pull/Acknowledge via SDK sobre a assinatura principal ou dead
+e compara os bytes/atributos reais. O consumidor dos contratos é sempre o do
+adaptador. O cliente injetado ControlledPublisher delega publicações normais ao
+emulador e controla somente a fronteira de confirmação/erro: confirmação retida
+aguarda uma resposta real antes de devolvê-la; Unavailable e erros de status são
+injetados; confirmação ausente aguarda o cancelamento do adaptador. PublishTimeout
+é 500 ms nesses casos e cinco segundos no caso de confirmação retida. Esperas
+externas e RPCs têm limites. Falha ambígua não permite concluir que nada foi armazenado.
+
+PermissionDenied, InvalidArgument e NotFound do serviço devem produzir falha
+Permanent; Unavailable e ResourceExhausted, Transient; DeadlineExceeded, Ambiguous.
+O código público é DURABILITY_UNCONFIRMED para esses erros após entrada no SDK;
+metadados inválidos antes da publicação continuam REQUEST_INVALID nos contratos
+compartilhados. Diagnósticos sintéticos do provedor não podem vazar na exceção.
+Essas injeções verificam a tradução pretendida, não IAM real, esgotamento de quota
+ou falha física da nuvem. O alvo dead é preparado para o caminho explícito do
+adaptador; não comprova políticas gerenciadas de dead-letter do serviço.
+
+### Limites da evidência
+
+O emulador mantém recursos e mensagens somente durante sua sessão. Confirmação de
+publicação, ack ou um teste bem-sucedido nessa sessão não estabelece persistência
+após reinício, retenção de sete dias, backup, HA ou proteção contra perda do host.
+Não acrescente um volume e interprete isso como durabilidade de produção.
+
+A [documentação oficial do emulador](https://cloud.google.com/pubsub/docs/emulator)
+informa implementação potencialmente diferente/incompleta, IAM não suportado,
+retenção configurável não suportada (mensagens retidas indefinidamente dentro da
+sessão) e ausência de expiração de assinaturas. O teste não aprova IAM, TLS,
+credenciais de produção, quotas, desempenho, SLA, exactly-once ou garantias de
+dead-letter/retry em produção. T080/T081, validação no serviço gerenciado e os
+procedimentos de drain/cutover/recuperação continuam necessários. Não desative as
+proteções de produção para reproduzir o acesso anônimo local do emulador.
+
+```powershell
+dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter FullyQualifiedName~PubSubEmulator
+```
+
+Esse comando tem saída diferente de zero enquanto T080 estiver ausente: os quatro
+controles do SDK devem passar e as 22 falhas devem apontar exclusivamente para a
+ausência da classe esperada. Falha de imagem, conexão, reconexão, limpeza ou SDK é
+inesperada e precisa ser corrigida; não é falha TDD aceitável. Relatórios/TRX ficam
+em `artifacts/validation/T077/`, ignorados pelo Git. Testes não geram credenciais nem
+requisitam projeto Google real.
