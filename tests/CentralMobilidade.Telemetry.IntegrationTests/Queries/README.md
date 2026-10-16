@@ -99,3 +99,15 @@ zero skips and no unexpected failures. Unit tests passed 244/244 and architectur
 47/47; contracts retained 86 passes and the 16 existing T067 failures. Solution
 build had zero warnings/errors; whitespace verification passed. No load or
 capacity benchmark was run for this task.
+
+## T069 handler/query implementation
+
+`PresentationReaderTests` exercises the production closed Influx reader against
+the same persisted historical fixture (ordered trip limits, optional columns,
+latest/cursor and injection-safe company parameters). `PresentationHealthReaderTests`
+uses migrated PostgreSQL to verify receipt-time buckets, scope, replay exclusion,
+point limits and microsecond half-open boundaries, then composes the production
+driver handler, configured authorizer and durable audit writer through DI.
+The T065 HTTP tests remain active until T070 provides `MapPresentationEndpoints`.
+Adapter configuration and evidence limits are documented in
+`src/CentralMobilidade.Telemetry.Infrastructure/Presentation/README.md`.

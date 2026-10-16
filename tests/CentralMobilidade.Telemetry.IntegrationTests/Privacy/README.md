@@ -92,3 +92,8 @@ logs are filtered at Warning, matching the intended privacy-safe test surface.
 Ignored validation evidence is stored under `artifacts/validation/T064/`. This is a
 test-only task; T067 still owns optional enrichment, T068 audit policy, T069 handlers,
 and T070 HTTP composition/validation. Capacity approval remains a separate gate.
+
+T069 now supplies the production registration and application handlers, tested
+directly in UnitTests/Presentation and IntegrationTests/Queries. The T064 HTTP
+assertions remain active: their missing seam is `MapPresentationEndpoints`, owned
+by T070. No sentinel route replaces the production presentation endpoints.

@@ -8,6 +8,7 @@ using CentralMobilidade.Telemetry.Application.Ingestion;
 using CentralMobilidade.Telemetry.Contracts.Errors;
 using CentralMobilidade.Telemetry.Infrastructure.Health;
 using CentralMobilidade.Telemetry.Infrastructure.Cadastral;
+using CentralMobilidade.Telemetry.Infrastructure.Presentation;
 using CentralMobilidade.Telemetry.Infrastructure.Observability;
 using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using CentralMobilidade.Telemetry.Infrastructure.Queue.RabbitMq;
@@ -58,7 +59,10 @@ try
     builder.Services.AddTelemetryHealthChecks(builder.Configuration, TelemetryServiceRole.Api);
     var controlConnection = builder.Configuration.GetConnectionString("TelemetryControl");
     if (!string.IsNullOrWhiteSpace(controlConnection))
+    {
         builder.Services.AddTelemetryControlPersistence(controlConnection).AddTelemetryBatchInspection(builder.Configuration);
+        builder.Services.AddTelemetryPresentation(builder.Configuration);
+    }
     if (string.Equals(builder.Configuration["Queue:Provider"], "RabbitMq", StringComparison.OrdinalIgnoreCase))
     {
         builder.Services.AddSingleton<RabbitMqTopology>();
