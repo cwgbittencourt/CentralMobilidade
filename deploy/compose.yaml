@@ -102,8 +102,8 @@ services:
   grafana:
     image: centralmobilidade-grafana:12.2.5-infinity-4.1.1
     build:
-      context: ..
-      dockerfile: deploy/grafana/Dockerfile
+      context: ./grafana
+      dockerfile: Dockerfile
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password

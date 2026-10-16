@@ -144,6 +144,11 @@ Expected:
 
 ## 6. Validate restart recovery
 
+The [T078 Compose tests](../../tests/CentralMobilidade.Telemetry.IntegrationTests/Deployment/README.md)
+exercise dependency health, named-volume persistence, restart/recreation and missing/
+read-only storage failures using disposable UUID projects. They do not replace
+the application recovery scenario below or authorize resetting an existing stack.
+
 Pause InfluxDB, submit a valid batch, and verify status becomes `retrying`. Restart the API and worker,
 then restore InfluxDB.
 
