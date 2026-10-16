@@ -25,5 +25,8 @@ public enum AuditOutcome
     Allowed, Denied, Missing, Expired
 }
 public sealed record AuditRecord(Guid EventId, OperatorActor Actor, AuditAction Action, AuditResourceCategory ResourceCategory,
-    string? OpaqueResourceId, IReadOnlyCollection<CompanyId> CompanyScope, DateTimeOffset OccurredAt, AuditOutcome Outcome, string TraceId);
+    string? OpaqueResourceId, IReadOnlyCollection<CompanyId> CompanyScope, DateTimeOffset OccurredAt, AuditOutcome Outcome, string TraceId)
+{
+    public override string ToString() => nameof(AuditRecord);
+}
 public sealed record AuditReceipt(Guid EventId, DateTimeOffset CommittedAt);

@@ -51,7 +51,7 @@ public sealed class AuditedAuthorizationResultHandler(IClock clock) : IAuthoriza
         var actor = SecurityClaims.GetActor(context.User) ?? new OperatorActor("unauthenticated", OperatorActorKind.Unidentified);
         // Never echo driver, company, query, header, or raw content into the audit record.
         var rawResource = context.Request.RouteValues[category == AuditResourceCategory.Quarantine ? "quarantineId" : "batchId"]?.ToString();
-        var opaqueResource = Guid.TryParseExact(rawResource, "D", out var resourceId) ? resourceId.ToString("D") : null;
+        var opaqueResource = Guid.TryParseExact(rawResource, "D", out var resourceId) && resourceId != Guid.Empty ? resourceId.ToString("D") : null;
         var record = new AuditRecord(Guid.NewGuid(), actor, action, category, opaqueResource, [], clock.UtcNow, AuditOutcome.Denied, context.TraceIdentifier);
         try
         {

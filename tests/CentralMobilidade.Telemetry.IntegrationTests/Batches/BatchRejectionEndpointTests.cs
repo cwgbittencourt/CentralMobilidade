@@ -27,6 +27,21 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Batches;
 public sealed partial class BatchInspectionTests
 {
     [Theory]
+    [InlineData(null)]
+    [InlineData("producer")]
+    public async Task Http_authentication_denial_omits_empty_resource_UUID_from_audit(string? actor)
+    {
+        await using var test = Create();
+        await using var app = await HttpApp(test);
+        using var response = await HttpGet(app, RawUrl(Guid.NewGuid(), Guid.Empty), actor);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        var record = test.Audit.Records.ShouldHaveSingleItem();
+        record.OpaqueResourceId.ShouldBeNull();
+        record.Actor.Kind.ShouldBe(OperatorActorKind.Unidentified);
+        record.Outcome.ShouldBe(AuditOutcome.Denied);
+    }
+
+    [Theory]
     [InlineData("tampered")]
     [InlineData("expired")]
     [InlineData("other-batch")]

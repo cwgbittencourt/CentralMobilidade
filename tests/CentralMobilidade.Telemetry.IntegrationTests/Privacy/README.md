@@ -28,7 +28,16 @@ wrong event receipt, absent commit time and non-UTC receipt fail closed with san
 503 AUDIT_UNAVAILABLE. A controlled barrier proves the response stays pending and no
 audit row is visible until the writer is released and its real transaction commits.
 
-## Active TDD cases for T068–T070
+## Audit persistence implemented in T068
+
+T068 validates identity/cross-company metadata, attribution and scope in the real
+writer, redacts diagnostic record formatting and preserves durable append-only
+storage. Dedicated contract/PostgreSQL tests are described in
+[the audit policy](../../../src/CentralMobilidade.Telemetry.Infrastructure/Auditing/README.md).
+Successful disclosure still needs the actual T069/T070 handlers/routes; this does
+not make the production presentation cases below pass.
+
+## Active TDD cases for presentation handlers/routes (T069–T070)
 
 Seventy-five cases target production presentation registration and routes. They are
 tagged `PendingImplementation` and currently fail with the explicit missing
