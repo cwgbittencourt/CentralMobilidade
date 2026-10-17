@@ -192,6 +192,10 @@ for existing resources, credentials, explicit emulator mode and startup checks. 
 [emulator evidence and limitations](../../tests/CentralMobilidade.Telemetry.IntegrationTests/Queue/README.md).
 A passing RabbitMQ run or emulator SDK probe alone does not establish parity.
 
+For an operational change, use the [T088 cutover runbook](../../docs/runbooks/queue-provider-cutover.md).
+The maintenance path requires intake closure, source drain and verification; dual-publish
+remains blocked until its coordinator, recovery and handoff gates are implemented and proven.
+
 Start the Google Pub/Sub emulator profile and execute the queue contract suite against RabbitMQ and the
 emulator.
 

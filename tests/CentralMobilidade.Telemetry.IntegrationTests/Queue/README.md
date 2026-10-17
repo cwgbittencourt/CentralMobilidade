@@ -215,3 +215,7 @@ política TLS/emulador e snapshot. Os hosts RabbitMQ existentes também são ree
 Veja [configuração, permissões, limites e health](../../../src/CentralMobilidade.Telemetry.Infrastructure/DependencyInjection/README.md).
 Os relatórios ficam ignorados em `artifacts/validation/T081/`. Validação gerenciada,
 retenção física, capacidade e troca operacional de provedor continuam gates separados.
+
+A [T088](../../../docs/runbooks/queue-provider-cutover.md) documenta drain, verificação,
+rollback por fase e manutenção aceita. Os testes individuais dos provedores não
+certificam dual-publish, bridge, handoff entre provedores ou operação Google gerenciada.

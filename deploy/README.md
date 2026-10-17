@@ -185,6 +185,8 @@ Copy `.env.example` to an untracked root `.env` and fill in its blank secret val
 file path. The example intentionally cannot start the stack with working credentials. Compose reads
 this file for interpolation; it does not automatically export every key into API/Worker containers.
 
+For a provider change, follow the [T088 queue cutover runbook](../docs/runbooks/queue-provider-cutover.md): preparation, drain, verification and phase-specific rollback. The current supported path requires an accepted maintenance window; continuous dual publication requires additional implementation and managed-service evidence.
+
 Both application `appsettings.json` files contain the same `Telemetry` limit defaults from the plan:
 8 MiB compressed, 64 MiB decompressed, 100:1 expansion, 16 KiB per line, 50,000 lines, 30-second
 upload, 5,000-point/2 MiB/1-second write batches, seven-day queue retention, 30-day status/quarantine/

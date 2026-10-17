@@ -5,7 +5,7 @@ environment. Only `RabbitMq` or `PubSub` is accepted (case insensitive). Missing
 unknown or invalid selected-provider configuration fails with a fixed, value-free
 error. The inactive provider's settings are ignored. The selected settings are
 snapshotted: change provider/endpoints by restarting both hosts, not by hot reload.
-There is no fallback, dual publication or automatic cutover; T088 owns that procedure.
+There is no fallback, dual publication or automatic cutover. The [T088 cutover runbook](../../../docs/runbooks/queue-provider-cutover.md) documents the maintenance path and the additional implementation gates for future dual publication.
 Application/domain ingestion and processing handlers remain provider neutral.
 
 ## RabbitMQ
