@@ -20,6 +20,51 @@ namespace CentralMobilidade.Telemetry.UnitTests.Presentation;
 public sealed class PresentationHandlerTests
 {
     [Theory]
+    [InlineData(OperatorAuthorizationDecision.Denied, false)]
+    [InlineData(OperatorAuthorizationDecision.Allowed, true)]
+    public async Task Authorizer_denial_or_failure_prevents_disclosure(OperatorAuthorizationDecision decision, bool fail)
+    {
+        var f = new Fixture { Decision = decision, FailAuthorization = fail };
+        (await f.Latest.HandleAsync(f.Context, "company", null, null, null, default)).ErrorCode.ShouldBe(TelemetryErrorCodes.ResourceNotFound);
+        f.Reads.ShouldBe(0);
+        f.Records.Single().Outcome.ShouldBe(AuditOutcome.Denied);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("disabled")]
+    [InlineData("kind")]
+    [InlineData("permission-case")]
+    [InlineData("company-case")]
+    public async Task Trusted_profile_must_match_actor_permission_and_exact_scope(string fault)
+    {
+        var f = new Fixture();
+        f.Profile = fault switch
+        {
+            "actor" => f.Profile with { ActorId = "someone-else" },
+            "disabled" => f.Profile with { Enabled = false },
+            "kind" => f.Profile with { Kind = OperatorActorKind.ViewerPresentationService },
+            "permission-case" => f.Profile with { Permissions = ["Telemetry.Read"] },
+            _ => f.Profile with { CompanyIds = ["Company"] }
+        };
+        (await f.Latest.HandleAsync(f.Context, "company", null, null, null, default)).ErrorCode.ShouldBe(TelemetryErrorCodes.ResourceNotFound);
+        f.Reads.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Invalid_commit_time_in_audit_receipt_blocks_sensitive_disclosure(bool nonUtc)
+    {
+        var f = new Fixture { ReceiptTime = nonUtc ? DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(1)) : default(DateTimeOffset) };
+        var error = await Should.ThrowAsync<ProviderOperationException>(async () => await f.Driver.HandleAsync(f.Context, "company", "driver", default));
+        error.ErrorCode.ShouldBe(TelemetryErrorCodes.AuditUnavailable);
+        error.Kind.ShouldBe(ProviderFailureKind.Transient);
+        f.Resolves.ShouldBe(1);
+        f.Records.Single().Action.ShouldBe(AuditAction.ResolveDriver);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(501)]
     public async Task Latest_rejects_limits_without_reading(int limit)
@@ -212,6 +257,9 @@ public sealed class PresentationHandlerTests
         public string? After;
         public string? Cpf = "1234";
         public bool FailAudit, WrongReceipt;
+        public bool FailAuthorization;
+        public OperatorAuthorizationDecision Decision = OperatorAuthorizationDecision.Allowed;
+        public DateTimeOffset? ReceiptTime;
         public Action? OnRead, OnAudit, OnResolve;
         public TaskCompletionSource<AuditReceipt>? AuditBarrier;
         public PresentationAccess Access => new(this, this, this, this);
@@ -219,7 +267,8 @@ public sealed class PresentationHandlerTests
         public VehicleTripHandler Trip => new(Access, this, Options);
         public IngestionHealthHandler Health => new(Access, this, Options);
         public DriverPresentationHandler Driver => new(Access, this);
-        public ValueTask<OperatorAuthorizationDecision> AuthorizeAsync(OperatorActor actor, OperatorPermission permission, IReadOnlyCollection<CompanyId> companies, CancellationToken token) => ValueTask.FromResult(OperatorAuthorizationDecision.Allowed);
+        public ValueTask<OperatorAuthorizationDecision> AuthorizeAsync(OperatorActor actor, OperatorPermission permission, IReadOnlyCollection<CompanyId> companies, CancellationToken token)
+            => FailAuthorization ? throw new InvalidOperationException("private authorization provider detail") : ValueTask.FromResult(Decision);
         public ValueTask<OperatorAccessProfile?> GetProfileAsync(string actorId, CancellationToken token) => ValueTask.FromResult<OperatorAccessProfile?>(Profile);
         public ValueTask<ProducerCredential?> FindProducerAsync(string digest, CancellationToken token) => ValueTask.FromResult<ProducerCredential?>(null);
         public ValueTask<OperatorBearerCredential?> FindOperatorAsync(string digest, BearerCredentialKind kind, CancellationToken token) => ValueTask.FromResult<OperatorBearerCredential?>(null);
@@ -229,7 +278,7 @@ public sealed class PresentationHandlerTests
             OnAudit?.Invoke();
             if (FailAudit)
                 throw new InvalidOperationException("private provider details");
-            return AuditBarrier is null ? ValueTask.FromResult(new AuditReceipt(WrongReceipt ? Guid.NewGuid() : record.EventId, UtcNow)) : new(AuditBarrier.Task);
+            return AuditBarrier is null ? ValueTask.FromResult(new AuditReceipt(WrongReceipt ? Guid.NewGuid() : record.EventId, ReceiptTime ?? UtcNow)) : new(AuditBarrier.Task);
         }
         public ValueTask<IReadOnlyList<TelemetryPosition>> LatestAsync(CompanyId company, VehicleId? vehicle, string? after, int limit, CancellationToken token)
         {

@@ -13,6 +13,28 @@ namespace CentralMobilidade.Telemetry.UnitTests.LineProtocol;
 
 public sealed class LineProtocolV1GoldenTests
 {
+    [Theory]
+    [InlineData("latitude=0,longitude=0,velocidade=0", "latitude=-0.0,longitude=-0e0,velocidade=-0.0")]
+    [InlineData("latitude=1,longitude=2,velocidade=3,placa=\"iabc123\"", "latitude=1.0,longitude=2e0,velocidade=3.00,placa=\"IABC123\"")]
+    public void Canonicalization_is_invariant_for_signed_zero_and_normalized_plate(string first, string second)
+    {
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("tr-TR");
+            Fingerprint(Tags + " " + first + ",rpm=4i,ignicao=true " + Timestamp)
+                .ShouldBe(Fingerprint(Tags + " " + second + ",rpm=4i,ignicao=true " + Timestamp));
+        }
+        finally { CultureInfo.CurrentCulture = previous; }
+    }
+
+    [Theory]
+    [InlineData("empresa-42", "Empresa-42")]
+    [InlineData("empresa-42", "empresa-42\\ ")]
+    [InlineData("empresa-42", "e\u0301")]
+    public void Canonicalization_never_normalizes_company_identity(string first, string second)
+        => Fingerprint(Baseline.Replace("empresa-42", first)).ShouldNotBe(Fingerprint(Baseline.Replace("empresa-42", second)));
+
     private const string Tags = "telemetria,empresa_id=empresa-42,veiculo_id=veiculo-900";
     private const string Fields = "latitude=-23.55052,longitude=-46.633308,velocidade=82.5,rpm=2150i,ignicao=true";
     private const string Timestamp = "1791686400123";
