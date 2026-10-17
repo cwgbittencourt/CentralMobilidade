@@ -93,7 +93,7 @@ readiness, API/worker acknowledgement-boundary tests or complete ingestion proof
 These are ordinary restart/recreation tests on one Docker host. They do not prove
 host-loss recovery, backup restore, HA, seven-day queue retention, 60-day expiry,
 five-year capacity or the later 100,000-event gate. T086 runtime controls are
-documented in [the hardening guide](../../../deploy/hardening.md); backup/restore procedures remain T087. Never apply test fault overrides
+documented in [the hardening guide](../../../deploy/hardening.md); backup/restore procedures are in the [T087 runbook](../../../docs/runbooks/backup-restore.md). Never apply test fault overrides
 or test cleanup commands to an existing deployment.
 
 - [Compose up and mounted-volume preservation](https://docs.docker.com/reference/cli/docker/compose/up/)
@@ -121,3 +121,29 @@ package initialization and Docker Desktop's non-shared host mount. Production
 configuration now uses file-backed secrets, disabled Python package management and
 private read-only host-mount propagation, respectively. Loki's minimal image uses
 explicit BusyBox applets in the runtime assertions.
+
+## T087 cold backup/restore drill
+
+The [backup/restore runbook](../../../docs/runbooks/backup-restore.md) is verified by
+`BackupRestoreTests`. It starts one disposable source stack, captures SQL/Influx
+values, a publisher-confirmed persistent message and markers, exports definitions
+without printing them, and stops all source services before copying. The test
+executes the two marked shell bodies directly from the guide to archive all seven
+volumes and restore them to new, owner-labelled destination volumes. It verifies
+checksums, rejects a corrupted archive before destination allocation, refuses a
+nonempty restore target, and checks quarantine ownership/mode before initialization.
+Both the restored stack and the preserved source are started for comparison.
+The nodes have the same RabbitMQ identity but separate networks and storage.
+
+```powershell
+dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter FullyQualifiedName~BackupRestoreTests
+```
+
+Archives, synthetic secrets, definitions and manifest remain private under the
+shared ignored T078 fixture directory; the runner TRX/log is ignored under T087.
+On Linux the runner needs authorized access to root-owned mode-0600 archives, as
+described in the runbook. Initial validation found that Docker cp could not retrieve
+the tmpfs definitions export; the guide now captures quiet JSON stdout privately.
+This is a same-engine restore drill with small synthetic data, not a host-loss,
+remote encryption, RPO/RTO, all-queue/ack-boundary, quarantine-decryption or complete
+application-canary certification. Original T078/T086 restart tests remain separate.

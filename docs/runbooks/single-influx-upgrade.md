@@ -5,6 +5,9 @@ A migração `20261014230000_SingleTelemetryStore` remove somente o schema Postg
 Ela não consulta InfluxDB, não copia telemetria e não transforma um guard Pending em Queryable.
 Qualquer guard não reconciliado ou linha remanescente de promoção bloqueia a migração inteira.
 Não use `down --volumes`, não regenere tokens e não reescreva migrações aplicadas.
+O [runbook de backup/restore](backup-restore.md) descreve o corte coordenado da
+topologia atual. Para o legado com dois Influx, inclua também o volume pending e
+seu token no mesmo corte; o conjunto de sete volumes atual não cobre esse legado.
 
 ## Inventário e preparação
 

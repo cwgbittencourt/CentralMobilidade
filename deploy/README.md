@@ -66,6 +66,9 @@ docker compose -f deploy/compose.yaml down
 
 Never use `down --volumes` for ordinary shutdown or recovery. Named volumes survive container
 recreation, but a single physical host does not provide protection against host loss.
+For coordinated cold backups, isolated restores and recovery acceptance, follow the
+[T087 backup/restore runbook](../docs/runbooks/backup-restore.md). Restart/recreation
+tests alone do not validate a backup or provide an independent host-loss copy.
 
 References: [Infinity releases](https://grafana.com/api/plugins/yesoreyeram-infinity-datasource/versions),
 [InfluxDB offline admin tokens](https://docs.influxdata.com/influxdb3/core/admin/tokens/),

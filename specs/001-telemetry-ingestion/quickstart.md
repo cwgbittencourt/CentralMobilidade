@@ -148,6 +148,11 @@ Expected:
 
 ## 6. Validate restart recovery
 
+For a coordinated backup and restore into new volumes, use the
+[T087 backup/restore runbook](../../docs/runbooks/backup-restore.md) and its isolated
+`BackupRestoreTests` drill. It is separate from the restart scenario below and
+does not certify physical-host recovery, production RPO/RTO or an off-host copy.
+
 The [T078 Compose tests](../../tests/CentralMobilidade.Telemetry.IntegrationTests/Deployment/README.md)
 exercise dependency health, named-volume persistence, restart/recreation and missing/
 read-only storage failures using disposable UUID projects. They do not replace
