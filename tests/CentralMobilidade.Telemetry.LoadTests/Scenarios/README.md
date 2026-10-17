@@ -131,5 +131,67 @@ substituem o ensaio T094. Rode-os separadamente do benchmark PostgreSQL existent
 dotnet test tests/CentralMobilidade.Telemetry.LoadTests --filter FullyQualifiedName~SteadyStateScenarioTests
 ```
 
-Este runner não implementa burst/outage das T092/T093. Nenhum resultado de 5.000
+O cenário `reconnect-burst` da T092 está descrito abaixo; outage da T093 permanece futuro. Nenhum resultado de 5.000
 eventos/s no hardware de referência é alegado pela entrega da T091.
+
+## Reconnection burst — T092
+
+```powershell
+dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario reconnect-burst --config C:/caminho-privado/steady.json
+```
+
+Usa o mesmo JSON privado, token, monitoramento e perfil de referência da T091.
+`DurationSeconds` precisa ser **600** nesse modo: representa a janela de burst,
+não a duração total. O runner acrescenta 1.200 segundos de recuperação com carga
+normal ativa; depois há até `DrainSeconds` (máximo 300) para reconciliar o restante
+da carga normal. Essa cauda não estende o deadline dos lotes do burst.
+
+Nos primeiros dez minutos, cada slot de 100 ms contém 500 eventos normais e 300
+atrasados, no mesmo gzip de 800 linhas. São 8.000 eventos/s oferecidos nesse trecho:
+5.000 normais/s mais 3.000 atrasados/s. O componente offline
+tem 10.000 veículos distintos, 180 amostras por veículo, a cada 20 segundos, cobrindo
+de uma hora antes do início até 20 segundos antes dele, em ordem cronológica.
+Não há sobreposição com os IDs dos 100.000 veículos normais ou com outra execução.
+São **1.800.000 eventos atrasados**, sem depender de um cadastro de empresas.
+
+Depois do minuto dez, os slots continuam com 500 eventos normais a cada 100 ms
+por mais vinte minutos. Isso soma 9.000.000 eventos normais e 1.800.000 atrasados,
+**10.800.000 no total**, em 18.000 lotes (6.000 mistos e 12.000 normais).
+O gerador e a concorrência continuam limitados; não armazena o corpus inteiro.
+
+Um observador concorrente passa a consultar os lotes mistos ao terminar o burst,
+enquanto os POSTs normais continuam. A coorte a drenar inclui **todas** as linhas
+desses lotes, inclusive as normais. Exige estado `completed`, contagens exatas,
+zero rejeições/replays e todos os recibos distintos reconciliados até o instante
+monotônico de término do burst +1.200 s. As consultas usam cancelamento nesse
+deadline. Uma conclusão observada apenas depois dele reprova, mesmo que o banco
+possa ter concluído antes; não se infere drain de uma fila aparentemente vazia.
+
+`Reconnection` no relatório `reconnect-<run>.json` separa eventos offline agendados,
+confirmados e drenados no prazo, veículos/amostras, janelas e tempo observado após
+o burst. Tempo de drain é limite superior observado por polling, não instante
+exato de persistência. Todos os lotes normais confirmados também precisam ser
+reconciliados na cauda final. Série de backlog/idade e métricas da T091 permanecem
+no relatório; não se declara que toda a fila está vazia enquanto tráfego continua.
+
+Este perfil escolhe uma aceitação **mais estrita** que a alternativa de backpressure
+da SC-003: qualquer 429/503 é registrado e reprova a execução, sem retry automático.
+Isso evita aprovar um ensaio que ofereceu o corpus mas não o aceitou integralmente;
+não classifica uma resposta explícita de backpressure como perda de lote confirmado.
+Reprova também slots perdidos, recibo repetido, ambiguidade, falha de monitoramento,
+divergência/perda de resultado ou prazo excedido. Nenhum dado existente é apagado.
+
+Os testes usam um perfil **interno** reduzido, indisponível no CLI, com burst de um
+segundo e recuperação de um segundo para exercitar o deadline real do runner.
+O relatório desse perfil sempre tem `ReferenceCapacityRun=false`. A distribuição
+completa dos 1,8 milhão de eventos é verificada separadamente, incluindo 180 amostras
+por veículo e os limites dos timestamps. Execute a regressão dos dois cenários:
+
+```powershell
+dotnet test tests/CentralMobilidade.Telemetry.LoadTests --filter 'FullyQualifiedName~ReconnectionBurstScenarioTests|FullyQualifiedName~SteadyStateScenarioTests'
+```
+
+A T092 implementa o cenário e as asserções de reconciliação/prazo; não executa
+o ensaio de capacidade T094. Estados de batch não substituem uma contagem e consulta
+independentes de pontos no Influx, nem provam sobrevivência a perda física de host.
+Essas evidências continuam obrigatórias nos gates de capacidade/aceitação final.

@@ -48,6 +48,10 @@ public sealed record SteadyStateReport(string RunId, bool Passed, bool Reference
     }
     public string ConfigurationSha256 { get; init; } = "";
     public IReadOnlyList<Guid> AcceptedBatchIds { get; init; } = [];
+    public ReconnectionBurstEvidence? Reconnection
+    {
+        get; init;
+    }
 }
 
 /// <summary>Open-loop 500-event batches every 100ms; never retries an ambiguous POST or silently catches up.</summary>
@@ -60,9 +64,12 @@ public static class SteadyStateScenario
     });
     private const int BatchSize = 500;
     private const long GiB = 1024L * 1024 * 1024;
-    private sealed record Accepted(Guid Id, double StartedMilliseconds);
+    private sealed record Accepted(Guid Id, double StartedMilliseconds, int Events, int BurstEvents);
 
     public static async Task<SteadyStateReport> RunAsync(SteadyStateOptions options, HttpClient http, string producerToken, CancellationToken token = default)
+        => await RunCoreAsync(options, http, producerToken, null, token);
+
+    internal static async Task<SteadyStateReport> RunCoreAsync(SteadyStateOptions options, HttpClient http, string producerToken, BurstProfile? burst, CancellationToken token)
     {
         Validate(options, producerToken);
         var run = Guid.NewGuid().ToString("N");
@@ -70,9 +77,13 @@ public static class SteadyStateScenario
         var failures = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
         var accepted = new ConcurrentDictionary<Guid, Accepted>();
         var intake = new ConcurrentBag<double>();
-        var terminal = new List<double>();
+        var terminal = new ConcurrentBag<double>();
+        var observed = new ConcurrentDictionary<Guid, byte>();
         var samples = new List<ResourceSample>();
         long attempted = 0, acknowledged = 0, reconciled = 0, compressed = 0, decompressed = 0;
+        long burstAcknowledged = 0, burstReconciled = 0;
+        double lastBurstObservation = 0;
+        var scheduled = options.DurationSeconds * 5000L + (burst?.Events ?? 0);
         var posts = new List<Task>();
         using var slots = new SemaphoreSlim(options.MaxConcurrentPosts);
         var clock = Stopwatch.StartNew();
@@ -86,6 +97,8 @@ public static class SteadyStateScenario
         using var monitorStop = CancellationTokenSource.CreateLinkedTokenSource(token);
         var monitor = MonitorAsync();
         var sendClock = Stopwatch.StartNew();
+        using var recoveryStop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var recovery = burst is null ? Task.CompletedTask : ObserveRecoveryAsync();
         try
         {
             for (var batch = 0; batch < options.DurationSeconds * 10; batch++)
@@ -114,20 +127,21 @@ public static class SteadyStateScenario
             await Task.WhenAll(posts);
             sendClock.Stop();
             // Acknowledgements are not persistence proof; reconcile every accepted batch.
-            var pending = accepted.ToDictionary(item => item.Key, item => item.Value);
+            await recovery;
+            var pending = accepted.Where(item => !observed.ContainsKey(item.Key)).ToDictionary(item => item.Key, item => item.Value);
             var drain = Stopwatch.StartNew();
             while (pending.Count > 0 && drain.Elapsed < TimeSpan.FromSeconds(options.DrainSeconds))
             {
                 foreach (var group in pending.Values.Chunk(16).ToArray())
                 {
-                    var outcomes = await Task.WhenAll(group.Select(CheckBatchAsync));
+                    var outcomes = await Task.WhenAll(group.Select(item => CheckBatchAsync(item)));
                     foreach (var outcome in outcomes)
                         if (outcome.Done)
                         {
                             pending.Remove(outcome.Batch.Id);
                             if (outcome.Valid)
                             {
-                                reconciled += BatchSize;
+                                Interlocked.Add(ref reconciled, outcome.Batch.Events);
                                 terminal.Add(clock.Elapsed.TotalMilliseconds - outcome.Batch.StartedMilliseconds);
                             }
                         }
@@ -146,6 +160,8 @@ public static class SteadyStateScenario
         {
             // Stop writes and await ownership before returning or disposing the shared client.
             await Task.WhenAll(posts);
+            recoveryStop.Cancel();
+            await recovery;
             monitorStop.Cancel();
             await monitor;
         }
@@ -159,17 +175,19 @@ public static class SteadyStateScenario
             }
             catch { Fail("monitoring_unavailable"); }
         }
-        if (acknowledged != options.DurationSeconds * 5000L)
+        if (acknowledged != scheduled)
             Fail("target_not_acknowledged");
         if (reconciled != acknowledged)
             Fail("acknowledged_not_reconciled");
         if (samples.Count < 2)
             Fail("insufficient_monitoring");
         var seconds = Math.Max(sendClock.Elapsed.TotalSeconds, 0.001);
-        if (options.DurationSeconds >= 600 && acknowledged / seconds < 4950)
+        if (options.DurationSeconds >= 600 && acknowledged / seconds < scheduled / (double)options.DurationSeconds * 0.99)
             Fail("sustained_rate_not_met");
-        var report = new SteadyStateReport(run, failures.IsEmpty, options.DurationSeconds >= 600,
-            5000, options.DurationSeconds * 5000L, attempted, acknowledged, reconciled, compressed, decompressed,
+        if (burst is not null && (burstAcknowledged != burst.Events || burstReconciled != burst.Events))
+            Fail("burst_not_drained_by_deadline");
+        var report = new SteadyStateReport(run, failures.IsEmpty, burst?.Reference ?? options.DurationSeconds >= 600,
+            5000, scheduled, attempted, acknowledged, reconciled, compressed, decompressed,
             seconds, acknowledged / seconds, compressed / seconds, decompressed / seconds,
             Percentiles(intake), Percentiles(terminal), samples.Count >= 2 ? samples[^1].Values["diskUsedBytes"] - samples[0].Values["diskUsedBytes"] : null,
             samples, failures.Keys.OrderBy(value => value, StringComparer.Ordinal).ToArray())
@@ -179,10 +197,13 @@ public static class SteadyStateScenario
             MaxConcurrentPosts = options.MaxConcurrentPosts,
             DrainSeconds = options.DrainSeconds,
             ConfigurationSha256 = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(options))),
-            AcceptedBatchIds = accepted.Keys.Order().ToArray()
+            AcceptedBatchIds = accepted.Keys.Order().ToArray(),
+            Reconnection = burst is null ? null : new(burst.Vehicles, burst.SamplesPerVehicle, burst.BurstSeconds,
+                burst.RecoverySeconds, burst.Events, burstAcknowledged, burstReconciled,
+                burstReconciled == burst.Events ? Math.Max(0, lastBurstObservation - burst.BurstSeconds) : null)
         };
         Directory.CreateDirectory(options.ReportDirectory);
-        await File.WriteAllTextAsync(Path.Combine(options.ReportDirectory, $"steady-{run}.json"),
+        await File.WriteAllTextAsync(Path.Combine(options.ReportDirectory, $"{(burst is null ? "steady" : "reconnect")}-{run}.json"),
             JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }), CancellationToken.None);
         return report;
 
@@ -191,8 +212,9 @@ public static class SteadyStateScenario
             var began = clock.Elapsed.TotalMilliseconds;
             try
             {
-                var payload = CreateBatch(run, batch, start);
-                Interlocked.Add(ref attempted, BatchSize);
+                var burstEvents = burst?.EventsInBatch(batch) ?? 0;
+                var payload = burst is null ? CreateBatch(run, batch, start) : ReconnectionBurstScenario.CreateBatch(run, batch, start, burst);
+                Interlocked.Add(ref attempted, BatchSize + burstEvents);
                 Interlocked.Add(ref compressed, payload.Gzip.Length);
                 Interlocked.Add(ref decompressed, payload.RawBytes);
                 using var request = Request(HttpMethod.Post, new Uri(options.Api, "/api/v1/telemetry/batches"));
@@ -213,12 +235,13 @@ public static class SteadyStateScenario
                     Fail("invalid_receipt");
                     return;
                 }
-                if (!accepted.TryAdd(receipt.BatchId, new(receipt.BatchId, began)))
+                if (!accepted.TryAdd(receipt.BatchId, new(receipt.BatchId, began, BatchSize + burstEvents, burstEvents)))
                 {
                     Fail("duplicate_receipt");
                     return;
                 }
-                Interlocked.Add(ref acknowledged, BatchSize);
+                Interlocked.Add(ref acknowledged, BatchSize + burstEvents);
+                Interlocked.Add(ref burstAcknowledged, burstEvents);
             }
             catch { Fail(token.IsCancellationRequested ? "cancelled" : "intake_unconfirmed"); }
             finally { slots.Release(); }
@@ -229,14 +252,15 @@ public static class SteadyStateScenario
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", producerToken);
             return request;
         }
-        async Task<(Accepted Batch, bool Done, bool Valid)> CheckBatchAsync(Accepted batch)
+        async Task<(Accepted Batch, bool Done, bool Valid)> CheckBatchAsync(Accepted batch, CancellationToken? observationToken = null)
         {
+            var ct = observationToken ?? token;
             try
             {
                 using var request = Request(HttpMethod.Get, new Uri(options.Api, $"/api/v1/telemetry/batches/{batch.Id:D}"));
-                using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+                using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 response.EnsureSuccessStatusCode();
-                var status = JsonSerializer.Deserialize<BatchStatus>(await ReadBoundedAsync(response, token));
+                var status = JsonSerializer.Deserialize<BatchStatus>(await ReadBoundedAsync(response, ct));
                 if (status is null || status.BatchId != batch.Id)
                 {
                     Fail("status_mismatch");
@@ -244,13 +268,51 @@ public static class SteadyStateScenario
                 }
                 if (status.State is BatchState.Accepted or BatchState.Processing or BatchState.Retrying)
                     return (batch, false, false);
-                var valid = status.State == BatchState.Completed && status.AcceptedLines == BatchSize
-                    && status.TotalLines == BatchSize && status.RejectedLines == 0 && status.ReplayedLines == 0;
+                var valid = status.State == BatchState.Completed && status.AcceptedLines == batch.Events
+                    && status.TotalLines == batch.Events && status.RejectedLines == 0 && status.ReplayedLines == 0;
                 if (!valid)
                     Fail("unexpected_terminal_outcome");
                 return (batch, true, valid);
             }
             catch { Fail("status_unavailable"); return (batch, false, false); }
+        }
+        async Task ObserveRecoveryAsync()
+        {
+            var profile = burst!;
+            var deadline = TimeSpan.FromSeconds(profile.BurstSeconds + profile.RecoverySeconds);
+            try
+            {
+                var wait = TimeSpan.FromSeconds(profile.BurstSeconds) - sendClock.Elapsed;
+                if (wait > TimeSpan.Zero)
+                    await Task.Delay(wait, recoveryStop.Token);
+                using var deadlineStop = CancellationTokenSource.CreateLinkedTokenSource(recoveryStop.Token);
+                deadlineStop.CancelAfter(deadline - sendClock.Elapsed > TimeSpan.Zero ? deadline - sendClock.Elapsed : TimeSpan.Zero);
+                while (sendClock.Elapsed < deadline)
+                {
+                    foreach (var group in accepted.Values.Where(item => item.BurstEvents > 0 && !observed.ContainsKey(item.Id)).Chunk(16))
+                    {
+                        deadlineStop.Token.ThrowIfCancellationRequested();
+                        // Bound the whole observation, not only individual HTTP requests.
+                        var outcomes = await Task.WhenAll(group.Select(item => CheckBatchAsync(item, deadlineStop.Token)));
+                        foreach (var outcome in outcomes)
+                            if (outcome.Done && observed.TryAdd(outcome.Batch.Id, 0) && outcome.Valid)
+                            {
+                                Interlocked.Add(ref reconciled, outcome.Batch.Events);
+                                terminal.Add(clock.Elapsed.TotalMilliseconds - outcome.Batch.StartedMilliseconds);
+                                if (sendClock.Elapsed <= deadline)
+                                {
+                                    Interlocked.Add(ref burstReconciled, outcome.Batch.BurstEvents);
+                                    lastBurstObservation = sendClock.Elapsed.TotalSeconds;
+                                }
+                            }
+                    }
+                    if (Interlocked.Read(ref burstReconciled) == profile.Events)
+                        return;
+                    await Task.Delay(TimeSpan.FromMilliseconds(100), deadlineStop.Token);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch { Fail("burst_observation_unavailable"); }
         }
         async Task MonitorAsync()
         {
