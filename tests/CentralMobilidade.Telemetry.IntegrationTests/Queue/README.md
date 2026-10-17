@@ -81,6 +81,9 @@ para comprovar paridade. As notas T026/T031 acima são evidência histórica.
 
 ## T077 — emulador Pub/Sub e testes ativos do adaptador
 
+As notas desta seção registram a criação dos testes na T077. A T080 implementou
+o adaptador e resolveu suas 22 falhas, conforme o resultado abaixo.
+
 `PubSubEmulatorTests.cs` conecta os mesmos 16 contratos T076 ao adaptador esperado
 `CentralMobilidade.Telemetry.Infrastructure.Queue.PubSub.PubSubBatchQueue` e adiciona
 seis casos de tradução de erros gRPC. A classe de produção ainda pertence à T080:
@@ -162,3 +165,31 @@ ausência da classe esperada. Falha de imagem, conexão, reconexão, limpeza ou 
 inesperada e precisa ser corrigida; não é falha TDD aceitável. Relatórios/TRX ficam
 em `artifacts/validation/T077/`, ignorados pelo Git. Testes não geram credenciais nem
 requisitam projeto Google real.
+
+## T080 — adaptador implementado
+
+O bootstrap agora referencia diretamente o `PubSubBatchQueue` de produção, por
+injeção dos mesmos clientes locais. A trait PendingImplementation foi removida;
+as asserções dos 16 contratos compartilhados e seis casos gRPC foram preservadas.
+Os quatro controles SDK continuam separados. Configuração de seleção do provedor,
+criação dos clientes de produção e integração aos hosts continuam na T081.
+
+`PubSubAdapterSafetyTests` acrescenta 14 casos com emulador real: nove envelopes
+inválidos/expirados/esgotados, falha controlada na publicação de cópia de retry ou
+dead-letter mantendo a original disponível, renovação além do prazo de 10 segundos
+com NACK na disposição, limite de retry explícito e substituição de código de erro
+desconhecido mesmo quando parece uma placa em maiúsculas. Bytes e correlação são
+inspecionados via SDK; atributos desconhecidos não são copiados. Um observador da
+resposta de ACK evita depender de espera arbitrária nos cenários automáticos.
+
+São 40 casos de integração Pub/Sub: 16 contratos, seis traduções gRPC, quatro
+controles SDK e 14 cenários adicionais. Trinta casos unitários verificam limites,
+resposta de confirmação, cancelamento em andamento, falhas de pull/ACK/renovação,
+idempotência/conflito e uso após disposição com controles no SDK. Não simulam uma
+fila por trás do port de aplicação. O teste de renovação observa ausência de cópia
+naquela janela, sem afirmar exclusão de duplicação em produção.
+
+Veja [opções, ACK, retry e limites do adaptador](../../../src/CentralMobilidade.Telemetry.Infrastructure/Queue/PubSub/README.md).
+O comando PubSub acima agora deve passar integralmente. Relatórios atuais estão
+em `artifacts/validation/T080/`, ignorados. Permanecem os limites de sessão do
+emulador, a necessidade de validação gerenciada e os gates de cutover/capacidade.

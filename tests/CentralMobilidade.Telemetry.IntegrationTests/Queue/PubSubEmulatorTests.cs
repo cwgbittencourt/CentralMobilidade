@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CentralMobilidade.Telemetry.Application.Abstractions;
 using CentralMobilidade.Telemetry.ContractTests.Queue;
+using CentralMobilidade.Telemetry.Infrastructure.Queue.PubSub;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Google.Api.Gax.Grpc;
@@ -28,7 +29,6 @@ public sealed class PubSubEmulatorCollection : ICollectionFixture<PubSubEmulator
 
 [Collection("PubSub emulator")]
 [Trait("Category", "Integration")]
-[Trait("PendingImplementation", "T080")]
 public sealed class PubSubEmulatorTests(PubSubEmulatorFixture emulator) : DurableBatchQueueContractTests
 {
     protected override async Task<DurableQueueContractHarness> CreateAsync(QueuePublishFault fault = QueuePublishFault.None)
@@ -36,10 +36,7 @@ public sealed class PubSubEmulatorTests(PubSubEmulatorFixture emulator) : Durabl
 
     private async Task<PubSubAdapterHarness> CreateAdapterAsync(QueuePublishFault fault = QueuePublishFault.None, StatusCode? status = null)
     {
-        var type = typeof(CentralMobilidade.Telemetry.Infrastructure.Queue.RabbitMq.RabbitMqBatchPublisher).Assembly
-            .GetType("CentralMobilidade.Telemetry.Infrastructure.Queue.PubSub.PubSubBatchQueue");
-        type.ShouldNotBeNull("T080 must provide the production PubSubBatchQueue; emulator SDK success is not adapter conformance.");
-        typeof(IDurableBatchQueue).IsAssignableFrom(type).ShouldBeTrue();
+        var type = typeof(PubSubBatchQueue);
         var resources = await emulator.CreateResourcesAsync();
         try
         {
