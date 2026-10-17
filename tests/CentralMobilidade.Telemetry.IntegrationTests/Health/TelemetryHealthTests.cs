@@ -26,14 +26,18 @@ public sealed partial class TelemetryHealthTests
     {
         var clock = new TestTimeProvider();
         var progress = new WorkerProgress(clock);
+        progress.HeartbeatAgeSeconds.ShouldBe(double.PositiveInfinity);
         var check = new WorkerFreshnessHealthCheck(progress, new HealthProbeOptions { WorkerMaxAge = TimeSpan.FromSeconds(30) });
         (await check.CheckHealthAsync(new HealthCheckContext())).Status.ShouldBe(HealthStatus.Unhealthy);
         progress.MarkHeartbeat();
+        progress.HeartbeatAgeSeconds.ShouldBe(0);
         (await check.CheckHealthAsync(new HealthCheckContext())).Status.ShouldBe(HealthStatus.Healthy);
         clock.Ticks += TimeSpan.FromSeconds(31).Ticks;
+        progress.HeartbeatAgeSeconds.ShouldBe(31);
         (await check.CheckHealthAsync(new HealthCheckContext())).Status.ShouldBe(HealthStatus.Unhealthy);
         progress.MarkHeartbeat();
         progress.MarkUnavailable();
+        progress.HeartbeatAgeSeconds.ShouldBe(double.PositiveInfinity);
         (await check.CheckHealthAsync(new HealthCheckContext())).Status.ShouldBe(HealthStatus.Unhealthy);
     }
 

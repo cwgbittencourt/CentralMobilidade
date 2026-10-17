@@ -253,3 +253,7 @@ unique interpolation keys and blank secrets; base/development topology with app/
 passed `scripts/Test-SingleInfluxTopology.ps1` using synthetic values. No services were started and
 no database or volume was changed. This documentation-only task did not repeat runtime suites or
 claim end-to-end acceptance; persistence/restart and cross-artifact gates remain T112.
+
+## Initial local alert rules (T085)
+
+See the [Grafana alert runbook](grafana/provisioning/alerting/README.md) for the six rules, required metrics, permanent notification mute and safe application to an existing Grafana instance. Tests use disposable stacks; existing volumes are not modified.

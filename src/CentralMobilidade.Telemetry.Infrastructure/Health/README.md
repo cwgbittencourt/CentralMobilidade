@@ -111,3 +111,5 @@ An initial sandbox run failed five PostgreSQL cases because Docker's named pipe 
 successful directed run used Docker access. No deployed database, Compose topology or volume was changed.
 Unit 242/242, contract 58/58 and architecture 47/47 tests passed. The final sequential solution build
 completed with zero warnings/errors after resolving a concurrent-test DLL copy lock.
+
+T085 exports the active consumer's monotonic heartbeat age through the worker metrics endpoint. Before a signal or after unavailability it is positive infinity; scraping never renews it. See the [local alert runbook](../../../deploy/grafana/provisioning/alerting/README.md).

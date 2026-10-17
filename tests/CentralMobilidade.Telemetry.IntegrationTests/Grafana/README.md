@@ -245,3 +245,5 @@ prevents interference from process-global SDK instruments created by other hosts
 The Grafana helper waits for datasource/dashboard provisioning beyond HTTP health.
 See [panel semantics](../../../deploy/grafana/dashboards/platform-operations.md).
 Raw images and reports remain ignored under `artifacts/validation/T084/`.
+
+T085 evaluates all six production alert definitions in pinned Grafana and Prometheus with controlled telemetry, accelerating evaluation/hold/rate-window timing only. It verifies evaluated Normal, Pending, Firing, recovery, empty-data and datasource-error behavior plus the runtime permanent mute route. The synthetic HTTP server runs in the existing exclusive metrics collection because ASP.NET activity listeners are process-global. A separate real worker endpoint test checks unavailable/fresh/stale heartbeat without delivery or scrape-induced renewal. See the [alert runbook](../../../deploy/grafana/provisioning/alerting/README.md); these checks do not send notifications or certify capacity/SLOs.

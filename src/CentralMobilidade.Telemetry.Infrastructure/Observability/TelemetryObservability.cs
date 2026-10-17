@@ -13,6 +13,7 @@ using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using CentralMobilidade.Telemetry.Infrastructure.Health;
 
 namespace CentralMobilidade.Telemetry.Infrastructure.Observability;
 
@@ -39,7 +40,7 @@ public sealed class TelemetryObservability : IDisposable
     private readonly Histogram<double> deliveryAge;
     private readonly Counter<long> writeFailures;
 
-    public TelemetryObservability()
+    public TelemetryObservability(WorkerProgress? workerProgress = null)
     {
         received = meter.CreateCounter<long>("telemetry.batches.received", "{batch}");
         compressed = meter.CreateCounter<long>("telemetry.input.compressed_bytes", "By");
@@ -48,6 +49,14 @@ public sealed class TelemetryObservability : IDisposable
         writes = meter.CreateHistogram<double>("telemetry.storage.write.duration", "s");
         deliveryAge = meter.CreateHistogram<double>("telemetry.queue.delivery.age", "s");
         writeFailures = meter.CreateCounter<long>("telemetry.storage.write.failures", "{attempt}");
+        try
+        {
+            writeFailures.Add(0);
+        }
+        catch (Exception) { /* Observation cannot break startup. */ }
+        if (workerProgress is not null)
+            meter.CreateObservableGauge("telemetry.worker.heartbeat.age", () => workerProgress.HeartbeatAgeSeconds, "s",
+                "Age of the active consumer heartbeat; positive infinity when unavailable");
     }
 
     public Activity? StartBatchActivity(TelemetryOperation operation, BatchId batchId, ActivityContext parent = default)
@@ -126,7 +135,7 @@ public static class TelemetryObservabilityRegistration
         configuration.GetSection("Observability").Bind(options, b => b.ErrorOnUnknownConfiguration = true);
         options.Validate();
         services.AddSingleton(options);
-        services.AddSingleton<TelemetryObservability>();
+        services.AddSingleton(sp => new TelemetryObservability(role == TelemetryServiceRole.Worker ? sp.GetService<WorkerProgress>() : null));
         services.TryAddSingleton<BatchMetrics>();
         // Only W3C trace context crosses dependency boundaries. Never propagate baggage.
         Activity.DefaultIdFormat = ActivityIdFormat.W3C;
@@ -164,7 +173,7 @@ public static class TelemetryObservabilityRegistration
                     "telemetry.queue.delivery.age" => new ExplicitBucketHistogramConfiguration
                     {
                         TagKeys = [],
-                        Boundaries = [0, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 900, 3600, 86400, 604800]
+                        Boundaries = [0, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 900, 3600, 86400, 172800, 259200, 432000, 518400, 604800]
                     },
                     "telemetry.processing.duration" or "telemetry.storage.write.duration" => new ExplicitBucketHistogramConfiguration
                     {
@@ -175,7 +184,14 @@ public static class TelemetryObservabilityRegistration
                 })
                 .AddPrometheusExporter(o => o.ScrapeResponseCacheDurationMilliseconds = 0));
         if (role == TelemetryServiceRole.Worker)
-            services.AddHostedService<WorkerMetricsEndpoint>();
+            services.AddHostedService(sp =>
+            {
+                var provider = sp.GetRequiredService<MeterProvider>();
+                // Publish consumer heartbeat even before the first delivery/processor resolution.
+                _ = sp.GetRequiredService<TelemetryObservability>();
+                return new WorkerMetricsEndpoint(provider, options,
+                    sp.GetService<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckService>());
+            });
         return services;
     }
 

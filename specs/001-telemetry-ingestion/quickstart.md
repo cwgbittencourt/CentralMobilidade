@@ -268,3 +268,7 @@ configuration requirement. Test both fresh schema and populated legacy upgrade w
 reconciliation; preserve original volumes. An asynchronous batch state called pending/Accepted is
 not unknown-company storage and must not be removed. Record actual checks without implying capacity
 approval: ADR-001 throughput remains a separate unresolved gate.
+
+## T085 — Grafana-local alerts
+
+The [alert runbook](../../deploy/grafana/provisioning/alerting/README.md) describes six provisioned rules for observed backlog age, five-minute queryability risk, six-day delivered-message age, writer failures, filesystem pressure and worker heartbeat. All notifications are permanently muted; inspect states locally. NoData/Error requires investigation and does not prove a measured breach. These signals do not certify the SLO or managed-provider retention.

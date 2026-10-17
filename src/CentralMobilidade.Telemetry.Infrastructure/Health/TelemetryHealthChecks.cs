@@ -71,6 +71,16 @@ public sealed class WorkerProgress(TimeProvider clock)
         Volatile.Write(ref signaled, 1);
     }
     public void MarkUnavailable() => Volatile.Write(ref signaled, 0);
+    public double HeartbeatAgeSeconds
+    {
+        get
+        {
+            if (Volatile.Read(ref signaled) == 0)
+                return double.PositiveInfinity;
+            var age = clock.GetElapsedTime(Interlocked.Read(ref timestamp), clock.GetTimestamp());
+            return age < TimeSpan.Zero ? double.PositiveInfinity : age.TotalSeconds;
+        }
+    }
     public bool IsFresh(TimeSpan maxAge)
     {
         if (Volatile.Read(ref signaled) == 0)

@@ -109,3 +109,7 @@ Official references (pinned behavior is independently tested):
 - [Service account API](https://grafana.com/docs/grafana/latest/developer-resources/api-reference/http-api/api-legacy/serviceaccount/)
 - [File provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/)
 - [Infinity authentication, allowlist and custom health](https://grafana.com/docs/plugins/yesoreyeram-infinity-datasource/latest/configure/)
+
+## Local alerts (T085)
+
+The six provisioned, permanently muted local alerts and their thresholds, missing-data behavior and response steps are documented in the [alert runbook](provisioning/alerting/README.md). The existing provisioning mount loads them; no external destination is configured.

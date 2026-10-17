@@ -117,3 +117,14 @@ rolled-back pages do not increment it. The existing commit/emission crash gap an
 process-reset limitations still apply. Observation listener exceptions are isolated
 from acceptance, storage and worker error/retry decisions. No new dynamic labels,
 domain provider branches, retention rules or managed-provider backlog probes are added.
+
+## Initial alert signals (T085)
+
+Worker startup eagerly registers the fixed, tag-free `telemetry.worker.heartbeat.age`
+gauge with the existing progress probe. HTTP scrapes do not signal progress;
+unavailable progress exports positive infinity. Delivery-age buckets now include an
+exact 518400-second boundary (six days); the alert accepts both integer and
+Prometheus 3 normalized decimal labels. The writer-failure counter explicitly
+starts at zero so a running instrument can report no observed exceptions before
+its first failure. This does not establish storage connectivity. See the
+[local alert runbook](../../../deploy/grafana/provisioning/alerting/README.md).
