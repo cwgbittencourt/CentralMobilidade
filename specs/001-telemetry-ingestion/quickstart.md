@@ -205,6 +205,8 @@ durability claim.
 
 ## 9. Execute capacity gates
 
+For future GCS storage and five-year retention, follow the [T089 migration prerequisites and capacity gate](../../docs/runbooks/gcs-migration.md). Current option validation and database initialization still enforce the local 60-day profile; no GCS migration or five-year capacity result is claimed.
+
 ```powershell
 dotnet test CentralMobilidade.slnx --filter Category=Integration
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario steady-5000-eps
