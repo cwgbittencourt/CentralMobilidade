@@ -211,7 +211,7 @@ For future GCS storage and five-year retention, follow the [T089 migration prere
 dotnet test CentralMobilidade.slnx --filter Category=Integration
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario steady-5000-eps --config C:/caminho-privado/steady.json
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario reconnect-burst --config C:/caminho-privado/steady.json
-dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario influx-outage
+dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario influx-outage --config C:/caminho-privado/outage.json
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario dedup-strategy
 ```
 
@@ -222,7 +222,9 @@ the target-load experiment.
 
 The [T091 steady-state runner guide](../../tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/README.md)
 defines private configuration, required monitoring, the 8-vCPU/16-GiB profile and report limits.
-The steady and T092 burst runners are implemented; the outage CLI mode above remains a future task.
+The steady, T092 burst and T093 outage runners are implemented. Outage uses a separate
+nested configuration, an existing isolated Influx proxy and additional measured queue/write metrics;
+see the shared guide for setup, restoration and seven-day extrapolation limits.
 Burst requires DurationSeconds=600 and continues normal traffic through its additional
 1,200-second recovery window; the shared guide explains its cohort/deadline assertions.
 

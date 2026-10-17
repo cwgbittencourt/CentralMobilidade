@@ -369,7 +369,7 @@ public static class SteadyStateScenario
         return new(P(0.50), P(0.95), P(0.99));
     }
 
-    private static void CheckSample(ResourceSample sample, Action<string> fail)
+    internal static void CheckSample(ResourceSample sample, Action<string> fail)
     {
         if (sample.Values["referenceCpuCores"] != 8 || sample.Values["referenceMemoryBytes"] != 16 * GiB)
             fail("reference_profile_mismatch");
@@ -379,10 +379,10 @@ public static class SteadyStateScenario
             fail("application_memory_limit_exceeded");
     }
 
-    private static async Task<ResourceSample> SampleAsync(SteadyStateOptions options, HttpClient http, CancellationToken token)
+    internal static async Task<ResourceSample> SampleAsync(SteadyStateOptions options, HttpClient http, CancellationToken token, IReadOnlyList<string>? metrics = null)
     {
         var now = DateTimeOffset.UtcNow;
-        var entries = await Task.WhenAll(RequiredMetrics.Select(async key =>
+        var entries = await Task.WhenAll((metrics ?? RequiredMetrics).Select(async key =>
         {
             using var response = await http.GetAsync(new Uri(options.Prometheus, "/api/v1/query?query=" + Uri.EscapeDataString(options.Queries[key])), HttpCompletionOption.ResponseHeadersRead, token);
             response.EnsureSuccessStatusCode();
@@ -405,7 +405,7 @@ public static class SteadyStateScenario
         return new(now, entries.ToDictionary());
     }
 
-    private static async Task<byte[]> ReadBoundedAsync(HttpResponseMessage response, CancellationToken token)
+    internal static async Task<byte[]> ReadBoundedAsync(HttpResponseMessage response, CancellationToken token)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));

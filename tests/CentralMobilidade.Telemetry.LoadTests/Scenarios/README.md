@@ -131,7 +131,7 @@ substituem o ensaio T094. Rode-os separadamente do benchmark PostgreSQL existent
 dotnet test tests/CentralMobilidade.Telemetry.LoadTests --filter FullyQualifiedName~SteadyStateScenarioTests
 ```
 
-O cenário `reconnect-burst` da T092 está descrito abaixo; outage da T093 permanece futuro. Nenhum resultado de 5.000
+Os cenários `reconnect-burst` e `influx-outage` estão descritos abaixo. Nenhum resultado de 5.000
 eventos/s no hardware de referência é alegado pela entrega da T091.
 
 ## Reconnection burst — T092
@@ -195,3 +195,142 @@ A T092 implementa o cenário e as asserções de reconciliação/prazo; não exe
 o ensaio de capacidade T094. Estados de batch não substituem uma contagem e consulta
 independentes de pontos no Influx, nem provam sobrevivência a perda física de host.
 Essas evidências continuam obrigatórias nos gates de capacidade/aceitação final.
+
+## Influx outage e projeção de sete dias — T093
+
+O modo `influx-outage` usa a geração de 5.000 eventos/s da T091. Injeta falha de
+conectividade **somente** por um proxy Toxiproxy já existente e exclusivo da
+instalação de teste; não para containers, altera volumes ou executa comandos shell.
+Prepare a instalação descartável com todos os acessos de escrita do worker ao
+Influx passando pelo proxy. Verifique essa rota com um canário antes do ensaio.
+Não use produção ou uma instalação compartilhada; `IsolatedTarget=true` registra
+essa escolha explícita e não detecta isolamento físico automaticamente.
+
+Provisione e fixe a versão do Toxiproxy no manifesto privado. O runner usa a
+[API oficial de proxy](https://github.com/Shopify/toxiproxy#http-api): consulta o
+nome/listen/upstream exatos e altera apenas `enabled`, verificando o estado depois.
+Não cria/deleta proxy, muda upstream, manipula toxics ou chama reset global.
+O estado inicial precisa ser enabled e a fila de teste precisa estar vazia.
+Mantenha controle exclusivo da fixture durante o teste. O endereço de controle
+deve ser uma origem loopback, com encaminhamento local protegido quando necessário.
+Se a fixture exigir autenticação, forneça `TELEMETRY_LOAD_FAULT_TOKEN` por ambiente
+protegido; ele é distinto do token do produtor e só vai ao controle do proxy.
+
+Além das dez consultas da T091, configure quatro consultas agregadas e verificadas:
+
+| Chave | Medida necessária |
+| --- | --- |
+| queuePayloadBytes | Bytes de corpo gzip retidos na fila do ensaio, incluindo ready/unacked, sem somar o mesmo corpo duas vezes |
+| queueDiskUsedBytes | Ocupação em disco do broker/volume dedicado, com baseline; memória residente não equivale a bytes persistidos |
+| storageWriteFailures | Contador de tentativas de escrita falhas do worker, mesmo escopo antes/durante/depois |
+| storageWriteConfirmations | Contador de confirmações de escrita do worker, nunca um contador de envios HTTP ou de mensagens ACKadas |
+
+Consultas devem preservar ausência, identidade de instância e resets; scrape
+precisa ter tempo de registrar cada fase. Use outage maior que scrape + timeout
+de escrita + backoff. Prepare aquecimento antes e use janela de quantis de escrita
+que mantenha amostras durante a ausência esperada de novas escritas; NaN não vira
+zero. Os nomes de recording rules deste exemplo são contratos a provisionar, como
+na T091. O runner não instala essas fontes. Um endpoint direto ao Influx que
+ignore o proxy invalida o experimento, mesmo que a API de controle responda bem.
+
+Exemplo de JSON privado, com endpoints e nomes revisados para a fixture:
+
+```json
+{
+  "Load": {
+    "Api": "http://localhost:8080/",
+    "Prometheus": "http://localhost:9090/",
+    "ReportDirectory": "C:/Users/lucas/source/repos/CentralMobilidade/artifacts/validation/T093/real-run",
+    "DurationSeconds": 600,
+    "MaxConcurrentPosts": 16,
+    "DrainSeconds": 300,
+    "Queries": {
+      "referenceCpuCores": "load_reference_cpu_cores",
+      "referenceMemoryBytes": "load_reference_memory_bytes",
+      "cpuPercent": "load_application_cpu_percent",
+      "memoryBytes": "load_application_memory_bytes",
+      "diskUsedBytes": "load_storage_used_bytes",
+      "queueMessages": "load_queue_messages",
+      "queueOldestAgeSeconds": "load_queue_oldest_age_seconds",
+      "writeP50Seconds": "load_write_p50_seconds",
+      "writeP95Seconds": "load_write_p95_seconds",
+      "writeP99Seconds": "load_write_p99_seconds",
+      "queuePayloadBytes": "load_queue_payload_bytes",
+      "queueDiskUsedBytes": "load_queue_disk_used_bytes",
+      "storageWriteFailures": "load_storage_write_failures_total",
+      "storageWriteConfirmations": "load_storage_write_confirmations_total"
+    }
+  },
+  "FaultControl": "http://127.0.0.1:8474/",
+  "ProxyName": "centralmobilidade_load_influx",
+  "ExpectedListen": "[::]:8182",
+  "ExpectedUpstream": "influxdb:8181",
+  "IsolatedTarget": true,
+  "OutageSeconds": 120,
+  "RecoverySeconds": 600
+}
+```
+
+```powershell
+dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario influx-outage --config C:/caminho-privado/outage.json
+```
+
+Os 120 segundos de indisponibilidade são seguidos por 600 segundos de recuperação
+com carga normal ativa. A duração efetiva de geração substitui `Load.DurationSeconds`
+pela soma dessas duas fases (720 por padrão). O tempo real de indisponibilidade
+inclui chamadas/preflight e é registrado separadamente. No final, o runner usa até
+`Load.DrainSeconds` para reconciliar todos os lotes. Outage aceita 1–600 s e
+recuperação 1–1.800 s; ensaios menores que 120/600 são smoke, sem perfil de referência.
+Revise a política de retries/MaxAttempts para a janela escolhida: mandar dados
+para DLQ durante a falha não conta como recuperação bem-sucedida.
+
+Para PASS, durante a falha backlog em mensagens **e** bytes deve aumentar, o contador
+de falhas de escrita deve crescer e o de confirmações permanecer no baseline.
+Depois da restauração, confirmações precisam voltar, a fila retornar ao baseline
+em mensagens/bytes e todos os `202` reconciliar em lotes completos com as contagens
+exatas. Métricas ausentes, resets/divergência, falha de controle/restauração,
+rejeição/perda/não conclusão de lote ou qualquer falha da T091 reprovam. Como os
+estados são observados no fim, a latência é limite superior; não comprova por si
+só presença independente de cada ponto no Influx.
+
+O `finally` tenta reabilitar o proxy mesmo após erro ambíguo de disable ou Ctrl+C,
+com deadline próprio de 30 s; nunca herda o token cancelado da carga. Se não conseguir
+confirmar a restauração, `ProxyRestored=false` e `proxy_restore_unconfirmed` ficam
+no relatório `outage-<run>.json`. Intervenção do operador continua necessária nesse
+caso; a aplicação não garante recuperação de um controlador inacessível. Falhas de
+preflight anteriores à mutação podem não gerar relatório. O relatório `steady-*`
+associado mantém recibos, percentis e séries de recursos, sem tokens ou payloads.
+
+### Extrapolação, sem alegação de retenção comprovada
+
+A 5.000 eventos/s, sete dias equivalem a **3.024.000.000 eventos** ou **6.048.000
+mensagens de 500 eventos**. O relatório projeta bytes de payload pelo gzip/evento
+medido; projeta disco apenas quando existem crescimento positivo e mensagens
+adicionais observadas. Sem isso, disco fica `null`, não zero. Segmentos, metadados,
+réplicas, outros stores, índices/guards PostgreSQL, logs, backups e margem precisam
+de avaliação separada. O corpus sintético simples não representa automaticamente
+a compressão/entropia da frota real; T094/T095 precisam de medições representativas.
+
+Uma coorte totalmente reconciliada após falha comprovada fornece um limite inferior
+de throughput de recuperação: eventos concluídos / tempo observado após restaurar.
+Com entrada normal mantida, o modelo de catch-up usa `backlog / (throughput - 5000)`.
+Se throughput não superar 5.000, ou o ensaio falhar, não se afirma capacidade líquida
+de recuperação: tempo fica `null`, com `catch_up_not_demonstrated`. Mesmo um valor
+calculável é `estimate_only`, sujeito a I/O, CPU, espaço, retries, aging e carga real.
+
+Backlog de sete dias e retenção de sete dias não deixam mais sete dias para drenar:
+a mensagem mais antiga já está no limite de expiração. Compare idade real, prazo
+restante e plano de recuperação **antes** dessa fronteira; não renove timestamps/TTL
+para esconder perda. Este cenário curto não testa espera de sete dias, sobrevivência
+a reinício/perda de host, saturação real do disco ou restauro do broker.
+
+Os 18 testes novos usam transporte simulado e janelas de um segundo, incluindo
+cancelamento, upstream divergente, efeito da falha ausente, perda de lote, falha de
+restauração e resposta ambígua ao disable. Execute a regressão dos três cenários:
+
+```powershell
+dotnet test tests/CentralMobilidade.Telemetry.LoadTests --filter 'FullyQualifiedName~InfluxOutageScenarioTests|FullyQualifiedName~ReconnectionBurstScenarioTests|FullyQualifiedName~SteadyStateScenarioTests'
+```
+
+A execução real contra fixture privada e os gates de capacidade permanecem na T094;
+a T093 não altera nem interrompe um deployment existente durante sua validação.

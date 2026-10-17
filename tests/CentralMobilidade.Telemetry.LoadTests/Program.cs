@@ -12,20 +12,28 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
-        if (args.Length != 4 || args[0] != "--scenario" || args[1] is not ("steady-5000-eps" or "reconnect-burst") || args[2] != "--config")
+        if (args.Length != 4 || args[0] != "--scenario" || args[1] is not ("steady-5000-eps" or "reconnect-burst" or "influx-outage") || args[2] != "--config")
         {
-            Console.Error.WriteLine("Usage: --scenario <steady-5000-eps|reconnect-burst> --config <private-json-path>");
+            Console.Error.WriteLine("Usage: --scenario <steady-5000-eps|reconnect-burst|influx-outage> --config <private-json-path>");
             return 2;
         }
         using var stop = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
         try
         {
-            var options = JsonSerializer.Deserialize<SteadyStateOptions>(await File.ReadAllTextAsync(args[3], stop.Token))
-                ?? throw new ArgumentException();
+            var config = await File.ReadAllTextAsync(args[3], stop.Token);
             using var handler = new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, MaxConnectionsPerServer = 32 };
             using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
             var token = Environment.GetEnvironmentVariable("TELEMETRY_LOAD_PRODUCER_TOKEN") ?? "";
+            if (args[1] == "influx-outage")
+            {
+                var outage = JsonSerializer.Deserialize<InfluxOutageOptions>(config) ?? throw new ArgumentException();
+                var result = await InfluxOutageScenario.RunAsync(outage, http, token, stop.Token,
+                    Environment.GetEnvironmentVariable("TELEMETRY_LOAD_FAULT_TOKEN"));
+                Console.WriteLine(result.Passed ? "PASS: outage scenario gates passed; inspect the private report." : "FAIL: inspect the private report and proxy restoration status.");
+                return result.Passed ? 0 : 1;
+            }
+            var options = JsonSerializer.Deserialize<SteadyStateOptions>(config) ?? throw new ArgumentException();
             var report = args[1] == "reconnect-burst"
                 ? await ReconnectionBurstScenario.RunAsync(options, http, token, stop.Token)
                 : await SteadyStateScenario.RunAsync(options, http, token, stop.Token);
