@@ -69,6 +69,7 @@ ou quando o perfil/limites iniciais não correspondem ao gate.
   "DurationSeconds": 600,
   "MaxConcurrentPosts": 16,
   "DrainSeconds": 300,
+  "Vehicles": 100000,
   "Queries": {
     "referenceCpuCores": "load_reference_cpu_cores",
     "referenceMemoryBytes": "load_reference_memory_bytes",
@@ -334,3 +335,38 @@ dotnet test tests/CentralMobilidade.Telemetry.LoadTests --filter 'FullyQualified
 
 A execução real contra fixture privada e os gates de capacidade permanecem na T094;
 a T093 não altera nem interrompe um deployment existente durante sua validação.
+
+## Execução de capacidade — T094
+
+`SteadyStateOptions.Vehicles` aceita 10.000 (500 eventos/s, 50 por gzip) ou
+100.000 (5.000 eventos/s, 500 por gzip), mantendo slots de 100 ms e a cadência de
+20 segundos por veículo. O nome de CLI `steady-5000-eps` é preservado; o perfil e
+a taxa efetivos aparecem no relatório. Burst/outage continuam exigindo o fundo
+de 100.000 veículos para preservar seus modelos.
+
+O [preparador T094](../../../scripts/Run-CapacityGates.py) cria fixtures Docker
+independentes por perfil/fase, migra PostgreSQL, inicializa Influx com retenção
+60d, aquece o pipeline e coleta recursos reais em Prometheus. Não reutiliza o
+deployment de desenvolvimento nem apaga volumes ao terminar. Requer as imagens
+`centralmobilidade-api:t094` e `centralmobilidade-worker:t094` construídas da fonte
+atual e as ferramentas locais restauradas. Credenciais e inspeções permanecem
+na pasta ignorada do ensaio, nunca no relatório versionado.
+
+```powershell
+py -3 scripts/Run-CapacityGates.py --duration 600 --soak-duration 1800
+```
+
+Cada perfil executa dez minutos de carga; o soak de trinta minutos é condicionado
+ao PASS dessa carga. Uma fase única, sem orquestração automática do soak, pode ser
+isolada com `--vehicles 10000` ou `--vehicles 100000`; nesse caso `--duration` define
+o período medido. Exit 1 indica reprovação/incompletude do preparador, não aprovação
+por ausência de exceção. Resultados e limitações ficam no
+[relatório de capacidade](../../../artifacts/performance/telemetry-capacity-report.md).
+
+A fixture mede idade do batch pendente via PostgreSQL como aproximação conservadora;
+isso não atende uma prova exata do timestamp da cabeça RabbitMQ. A contagem SQL
+independente no Influx verifica o namespace do ensaio no corte final, sem certificar
+queryability por evento em cinco minutos. Reprovação não autoriza concluir perda
+de eventos: dados pendentes são preservados nos volumes. O campo `capacityApproved`
+do manifesto permanece falso; a aceitação exige análise desses gates e de suas
+lacunas, não apenas `Passed` do runner.

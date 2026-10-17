@@ -18,6 +18,35 @@ namespace CentralMobilidade.Telemetry.LoadTests.Scenarios;
 
 public sealed class SteadyStateScenarioTests
 {
+    [Fact]
+    public async Task Ten_thousand_vehicle_baseline_offers_five_hundred_events_per_second()
+    {
+        var directory = Path.Combine(Root(), "artifacts", "validation", "T094", "baseline-protocol-" + Guid.NewGuid().ToString("N"));
+        using var handler = new ProtocolHandler { BatchEvents = 50 };
+        using var http = new HttpClient(handler);
+        var report = await SteadyStateScenario.RunAsync(OptionsFor(directory) with
+        {
+            Vehicles = 10000
+        }, http, "private-token");
+        report.Passed.ShouldBeTrue();
+        report.TargetEventsPerSecond.ShouldBe(500);
+        report.ScheduledEvents.ShouldBe(500);
+        report.ReconciledEvents.ShouldBe(500);
+        handler.InvalidBody.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(10000, 50)]
+    [InlineData(100000, 500)]
+    public void Each_profile_preserves_twenty_second_vehicle_cadence(int vehicles, int count)
+    {
+        var start = DateTimeOffset.FromUnixTimeMilliseconds(1791686400000);
+        var first = Decode(SteadyStateScenario.CreateBatch("baseline", 0, start, vehicles).Gzip);
+        first.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length.ShouldBe(count);
+        Decode(SteadyStateScenario.CreateBatch("baseline", 200, start, vehicles).Gzip)
+            .ShouldBe(first.Replace("1791686400000", "1791686420000", StringComparison.Ordinal));
+        Should.Throw<ArgumentOutOfRangeException>(() => SteadyStateScenario.CreateBatch("baseline", 0, start, 50000));
+    }
     private static SteadyStateOptions OptionsFor(string directory) => new(new("http://sut/"), new("http://metrics/"), directory,
         SteadyStateScenario.RequiredMetrics.ToDictionary(key => key, key => key), DurationSeconds: 1, DrainSeconds: 1);
 
@@ -130,6 +159,7 @@ public sealed class SteadyStateScenarioTests
     {
         public string Mode = "ok", MetricFault = "";
         public int Posts;
+        public int BatchEvents = 500;
         public bool InvalidBody;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
@@ -162,7 +192,7 @@ public sealed class SteadyStateScenarioTests
             {
                 Interlocked.Increment(ref Posts);
                 var text = Decode(await request.Content!.ReadAsByteArrayAsync(token));
-                InvalidBody |= text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length != 500
+                InvalidBody |= text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length != BatchEvents
                     || request.Content.Headers.ContentEncoding.Single() != "gzip" || request.Headers.GetValues("X-Contract-Version").Single() != "v1";
                 if (Mode == "reject")
                     return new(HttpStatusCode.TooManyRequests);
@@ -170,7 +200,7 @@ public sealed class SteadyStateScenarioTests
             }
             var id = Guid.Parse(request.RequestUri.Segments[^1]);
             return Json(new BatchStatus(id, Mode == "partial" ? BatchState.CompletedWithRejections : BatchState.Completed,
-                DateTimeOffset.UtcNow, Mode == "partial" ? 499 : 500, Mode == "partial" ? 1 : 0, 0, TotalLines: 500));
+                DateTimeOffset.UtcNow, Mode == "partial" ? BatchEvents - 1 : BatchEvents, Mode == "partial" ? 1 : 0, 0, TotalLines: BatchEvents));
         }
         private static HttpResponseMessage Json(object value, HttpStatusCode status = HttpStatusCode.OK)
             => new(status)

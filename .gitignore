@@ -1,5 +1,7 @@
 # Local tooling caches
 .uv-cache/
+__pycache__/
+*.py[cod]
 
 # Local secrets and overrides
 .env
@@ -31,7 +33,7 @@ Thumbs.db
 *.tmp
 *.swp
 
-# Version only the reviewed T112 report; raw validation output and tokens stay private.
+# Version reviewed reports only; raw validation output and tokens stay private.
 !artifacts/
 artifacts/*
 !artifacts/validation/
@@ -39,3 +41,6 @@ artifacts/validation/*
 !artifacts/validation/foundation-single-influx/
 artifacts/validation/foundation-single-influx/*
 !artifacts/validation/foundation-single-influx/README.md
+!artifacts/performance/
+artifacts/performance/*
+!artifacts/performance/telemetry-capacity-report.md

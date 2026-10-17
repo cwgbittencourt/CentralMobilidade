@@ -20,7 +20,7 @@ namespace CentralMobilidade.Telemetry.LoadTests.Scenarios;
 
 public sealed record SteadyStateOptions(Uri Api, Uri Prometheus, string ReportDirectory,
     Dictionary<string, string> Queries, int DurationSeconds = 600, int MaxConcurrentPosts = 16,
-    int DrainSeconds = 300);
+    int DrainSeconds = 300, int Vehicles = 100000);
 public sealed record LatencyPercentiles(double P50, double P95, double P99);
 public sealed record ResourceSample(DateTimeOffset Utc, Dictionary<string, double> Values);
 public sealed record SteadyStateReport(string RunId, bool Passed, bool ReferenceCapacityRun,
@@ -62,7 +62,6 @@ public static class SteadyStateScenario
         "referenceCpuCores", "referenceMemoryBytes", "cpuPercent", "memoryBytes", "diskUsedBytes",
         "queueMessages", "queueOldestAgeSeconds", "writeP50Seconds", "writeP95Seconds", "writeP99Seconds"
     });
-    private const int BatchSize = 500;
     private const long GiB = 1024L * 1024 * 1024;
     private sealed record Accepted(Guid Id, double StartedMilliseconds, int Events, int BurstEvents);
 
@@ -72,6 +71,10 @@ public static class SteadyStateScenario
     internal static async Task<SteadyStateReport> RunCoreAsync(SteadyStateOptions options, HttpClient http, string producerToken, BurstProfile? burst, CancellationToken token)
     {
         Validate(options, producerToken);
+        var batchSize = options.Vehicles / 200;
+        var rate = options.Vehicles / 20;
+        if (burst is not null && options.Vehicles != 100000)
+            throw new ArgumentException("Burst requires the target background profile.");
         var run = Guid.NewGuid().ToString("N");
         var start = DateTimeOffset.UtcNow;
         var failures = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
@@ -83,7 +86,7 @@ public static class SteadyStateScenario
         long attempted = 0, acknowledged = 0, reconciled = 0, compressed = 0, decompressed = 0;
         long burstAcknowledged = 0, burstReconciled = 0;
         double lastBurstObservation = 0;
-        var scheduled = options.DurationSeconds * 5000L + (burst?.Events ?? 0);
+        var scheduled = options.DurationSeconds * (long)rate + (burst?.Events ?? 0);
         var posts = new List<Task>();
         using var slots = new SemaphoreSlim(options.MaxConcurrentPosts);
         var clock = Stopwatch.StartNew();
@@ -187,7 +190,7 @@ public static class SteadyStateScenario
         if (burst is not null && (burstAcknowledged != burst.Events || burstReconciled != burst.Events))
             Fail("burst_not_drained_by_deadline");
         var report = new SteadyStateReport(run, failures.IsEmpty, burst?.Reference ?? options.DurationSeconds >= 600,
-            5000, scheduled, attempted, acknowledged, reconciled, compressed, decompressed,
+            rate, scheduled, attempted, acknowledged, reconciled, compressed, decompressed,
             seconds, acknowledged / seconds, compressed / seconds, decompressed / seconds,
             Percentiles(intake), Percentiles(terminal), samples.Count >= 2 ? samples[^1].Values["diskUsedBytes"] - samples[0].Values["diskUsedBytes"] : null,
             samples, failures.Keys.OrderBy(value => value, StringComparer.Ordinal).ToArray())
@@ -213,8 +216,8 @@ public static class SteadyStateScenario
             try
             {
                 var burstEvents = burst?.EventsInBatch(batch) ?? 0;
-                var payload = burst is null ? CreateBatch(run, batch, start) : ReconnectionBurstScenario.CreateBatch(run, batch, start, burst);
-                Interlocked.Add(ref attempted, BatchSize + burstEvents);
+                var payload = burst is null ? CreateBatch(run, batch, start, options.Vehicles) : ReconnectionBurstScenario.CreateBatch(run, batch, start, burst);
+                Interlocked.Add(ref attempted, batchSize + burstEvents);
                 Interlocked.Add(ref compressed, payload.Gzip.Length);
                 Interlocked.Add(ref decompressed, payload.RawBytes);
                 using var request = Request(HttpMethod.Post, new Uri(options.Api, "/api/v1/telemetry/batches"));
@@ -235,12 +238,12 @@ public static class SteadyStateScenario
                     Fail("invalid_receipt");
                     return;
                 }
-                if (!accepted.TryAdd(receipt.BatchId, new(receipt.BatchId, began, BatchSize + burstEvents, burstEvents)))
+                if (!accepted.TryAdd(receipt.BatchId, new(receipt.BatchId, began, batchSize + burstEvents, burstEvents)))
                 {
                     Fail("duplicate_receipt");
                     return;
                 }
-                Interlocked.Add(ref acknowledged, BatchSize + burstEvents);
+                Interlocked.Add(ref acknowledged, batchSize + burstEvents);
                 Interlocked.Add(ref burstAcknowledged, burstEvents);
             }
             catch { Fail(token.IsCancellationRequested ? "cancelled" : "intake_unconfirmed"); }
@@ -338,19 +341,23 @@ public static class SteadyStateScenario
         if (!Origin(options.Api) || !Origin(options.Prometheus) || string.IsNullOrWhiteSpace(token)
             || token.Any(char.IsWhiteSpace) || options.DurationSeconds is < 1 or > 3600
             || options.MaxConcurrentPosts is < 1 or > 64 || options.DrainSeconds is < 1 or > 300
+            || options.Vehicles is not (10000 or 100000)
             || string.IsNullOrWhiteSpace(options.ReportDirectory) || !Path.IsPathFullyQualified(options.ReportDirectory)
             || RequiredMetrics.Any(key => !options.Queries.TryGetValue(key, out var query) || string.IsNullOrWhiteSpace(query)))
             throw new ArgumentException("A bounded scenario, private report directory and complete monitoring configuration are required.");
     }
 
-    public static (byte[] Gzip, long RawBytes) CreateBatch(string run, int batch, DateTimeOffset start)
+    public static (byte[] Gzip, long RawBytes) CreateBatch(string run, int batch, DateTimeOffset start, int vehicles = 100000)
     {
+        if (vehicles is not (10000 or 100000))
+            throw new ArgumentOutOfRangeException(nameof(vehicles));
+        var batchSize = vehicles / 200;
         var lines = new StringBuilder();
-        for (var point = 0; point < BatchSize; point++)
+        for (var point = 0; point < batchSize; point++)
         {
-            var ordinal = batch * (long)BatchSize + point;
-            var vehicle = ordinal % 100000;
-            var timestamp = start.ToUnixTimeMilliseconds() + ordinal / 100000 * 20000;
+            var ordinal = batch * (long)batchSize + point;
+            var vehicle = ordinal % vehicles;
+            var timestamp = start.ToUnixTimeMilliseconds() + ordinal / vehicles * 20000;
             lines.Append(CultureInfo.InvariantCulture, $"telemetria,empresa_id=load-{run}-{vehicle % 100},veiculo_id=v{vehicle} latitude=1,longitude=2,velocidade=3,rpm=4i,ignicao=true {timestamp}\n");
         }
         var raw = Encoding.UTF8.GetBytes(lines.ToString());

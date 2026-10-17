@@ -174,7 +174,7 @@ public static class InfluxOutageScenario
         {
             DurationSeconds = options.OutageSeconds + options.RecoverySeconds
         }, producerToken);
-        if (!options.IsolatedTarget || !options.FaultControl.IsAbsoluteUri || !options.FaultControl.IsLoopback
+        if (!options.IsolatedTarget || options.Load.Vehicles != 100000 || !options.FaultControl.IsAbsoluteUri || !options.FaultControl.IsLoopback
             || options.FaultControl.Scheme is not ("http" or "https") || options.FaultControl.UserInfo.Length != 0
             || options.FaultControl.AbsolutePath != "/" || options.FaultControl.Query.Length != 0 || options.FaultControl.Fragment.Length != 0
             || string.IsNullOrWhiteSpace(options.ProxyName) || options.ProxyName.Length > 64
