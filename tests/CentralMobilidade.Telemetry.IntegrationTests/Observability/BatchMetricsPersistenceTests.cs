@@ -56,6 +56,10 @@ public sealed class BatchMetricsPersistenceTests(BatchLifecycleDatabase database
             new(id, batch.BatchId, 1, TelemetryErrorCodes.LpInvalidSyntax, now, now.AddDays(30), new string('b', 64)));
         await store.RecordLineResultsAsync(batch.BatchId, [line], default);
         await store.RecordLineResultsAsync(batch.BatchId, [line], default);
+        var replay = new LineProcessingOutcome(3, LineOutcome.IdenticalReplay, null,
+            new("PRIVATE_COMPANY"), new("PRIVATE_VEHICLE"), "hmac-sha256:v1:" + new string('d', 64), now);
+        await store.RecordLineResultsAsync(batch.BatchId, [replay], default);
+        await store.RecordLineResultsAsync(batch.BatchId, [replay], default);
         // A new row followed by a conflicting existing row rolls back the whole page.
         var otherId = Guid.NewGuid();
         var other = line with
@@ -74,6 +78,7 @@ public sealed class BatchMetricsPersistenceTests(BatchLifecycleDatabase database
         foreach (var state in new[] { "receiving", "publishing", "accepted", "processing" })
             Count(text, "telemetry_batch_state_" + state).ShouldBe(1);
         Count(text, "telemetry_rejections_lp_invalid_syntax").ShouldBe(1);
+        Count(text, "telemetry_lines_identical_replay").ShouldBe(1);
         foreach (var secret in new[] { "PRIVATE_", batch.BatchId.ToString(), id.ToString(), "empresa_id=", "veiculo_id=", "batch_id=" })
             text.ShouldNotContain(secret);
         text.Split('\n').Where(x => x.StartsWith("telemetry_batch_state_", StringComparison.Ordinal) || x.StartsWith("telemetry_rejections_", StringComparison.Ordinal))

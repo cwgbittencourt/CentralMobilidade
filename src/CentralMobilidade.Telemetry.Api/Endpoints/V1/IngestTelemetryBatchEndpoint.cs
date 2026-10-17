@@ -12,6 +12,7 @@ using CentralMobilidade.Telemetry.Contracts.Api.V1;
 using CentralMobilidade.Telemetry.Contracts.Errors;
 using CentralMobilidade.Telemetry.Contracts.Messaging.V1;
 using CentralMobilidade.Telemetry.Infrastructure.Streaming;
+using CentralMobilidade.Telemetry.Infrastructure.Observability;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -78,6 +79,7 @@ public static class IngestTelemetryBatchEndpoint
                     "text/plain; charset=utf-8", "gzip", spool.CompressedBytes, spool.PayloadSha256, "v1");
                 var accepted = await handler.HandleAsync(new(metadata, spool.Body), context.RequestAborted)
                     .ConfigureAwait(false);
+                context.RequestServices.GetService<TelemetryObservability>()?.RecordReceived(spool.CompressedBytes);
                 var statusUrl = Route + "/" + accepted.BatchId;
                 context.Response.Headers.Location = statusUrl;
                 context.Response.Headers.RetryAfter = StatusRetryAfterSeconds.ToString(

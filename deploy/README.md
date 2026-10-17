@@ -47,6 +47,8 @@ in T071–T074. Prometheus scraping and the optional PostgreSQL/Linux host expor
 are configured in [the metrics guide](prometheus/README.md). Loki's 30-day compactor
 retention and OTLP label policy are configured in [the Loki guide](loki/README.md),
 including trusted-ingestion requirements and the limits of native push filtering.
+The read-only [platform operations dashboard](grafana/dashboards/platform-operations.md)
+is provisioned separately into internal organization 1 and uses only Prometheus.
 
 `quarantine-init` creates a private `rejections` directory owned by application UID 1654. Application
 containers must mount `quarantine_data` at `/quarantine` and use `/quarantine/rejections`.

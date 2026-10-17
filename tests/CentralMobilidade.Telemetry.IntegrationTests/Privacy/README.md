@@ -24,12 +24,15 @@ Run from the repository root with Docker running:
 dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests --filter 'FullyQualifiedName~ObservabilityLeakTests|FullyQualifiedName~PrivacyCanaryScannerTests'
 ```
 
-One disposable `grafana/loki:3.7.0` container uses the repository bootstrap config,
+One disposable `grafana/loki:3.7.0` container uses the current repository `loki-config.yaml`,
 ephemeral data and a random host port. The test uses root only to make that
 disposable filesystem writable; it does not test production filesystem hardening.
 Testcontainers owns cleanup. No existing deployment or volume is modified. The
 test explicitly pushes the production logger's output through Loki's HTTP API;
-it does not verify a deployed log shipper, Prometheus server configuration, Loki
+native pushes use `service_name` and one synthetic run-isolation label, within the
+T083 count budget. This negative-control API intentionally bypasses OTLP attribute
+filtering, allowing the scanner to prove detection of deliberately unsafe bodies.
+It does not verify a deployed log shipper, Prometheus server configuration, Loki
 retention or alerts (separate tasks). The worker uses its production metrics
 listener; its HTTP probe is a test stimulus, not a production worker endpoint.
 The loopback collector receives actual OTLP HTTP/protobuf; string values are

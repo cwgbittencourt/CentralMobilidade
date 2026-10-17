@@ -1,0 +1,1434 @@
+{
+  "uid": "platform-operations",
+  "title": "Operações da plataforma",
+  "description": "Monitoramento técnico agregado e interno; sinais observados, não aprovação de capacidade.",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "internal",
+    "operations",
+    "telemetry"
+  ],
+  "timezone": "utc",
+  "refresh": "30s",
+  "time": {
+    "to": "now",
+    "from": "now-1h"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "15s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "h": 5,
+        "w": 24,
+        "y": 0
+      },
+      "options": {
+        "content": "Visão interna e agregada. **Sem dados não significa zero nem saudável.** Idade na entrega inclui espera, prefetch e redelivery; não é a idade da mensagem mais antiga ainda na fila. Contadores locais podem perder observações entre commit e emissão. RabbitMQ é infraestrutura local; estes painéis não medem backlog gerenciado Pub/Sub. Host no Docker Desktop = VM Linux. Taxas precisam de duas amostras. Estes sinais não aprovam capacidade nem substituem testes de carga.",
+        "mode": "markdown"
+      },
+      "title": "Operação da plataforma",
+      "id": 1
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "up mede scrape HTTP; não comprova readiness de aplicação nem durabilidade. Exporters opcionais ausentes permanecem DOWN.",
+      "type": "timeseries",
+      "id": 2,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Disponibilidade da coleta",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "{{job}}",
+          "refId": "A",
+          "expr": "min by(job) (up)",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "h": 8,
+        "w": 12,
+        "y": 5.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Emissão após confirmação do handler HTTP. Não conta pedidos recusados antes da aceitação nem linhas/eventos por segundo.",
+      "type": "timeseries",
+      "id": 3,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Taxa de lotes aceitos",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "lotes aceitos/s",
+          "refId": "A",
+          "expr": "sum(rate(telemetry_batches_received_total{job=\"api\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "h": 8,
+        "w": 12,
+        "y": 5.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "Bps",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Bytes comprimidos de uploads aceitos; não equivale a bytes descomprimidos, tráfego total ou armazenamento.",
+      "type": "timeseries",
+      "id": 4,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Bytes gzip aceitos",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "gzip aceito/s",
+          "refId": "A",
+          "expr": "sum(rate(telemetry_input_compressed_bytes_total{job=\"api\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "h": 8,
+        "w": 12,
+        "y": 13.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Agregado de todas as filas locais, incluindo retry/dead-letter. Não representa backlog Pub/Sub.",
+      "type": "timeseries",
+      "id": 5,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Backlog RabbitMQ — profundidade",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "prontos",
+          "refId": "A",
+          "expr": "sum(rabbitmq_queue_messages_ready{job=\"rabbitmq\"})",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "sem ACK",
+          "refId": "B",
+          "expr": "sum(rabbitmq_queue_messages_unacked{job=\"rabbitmq\"})",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "h": 8,
+        "w": 12,
+        "y": 13.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Recebimento do lote até início da tentativa no worker; inclui espera por slot, prefetch e redelivery. Só observa lotes entregues. Não mede a fila parada. Relógios futuros são limitados a zero.",
+      "type": "timeseries",
+      "id": 6,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Idade observada na entrega — p95",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "idade p95 na entrega",
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(telemetry_queue_delivery_age_seconds_bucket{job=\"worker\"}[$__rate_interval])))",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "h": 8,
+        "w": 12,
+        "y": 21.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Tempo do processador do worker, inclusive resultado de retry/cancelamento. Não é confirmação end-to-end nem SLO de visibilidade.",
+      "type": "timeseries",
+      "id": 7,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Latência de tentativa — p95",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "tentativa p95",
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(telemetry_processing_duration_seconds_bucket{job=\"worker\"}[$__rate_interval])))",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "h": 8,
+        "w": 12,
+        "y": 21.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Duração de chamadas do writer, incluindo falhas e cancelamentos. Não mede tempo até consulta nem latência por ponto.",
+      "type": "timeseries",
+      "id": 8,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Latência de escrita InfluxDB — p95",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "writer p95",
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(telemetry_storage_write_duration_seconds_bucket{job=\"worker\"}[$__rate_interval])))",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "h": 8,
+        "w": 12,
+        "y": 29.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Novas linhas rejeitadas após commit; séries separadas por código fixo. Não inclui falhas HTTP anteriores à persistência.",
+      "type": "timeseries",
+      "id": 9,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Rejeições persistidas",
+      "targets": [
+        {
+          "editorMode": "code",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_empty_line",
+          "expr": "sum(rate(telemetry_rejections_lp_empty_line_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_invalid_syntax",
+          "expr": "sum(rate(telemetry_rejections_lp_invalid_syntax_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_unknown_measurement",
+          "expr": "sum(rate(telemetry_rejections_lp_unknown_measurement_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_unknown_column",
+          "expr": "sum(rate(telemetry_rejections_lp_unknown_column_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_missing_required_tag",
+          "expr": "sum(rate(telemetry_rejections_lp_missing_required_tag_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_missing_required_field",
+          "expr": "sum(rate(telemetry_rejections_lp_missing_required_field_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "G",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_invalid_field_type",
+          "expr": "sum(rate(telemetry_rejections_lp_invalid_field_type_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "H",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_invalid_timestamp",
+          "expr": "sum(rate(telemetry_rejections_lp_invalid_timestamp_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "I",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_timestamp_out_of_range",
+          "expr": "sum(rate(telemetry_rejections_lp_timestamp_out_of_range_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "J",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_coordinate_out_of_range",
+          "expr": "sum(rate(telemetry_rejections_lp_coordinate_out_of_range_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "K",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "lp_line_too_large",
+          "expr": "sum(rate(telemetry_rejections_lp_line_too_large_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "L",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "payload_decompressed_limit",
+          "expr": "sum(rate(telemetry_rejections_payload_decompressed_limit_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "M",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "payload_expansion_limit",
+          "expr": "sum(rate(telemetry_rejections_payload_expansion_limit_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "N",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "duplicate_conflict",
+          "expr": "sum(rate(telemetry_rejections_duplicate_conflict_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "O",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "storage_schema_conflict",
+          "expr": "sum(rate(telemetry_rejections_storage_schema_conflict_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "P",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "storage_rejected",
+          "expr": "sum(rate(telemetry_rejections_storage_rejected_total{job=\"worker\"}[$__rate_interval]))"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "h": 8,
+        "w": 12,
+        "y": 29.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Replay idêntico é um novo resultado de linha persistido, não regravação do mesmo resultado. Conflito é rejeição DUPLICATE_CONFLICT. Ambos observam commits locais, sem etiquetas de empresa/veículo.",
+      "type": "timeseries",
+      "id": 10,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Duplicidade — replay e conflito",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "replay idêntico/s",
+          "refId": "A",
+          "expr": "sum(rate(telemetry_lines_identical_replay_total{job=\"worker\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "conflito/s",
+          "refId": "B",
+          "expr": "sum(rate(telemetry_rejections_duplicate_conflict_total{job=\"worker\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "h": 8,
+        "w": 12,
+        "y": 37.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Contador de transições persistidas para Retrying; não é número de entregas do broker nem tentativas totais.",
+      "type": "timeseries",
+      "id": 11,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Entradas em retry",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "transições/s",
+          "refId": "A",
+          "expr": "sum(rate(telemetry_batch_state_retrying_total{job=\"worker\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "h": 8,
+        "w": 12,
+        "y": 37.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Falhas lançadas pelo writer (exceto cancelamento solicitado pelo chamador), e rejeições permanentes por linha. Falhas de lote/publish são apresentadas separadamente.",
+      "type": "timeseries",
+      "id": 12,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Falhas de armazenamento",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "chamadas falhas/s",
+          "refId": "A",
+          "expr": "sum(rate(telemetry_storage_write_failures_total{job=\"worker\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "editorMode": "code",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "storage_rejected",
+          "expr": "sum(rate(telemetry_rejections_storage_rejected_total{job=\"worker\"}[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "storage_schema_conflict",
+          "expr": "sum(rate(telemetry_rejections_storage_schema_conflict_total{job=\"worker\"}[$__rate_interval]))"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "h": 8,
+        "w": 12,
+        "y": 45.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Estados persistidos observados; falha terminal pode ter causa diferente de storage.",
+      "type": "timeseries",
+      "id": 13,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Falhas terminais de lote/publicação",
+      "targets": [
+        {
+          "editorMode": "code",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "failed",
+          "expr": "sum(rate(telemetry_batch_state_failed_total[$__rate_interval]))"
+        },
+        {
+          "editorMode": "code",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "range": true,
+          "legendFormat": "publish_failed",
+          "expr": "sum(rate(telemetry_batch_state_publish_failed_total[$__rate_interval]))"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "h": 8,
+        "w": 12,
+        "y": 45.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Uso agregado da CPU do host coletado; Docker Desktop representa a VM Linux. Requer profile host-metrics.",
+      "type": "timeseries",
+      "id": 14,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "CPU do host Linux",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "CPU ocupada",
+          "refId": "A",
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{job=\"host\",mode=\"idle\"}[$__rate_interval])))",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "h": 8,
+        "w": 12,
+        "y": 53.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Memória usada segundo MemAvailable, não RSS da aplicação nem limite de contêiner.",
+      "type": "timeseries",
+      "id": 15,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Memória do host Linux",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "{{instance}}",
+          "refId": "A",
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"host\"} / node_memory_MemTotal_bytes{job=\"host\"})",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "h": 8,
+        "w": 12,
+        "y": 53.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Percentual indisponível ao usuário, por mountpoint aprovado; VM Linux no Docker Desktop. Não representa capacidade NTFS nem consumo por volume.",
+      "type": "timeseries",
+      "id": 16,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Pressão de filesystem",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "{{mountpoint}}",
+          "refId": "A",
+          "expr": "100 * (1 - node_filesystem_avail_bytes{job=\"host\"} / node_filesystem_size_bytes{job=\"host\"})",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "h": 8,
+        "w": 12,
+        "y": 61.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "RSS dividido pelo limite de memória do RabbitMQ. Não equivale à memória total do host.",
+      "type": "timeseries",
+      "id": 17,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Pressão do broker — memória",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "limite do broker",
+          "refId": "A",
+          "expr": "100 * rabbitmq_process_resident_memory_bytes{job=\"rabbitmq\"} / rabbitmq_resident_memory_limit_bytes{job=\"rabbitmq\"}",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "h": 8,
+        "w": 12,
+        "y": 61.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "Espaço livre dividido pelo low watermark. Abaixo de 1 exige atenção. Ausência de amostra não é folga confirmada.",
+      "type": "timeseries",
+      "id": 18,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "Folga de disco do broker",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "múltiplos do mínimo",
+          "refId": "A",
+          "expr": "rabbitmq_disk_space_available_bytes{job=\"rabbitmq\"} / rabbitmq_disk_space_available_limit_bytes{job=\"rabbitmq\"}",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "h": 8,
+        "w": 12,
+        "y": 69.0
+      }
+    },
+    {
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "showLegend": true,
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "sort": "desc",
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sem dados",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "showPoints": "auto",
+            "axisLabel": "",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "pointSize": 4
+          }
+        }
+      },
+      "description": "pg_up e erro do último scrape. up=1 sozinho só comprova resposta HTTP do exporter.",
+      "type": "timeseries",
+      "id": 19,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "internal-prometheus"
+      },
+      "title": "PostgreSQL — conectividade do exporter",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "conexão PG",
+          "refId": "A",
+          "expr": "pg_up{job=\"postgres\"}",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "internal-prometheus"
+          },
+          "legendFormat": "erro de coleta",
+          "refId": "B",
+          "expr": "pg_exporter_last_scrape_error{job=\"postgres\"}",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "h": 8,
+        "w": 12,
+        "y": 69.0
+      }
+    }
+  ]
+}

@@ -7,6 +7,10 @@ The pinned Grafana 12.2.5 image contains signed Infinity 4.1.1. Compose mounts
 dashboard JSON for all three internal and four viewer views is supplied by T072-T074
 (see [dashboard behavior](dashboards/README.md)). An empty directory creates no placeholder
 panels and does not establish rendering or query success.
+T084 additionally mounts [platform-operations.json](dashboards/platform-operations.json)
+through a separate organization-1 provider in the Platform Operations folder.
+Its [panel guide](dashboards/platform-operations.md) defines the metrics and
+limitations; it is excluded from the viewer directory/reconciler.
 
 Supply `INFLUXDB_GRAFANA_READ_TOKEN` privately as a read-only token for the telemetry
 database, separate from the offline Influx admin token and worker write token.

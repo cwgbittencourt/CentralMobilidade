@@ -233,3 +233,15 @@ Images/reports are private under ignored `artifacts/validation/T074/`. Historica
 pending-count statements above describe their original task stages; T074 closes
 the four original remaining Grafana failures. Production Compose gains no renderer,
 new datasource, company metric labels or identity-bearing telemetry.
+
+## Platform operations (T084)
+
+The platform dashboard is a separate read-only file provider for internal org 1.
+`PlatformOperationsTests` uses real pinned Grafana/Prometheus/renderer, production
+application instruments and explicitly synthetic infrastructure gauges. It checks
+all PromQL targets, missing-data behavior, filesystem arithmetic, seconds-based
+histogram quantiles and rendered panels/overview. Its exclusive metrics collection
+prevents interference from process-global SDK instruments created by other hosts.
+The Grafana helper waits for datasource/dashboard provisioning beyond HTTP health.
+See [panel semantics](../../../deploy/grafana/dashboards/platform-operations.md).
+Raw images and reports remain ignored under `artifacts/validation/T084/`.

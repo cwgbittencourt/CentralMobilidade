@@ -226,11 +226,11 @@ public sealed class LokiPrivacyFixture : IAsyncLifetime
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "CentralMobilidade.slnx")))
             root = root.Parent;
         if (root is null)
-            throw new InvalidOperationException("Repository root unavailable for Loki bootstrap.");
+            throw new InvalidOperationException("Repository root unavailable for Loki configuration.");
         container = new ContainerBuilder("grafana/loki:3.7.0")
             .WithCreateParameterModifier(parameters => parameters.User = "0")
-            .WithResourceMapping(Path.Combine(root.FullName, "deploy", "loki", "bootstrap.yaml"), "/etc/loki")
-            .WithCommand("-config.file=/etc/loki/bootstrap.yaml")
+            .WithResourceMapping(Path.Combine(root.FullName, "deploy", "loki", "loki-config.yaml"), "/etc/loki")
+            .WithCommand("-config.file=/etc/loki/loki-config.yaml")
             .WithPortBinding(3100, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(3100).ForPath("/ready")))
             .Build();
@@ -246,7 +246,8 @@ public sealed class LokiPrivacyFixture : IAsyncLifetime
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000;
         using var push = await client.PostAsJsonAsync("/loki/api/v1/push", new
         {
-            streams = new[] { new { stream = new { service = role.ToString().ToLowerInvariant(), privacy_run = run },
+            // Native negative controls deliberately use a test-only isolation label.
+            streams = new[] { new { stream = new { service_name = role.ToString().ToLowerInvariant(), privacy_run = run },
                 values = lines.Select((line, index) => new[] { (now + index).ToString(CultureInfo.InvariantCulture), line.TrimEnd('\r') }).ToArray() } }
         });
         push.EnsureSuccessStatusCode();

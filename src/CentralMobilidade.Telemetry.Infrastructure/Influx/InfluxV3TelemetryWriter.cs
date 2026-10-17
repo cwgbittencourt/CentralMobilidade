@@ -10,7 +10,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using CentralMobilidade.Telemetry.Application.Abstractions;
 using CentralMobilidade.Telemetry.Contracts.Errors;
+using CentralMobilidade.Telemetry.Infrastructure.Observability;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CentralMobilidade.Telemetry.Infrastructure.Influx;
 
@@ -21,11 +23,16 @@ public sealed class InfluxV3TelemetryWriter : ITelemetryWriter
     private readonly TimeSpan timeout;
     private readonly int maxPoints;
     private readonly long maxBytes;
+    private readonly TelemetryObservability? telemetry;
     internal const int MaxResponseBytes = 256 * 1024;
 
-    public InfluxV3TelemetryWriter(HttpClient client, IConfiguration configuration)
+    public InfluxV3TelemetryWriter(HttpClient client, IConfiguration configuration) : this(client, configuration, null) { }
+
+    [ActivatorUtilitiesConstructor]
+    public InfluxV3TelemetryWriter(HttpClient client, IConfiguration configuration, TelemetryObservability? telemetry = null)
     {
         this.client = client;
+        this.telemetry = telemetry;
         queryable = ReadDestination(configuration);
         timeout = configuration.GetValue("InfluxDb:WriteTimeout", TimeSpan.FromSeconds(30));
         maxPoints = configuration.GetValue("Telemetry:WriteBatchMaxPoints", 5000);
@@ -35,6 +42,18 @@ public sealed class InfluxV3TelemetryWriter : ITelemetryWriter
     }
 
     public async ValueTask<TelemetryWriteResult> WriteAsync(TelemetryWriteRequest request, Stream gzipLineProtocol, CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            return await WriteCoreAsync(request, gzipLineProtocol, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { telemetry?.RecordWriteFailure(); throw; }
+        finally { telemetry?.RecordWriteDuration(Stopwatch.GetElapsedTime(started)); }
+    }
+
+    private async ValueTask<TelemetryWriteResult> WriteCoreAsync(TelemetryWriteRequest request, Stream gzipLineProtocol, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(gzipLineProtocol);

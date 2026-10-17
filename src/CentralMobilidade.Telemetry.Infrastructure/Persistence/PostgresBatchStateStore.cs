@@ -125,6 +125,7 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
             await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
             var batch = await db.Batches.FromSqlInterpolated($"SELECT * FROM ingestion_batches WHERE \"BatchId\"={batchId.Value} FOR UPDATE").SingleAsync(cancellationToken);
             var committedRejections = new List<string>();
+            var committedReplays = 0;
             foreach (var result in results)
             {
                 if (result.LineNumber <= 0 || !Enum.IsDefined(result.Outcome) || result.OccurredAt.Offset != TimeSpan.Zero ||
@@ -169,6 +170,8 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
                     throw new ProviderOperationException(TelemetryErrorCodes.StorageRejected, ProviderFailureKind.Ambiguous);
                 if (result.Outcome == LineOutcome.Rejected)
                     committedRejections.Add(result.ErrorCode!);
+                if (result.Outcome == LineOutcome.IdenticalReplay)
+                    committedReplays++;
                 db.LineResults.Add(new LineProcessingResult
                 {
                     BatchId = batchId.Value,
@@ -192,6 +195,8 @@ public sealed class PostgresBatchStateStore(IDbContextFactory<TelemetryControlDb
             await tx.CommitAsync(cancellationToken);
             foreach (var code in committedRejections)
                 metrics?.RecordRejection(code);
+            for (var i = 0; i < committedReplays; i++)
+                metrics?.RecordIdenticalReplay();
         }
         catch (Exception error) when (error is DbException or DbUpdateException)
         {

@@ -36,6 +36,8 @@ public sealed class TelemetryObservability : IDisposable
     private readonly Counter<long> decompressed;
     private readonly Histogram<double> processing;
     private readonly Histogram<double> writes;
+    private readonly Histogram<double> deliveryAge;
+    private readonly Counter<long> writeFailures;
 
     public TelemetryObservability()
     {
@@ -44,6 +46,8 @@ public sealed class TelemetryObservability : IDisposable
         decompressed = meter.CreateCounter<long>("telemetry.input.decompressed_bytes", "By");
         processing = meter.CreateHistogram<double>("telemetry.processing.duration", "s");
         writes = meter.CreateHistogram<double>("telemetry.storage.write.duration", "s");
+        deliveryAge = meter.CreateHistogram<double>("telemetry.queue.delivery.age", "s");
+        writeFailures = meter.CreateCounter<long>("telemetry.storage.write.failures", "{attempt}");
     }
 
     public Activity? StartBatchActivity(TelemetryOperation operation, BatchId batchId, ActivityContext parent = default)
@@ -71,8 +75,12 @@ public sealed class TelemetryObservability : IDisposable
     public void RecordReceived(long compressedBytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(compressedBytes);
-        received.Add(1);
-        compressed.Add(compressedBytes);
+        try
+        {
+            received.Add(1);
+            compressed.Add(compressedBytes);
+        }
+        catch (Exception) { /* Observation must not change an accepted business outcome. */ }
     }
     public void RecordDecompressed(long bytes)
     {
@@ -81,11 +89,24 @@ public sealed class TelemetryObservability : IDisposable
     }
     public void RecordProcessingDuration(TimeSpan duration) => RecordDuration(processing, duration);
     public void RecordWriteDuration(TimeSpan duration) => RecordDuration(writes, duration);
+    public void RecordWriteFailure()
+    {
+        try
+        {
+            writeFailures.Add(1);
+        }
+        catch (Exception) { /* Observation must not change storage error handling. */ }
+    }
+    public void RecordDeliveryAge(TimeSpan duration) => RecordDuration(deliveryAge, duration < TimeSpan.Zero ? TimeSpan.Zero : duration);
     private static void RecordDuration(Histogram<double> histogram, TimeSpan duration)
     {
         if (duration < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(duration));
-        histogram.Record(duration.TotalSeconds);
+        try
+        {
+            histogram.Record(duration.TotalSeconds);
+        }
+        catch (Exception) { /* Observation must not change processing/durability. */ }
     }
     public void Dispose()
     {
@@ -138,7 +159,20 @@ public static class TelemetryObservabilityRegistration
                 .AddRuntimeInstrumentation()
                 .SetExemplarFilter(ExemplarFilterType.AlwaysOff)
                 // Fail closed on labels, including unknown tags and their values. Correlation belongs in traces.
-                .AddView(_ => new MetricStreamConfiguration { TagKeys = [] })
+                .AddView(instrument => instrument.Name switch
+                {
+                    "telemetry.queue.delivery.age" => new ExplicitBucketHistogramConfiguration
+                    {
+                        TagKeys = [],
+                        Boundaries = [0, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 900, 3600, 86400, 604800]
+                    },
+                    "telemetry.processing.duration" or "telemetry.storage.write.duration" => new ExplicitBucketHistogramConfiguration
+                    {
+                        TagKeys = [],
+                        Boundaries = [0, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 300, 600]
+                    },
+                    _ => new MetricStreamConfiguration { TagKeys = [] }
+                })
                 .AddPrometheusExporter(o => o.ScrapeResponseCacheDurationMilliseconds = 0));
         if (role == TelemetryServiceRole.Worker)
             services.AddHostedService<WorkerMetricsEndpoint>();

@@ -54,6 +54,10 @@ public sealed class WorkerHostTests(RabbitMqContractBroker broker, InfluxContrac
         var endpoint = test.Host.Services.GetServices<IHostedService>().OfType<WorkerMetricsEndpoint>().Single();
         using var client = new HttpClient();
         (await client.GetStringAsync(endpoint.ListenUrl + "/health/ready")).ShouldContain("healthy");
+        var metrics = await client.GetStringAsync(endpoint.ListenUrl + "/metrics");
+        metrics.ShouldContain("telemetry_queue_delivery_age_seconds_count");
+        metrics.ShouldContain("telemetry_processing_duration_seconds_count");
+        metrics.ShouldContain("telemetry_storage_write_duration_seconds_count");
         var query = Uri.EscapeDataString($"SELECT empresa_id FROM telemetria WHERE empresa_id = '{company}'");
         (await client.GetStringAsync(influx.Url + "/api/v3/query_sql?db=queryable&format=json&q=" + query)).ShouldContain(company);
         await test.Host.StopAsync();

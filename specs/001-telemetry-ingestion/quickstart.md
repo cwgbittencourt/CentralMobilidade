@@ -250,6 +250,15 @@ and neither route redacts an unsafe body. No automatic stdout shipper is install
 The base service stays private; the development port stays loopback-only. Run the
 guide's isolated tests before applying the configuration to an existing volume.
 
+## Platform operations dashboard (T084)
+
+Internal organization 1 receives the **Operações da plataforma** dashboard in its
+own Platform Operations folder. It uses the T082 Prometheus jobs, application
+metrics and optional host/database exporters. See the [panel guide](../../deploy/grafana/dashboards/platform-operations.md)
+for exact semantics: delivery age observes delivered work, not the oldest queued
+message; replay/state counters observe commits; host metrics describe Linux;
+missing samples stay missing. The dashboard is excluded from viewer provisioning.
+
 ## Foundation amendment acceptance gate (before T050)
 
 Complete T104-T112 first. Using the same producer credential, submit valid events for multiple IDs

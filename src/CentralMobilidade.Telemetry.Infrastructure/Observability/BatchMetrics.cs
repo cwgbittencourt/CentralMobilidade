@@ -13,12 +13,14 @@ public sealed class BatchMetrics : IDisposable
     private readonly Meter meter = new(MeterName);
     private readonly IReadOnlyDictionary<BatchLifecycle, Counter<long>> states;
     private readonly IReadOnlyDictionary<string, Counter<long>> rejections;
+    private readonly Counter<long> identicalReplays;
     public BatchMetrics()
     {
         states = Enum.GetValues<BatchLifecycle>().ToDictionary(state => state,
             state => meter.CreateCounter<long>("telemetry.batch.state." + StateName(state), "{entry}", "Committed entries into a batch lifecycle state"));
         rejections = TelemetryErrorCodes.RejectionCodes.ToDictionary(code => code,
             code => meter.CreateCounter<long>("telemetry.rejections." + code.ToLowerInvariant(), "{line}", "New committed rejected lines"), StringComparer.Ordinal);
+        identicalReplays = meter.CreateCounter<long>("telemetry.lines.identical_replay", "{line}", "New committed identical replay outcomes");
     }
     public void RecordState(BatchLifecycle state)
     {
@@ -31,6 +33,7 @@ public sealed class BatchMetrics : IDisposable
         if (code is not null && rejections.TryGetValue(code, out var counter))
             Add(counter);
     }
+    public void RecordIdenticalReplay() => Add(identicalReplays);
     private static void Add(Counter<long> counter)
     {
         try

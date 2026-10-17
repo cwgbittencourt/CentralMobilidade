@@ -1,0 +1,13 @@
+apiVersion: 1
+providers:
+  - name: platform-operations
+    orgId: 1
+    folder: Platform Operations
+    type: file
+    disableDeletion: false
+    editable: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards/platform
+      foldersFromFilesStructure: false

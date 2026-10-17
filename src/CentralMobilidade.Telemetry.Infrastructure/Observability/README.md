@@ -7,9 +7,9 @@ instrumented; request headers, bodies and exception capture are not enabled. `/m
 excluded from API traces. Runtime, HTTP and the application meter are exposed through Prometheus.
 
 The API exposes `/metrics` on its existing port. The worker hosts a separate `/metrics` endpoint on
-9464 and now stays running until shutdown. Its queue consumer is still T053. The class default binds
+9464 and stays running until shutdown, with the configured queue consumer/provider. The class default binds
 loopback; the container appsettings bind 0.0.0.0 on the private Docker network, without publishing a
-worker host port. Keep scrape endpoints internal. Prometheus job provisioning follows in T082.
+worker host port. Keep scrape endpoints internal. The T082 Prometheus composition supplies the jobs.
 
 ## Configuration
 
@@ -78,7 +78,7 @@ The Prometheus family prefixes are:
 - `telemetry_rejections_<code>`: newly committed rejected lines, split into the
   16 existing rejection codes in lowercase. No code label is required.
 
-There are currently 27 fixed instruments and no measurement labels. Persistence
+T062 originally supplied 27 fixed instruments and no measurement labels. Persistence
 records Receiving only when its INSERT creates the batch, state entries only when
 the compare-and-swap updates one row, and rejected lines only after the line-page
 transaction commits. Exact create/transition/line replays do not increment again;
@@ -99,3 +99,21 @@ create/transition replays, a duplicate rejection, transactional rollback and
 preservation of counters after batch metadata deletion. The process-global meter
 integration collection is serialized to keep exact assertions independent of
 other concurrently running exporters. No capacity claim follows from these checks.
+
+## Platform dashboard signals (T084)
+
+The [operations dashboard guide](../../../deploy/grafana/dashboards/platform-operations.md)
+defines each panel's observation boundary. API intake now records received/gzip
+bytes after the handler confirms durable acceptance. The worker records delivery
+age (ReceivedAt to processor start, future-clock values clamped to zero) and whole
+processor-call duration. The Influx writer records call duration and thrown failure
+counts except caller cancellation. Explicit seconds-based histogram buckets cover
+millisecond latencies and delivery ages through seven days, retaining empty tag
+sets and disabled exemplars. Quantiles are estimates within those buckets.
+
+`BatchMetrics` adds one fixed `telemetry.lines.identical_replay` counter, emitted
+only for newly inserted IdenticalReplay results after commit. Repeated rows and
+rolled-back pages do not increment it. The existing commit/emission crash gap and
+process-reset limitations still apply. Observation listener exceptions are isolated
+from acceptance, storage and worker error/retry decisions. No new dynamic labels,
+domain provider branches, retention rules or managed-provider backlog probes are added.

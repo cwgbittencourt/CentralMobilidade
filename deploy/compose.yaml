@@ -122,6 +122,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards/internal:/var/lib/grafana/dashboards/internal:ro
+      - ./grafana/dashboards/platform-operations.json:/var/lib/grafana/dashboards/platform/platform-operations.json:ro
     networks: [backend]
     depends_on:
       influxdb-init:

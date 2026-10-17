@@ -80,7 +80,8 @@ public sealed class ScopedWorkerBatchProcessor : IWorkerBatchProcessor
 }
 
 public sealed class TelemetryProcessingWorker(IMonitoredBatchConsumer consumer, IWorkerBatchProcessor processor,
-    WorkerRuntimeOptions options, WorkerProgress progress, ILogger<TelemetryProcessingWorker> logger) : BackgroundService
+    WorkerRuntimeOptions options, WorkerProgress progress, ILogger<TelemetryProcessingWorker> logger,
+    TelemetryObservability? telemetry = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -174,7 +175,13 @@ public sealed class TelemetryProcessingWorker(IMonitoredBatchConsumer consumer, 
             {
                 try
                 {
-                    await processor.ProcessAsync(delivery, token);
+                    telemetry?.RecordDeliveryAge(DateTimeOffset.UtcNow - delivery.Metadata.ReceivedAt);
+                    var started = Stopwatch.GetTimestamp();
+                    try
+                    {
+                        await processor.ProcessAsync(delivery, token);
+                    }
+                    finally { telemetry?.RecordProcessingDuration(Stopwatch.GetElapsedTime(started)); }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { }
                 catch (Exception error)

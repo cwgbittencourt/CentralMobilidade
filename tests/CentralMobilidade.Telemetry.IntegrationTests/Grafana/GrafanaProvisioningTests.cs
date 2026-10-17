@@ -74,6 +74,14 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
         types.ShouldNotContain(Plugin);
         foreach (var datasource in datasources.RootElement.EnumerateArray())
             datasource.GetProperty("readOnly").GetBoolean().ShouldBeTrue();
+        var platformUid = "platform-operations";
+        for (var attempt = 0; attempt < 60; attempt++)
+        {
+            using var discovered = await grafana.JsonAsync("/api/search?type=dash-db");
+            if (discovered.RootElement.GetArrayLength() >= 4)
+                break;
+            await Task.Delay(500);
+        }
         using var dashboards = await grafana.JsonAsync("/api/search?type=dash-db");
         dashboards.RootElement.GetArrayLength().ShouldBeGreaterThanOrEqualTo(3);
         var internalDirectory = Path.Combine(Root, "deploy/grafana/dashboards/internal");
@@ -83,7 +91,7 @@ public sealed class GrafanaProvisioningTests(LatestDashboardFixture latest) : IC
             using var json = JsonDocument.Parse(File.ReadAllText(file));
             return json.RootElement.GetProperty("uid").GetString();
         }).ToArray();
-        dashboards.RootElement.EnumerateArray().Select(d => d.GetProperty("uid").GetString()).Order().ShouldBe(expectedUids.Order());
+        dashboards.RootElement.EnumerateArray().Select(d => d.GetProperty("uid").GetString()).Order().ShouldBe(expectedUids.Append(platformUid).Order());
     }
 
     [Fact]
@@ -1134,6 +1142,7 @@ internal sealed class GrafanaServer(IFutureDockerImage image, IContainer contain
                 var dashboards = Path.Combine(GrafanaProvisioningTests.Root, "deploy/grafana/dashboards/internal");
                 if (Directory.Exists(dashboards))
                     builder = builder.WithResourceMapping(dashboards, "/var/lib/grafana/dashboards/internal");
+                builder = builder.WithResourceMapping(Path.Combine(GrafanaProvisioningTests.Root, "deploy/grafana/dashboards/platform-operations.json"), "/var/lib/grafana/dashboards/platform/");
             }
             if (network is not null)
                 builder = builder.WithNetwork(network).WithNetworkAliases("grafana");
@@ -1148,6 +1157,17 @@ internal sealed class GrafanaServer(IFutureDockerImage image, IContainer contain
                 await container.StartAsync();
                 var client = new HttpClient { BaseAddress = new Uri($"http://{container.Hostname}:{container.GetMappedPublicPort(3000)}"), Timeout = TimeSpan.FromSeconds(30) };
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("bootstrap:" + password)));
+                if (provisioning is not null)
+                {
+                    for (var attempt = 0; attempt < 60; attempt++)
+                    {
+                        using var sources = JsonDocument.Parse(await client.GetStringAsync("/api/datasources"));
+                        using var dashboards = JsonDocument.Parse(await client.GetStringAsync("/api/search?type=dash-db"));
+                        if (sources.RootElement.GetArrayLength() == 3 && dashboards.RootElement.GetArrayLength() >= 4)
+                            break;
+                        await Task.Delay(500);
+                    }
+                }
                 return new(image, container, client);
             }
             catch { await container.DisposeAsync(); throw; }
