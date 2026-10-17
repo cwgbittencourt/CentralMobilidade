@@ -77,5 +77,15 @@ real API/worker startup failures with sanitized stdout/empty stderr, and WebAppl
 Logging/observability test classes share an xUnit collection because OTel listeners/propagators are
 process-global. PostgreSQL regression tests used an isolated 17.11 container. Windows build and
 formatting verification pass; Windows Application Control remains unchanged and tests run in Linux.
-Loki ingestion/retention (T083), full-system privacy scanning (T079), audit policies and capacity gates
-remain separate tasks. Architecture/load projects are still skeletons.
+These are historical T021 results, not a description of the current test suite.
+
+## Loki ingestion policy (T083)
+
+The [deployment guide](../../../deploy/loki/README.md) documents 30-day retention
+and the OTLP attribute policy. Forward this sink's JSON as the log body, with only
+a fixed deployment-controlled `service.name` (`api` or `worker`) as an index label.
+Correlation IDs remain in the sanitized JSON, not in labels. Loki drops other
+OTLP attributes but does not sanitize an unsafe body or validate every native push
+label; restrict both routes to trusted senders. There is no automatic stdout
+forwarder in this configuration. Real-Loki tests verify ingestion of this production
+logger's sanitized output and exclusion of seeded sensitive OTLP attributes.

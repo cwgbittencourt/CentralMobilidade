@@ -240,6 +240,16 @@ describe its Linux VM, not Windows/NTFS. Inspect all enabled scrape targets plus
 private numeric `/metrics` route is unauthenticated; data APIs remain authenticated.
 See the guide for collection/privacy limits and the isolated test command.
 
+## Loki retention and labels (T083)
+
+The [Loki guide](../../deploy/loki/README.md) documents its 30-day retention,
+asynchronous compactor deletion and persistent paths. OTLP indexing allows only
+the trusted fixed `service.name`; other attributes are dropped. Only sanitized
+application JSON may be forwarded. Native push bypasses OTLP attribute rules,
+and neither route redacts an unsafe body. No automatic stdout shipper is installed.
+The base service stays private; the development port stays loopback-only. Run the
+guide's isolated tests before applying the configuration to an existing volume.
+
 ## Foundation amendment acceptance gate (before T050)
 
 Complete T104-T112 first. Using the same producer credential, submit valid events for multiple IDs

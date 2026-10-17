@@ -89,9 +89,9 @@ services:
     build:
       context: ..
       dockerfile: deploy/loki/Dockerfile
-    command: [-config.file=/etc/loki/bootstrap.yaml]
+    command: [-config.file=/etc/loki/loki-config.yaml]
     volumes:
-      - ./loki/bootstrap.yaml:/etc/loki/bootstrap.yaml:ro
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
       - loki_data:/loki
     networks: [backend]
     healthcheck:
