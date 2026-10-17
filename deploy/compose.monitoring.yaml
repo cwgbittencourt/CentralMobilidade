@@ -1,0 +1,49 @@
+# Add after compose.yaml (and compose.override.yaml when running the app profile).
+services:
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_URI: postgres:5432/telemetry_control?sslmode=disable
+      DATA_SOURCE_USER: telemetry_monitor
+      DATA_SOURCE_PASS_FILE: /run/secrets/postgres_metrics_password
+      PG_EXPORTER_COLLECTION_TIMEOUT: 8s
+    command:
+      - --no-collector.stat_statements
+      - --no-collector.stat_user_tables
+      - --no-collector.statio_user_tables
+      - --no-collector.stat_activity
+      - --no-collector.stat_progress_vacuum
+      - --no-collector.replication
+      - --no-collector.replication_slots
+      - --no-collector.stat_replication
+    secrets: [postgres_metrics_password]
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    profiles: [host-metrics]
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.meminfo
+      - --collector.loadavg
+      - --collector.diskstats
+      - --collector.filesystem
+      - --collector.time
+      - --collector.stat
+      # Only operational root/data mounts; never user home or container paths.
+      - --collector.filesystem.mount-points-include=^/(|var/lib/docker|var/lib/containers|data|srv)$$
+    volumes:
+      - /:/host:ro,rslave
+    networks: [backend]
+
+secrets:
+  postgres_metrics_password:
+    environment: POSTGRES_METRICS_PASSWORD

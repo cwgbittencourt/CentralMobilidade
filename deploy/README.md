@@ -43,8 +43,9 @@ or volumes. Do not use `--remove-orphans` as a substitute for the reconciled upg
 The Grafana image fixes OSS 12.2.5 and signed Infinity 4.1.1, whose declared minimum for the 12.2 line
 is 12.2.5. Plugins are installed at build time outside `/var/lib/grafana` so the data volume cannot hide
 them. Unsigned plugins are not enabled. Organization, datasource, and dashboard provisioning follow
-in T071–T074. Prometheus currently scrapes itself; Loki has a persistent single-node bootstrap config.
-Full scraping, privacy policies, and Loki retention follow in T082–T083.
+in T071–T074. Prometheus scraping and the optional PostgreSQL/Linux host exporters
+are configured in [the metrics guide](prometheus/README.md). Loki has a persistent
+single-node bootstrap config; its retention and privacy policies follow in T083.
 
 `quarantine-init` creates a private `rejections` directory owned by application UID 1654. Application
 containers must mount `quarantine_data` at `/quarantine` and use `/quarantine/rejections`.

@@ -1,0 +1,69 @@
+# Private backend endpoints only. Optional exporters/apps stay DOWN until enabled.
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: rabbitmq
+    # Aggregated endpoint; never /metrics/per-object or /metrics/detailed.
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+    sample_limit: 5000
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'rabbitmq_.*'
+        action: keep
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+    sample_limit: 5000
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'pg_(up|exporter_last_scrape_error|stat_database_.*|locks_.*|database_size_bytes|stat_bgwriter_.*|stat_checkpointer_.*)'
+        action: keep
+      - source_labels: [datname]
+        regex: '(|telemetry_control)'
+        action: keep
+
+  - job_name: api
+    static_configs:
+      - targets: ["api:8080"]
+    sample_limit: 5000
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'telemetry_.*'
+        action: keep
+
+  - job_name: worker
+    static_configs:
+      - targets: ["worker:9464"]
+    sample_limit: 5000
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'telemetry_.*'
+        action: keep
+
+  - job_name: host
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    sample_limit: 10000
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'node_(cpu_seconds_total|memory_.*|load[0-9]+|disk_.*|filesystem_.*|scrape_collector_success|time_seconds|boot_time_seconds)'
+        action: keep
+
+  - job_name: influxdb
+    static_configs:
+      - targets: ["influxdb:8181"]
+    sample_limit: 10000
+    # Exclude database/table-labelled series: telemetry identifiers are data, not labels.
+    metric_relabel_configs:
+      - source_labels: [db, database, database_name, table, table_name]
+        regex: ';{4}'
+        action: keep

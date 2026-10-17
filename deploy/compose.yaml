@@ -28,6 +28,8 @@ services:
       RABBITMQ_DEFAULT_VHOST: telemetry
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
     networks: [backend]
     healthcheck:
       test: [CMD, rabbitmq-diagnostics, -q, ping]
@@ -38,7 +40,7 @@ services:
   influxdb:
     # Keep node-id and volume identity when reusing the existing queryable catalog.
     image: influxdb:3.11.6-core
-    command: [influxdb3, serve, --node-id, queryable, --object-store, file, --data-dir, /var/lib/influxdb3/data, --admin-token-file, /run/secrets/influxdb_admin_token, --disable-authz, "health,ping"]
+    command: [influxdb3, serve, --node-id, queryable, --object-store, file, --data-dir, /var/lib/influxdb3/data, --admin-token-file, /run/secrets/influxdb_admin_token, --disable-authz, "health,ping,metrics"]
     secrets:
       - source: influxdb_queryable_admin_token
         target: influxdb_admin_token
@@ -73,7 +75,7 @@ services:
     image: prom/prometheus:v3.15.0-busybox
     command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=30d]
     volumes:
-      - ./prometheus/bootstrap.yaml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     networks: [backend]
     healthcheck:

@@ -228,6 +228,18 @@ docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile 
 Do not pass `--volumes` when preserving local data. Backup and destructive cleanup procedures must be
 separate, explicit runbooks.
 
+## Metrics scraping (T082)
+
+The [metrics deployment guide](../../deploy/prometheus/README.md) lists the seven
+Prometheus jobs and the optional `compose.monitoring.yaml` exporters. Provision
+the dedicated PostgreSQL monitoring role/password before enabling that overlay;
+use the `app` profile for API/worker and `host-metrics` for the trusted Linux host
+collector. Missing optional services are visibly DOWN. Docker Desktop host metrics
+describe its Linux VM, not Windows/NTFS. Inspect all enabled scrape targets plus
+`pg_up` and collector health before accepting deployment monitoring. InfluxDB's
+private numeric `/metrics` route is unauthenticated; data APIs remain authenticated.
+See the guide for collection/privacy limits and the isolated test command.
+
 ## Foundation amendment acceptance gate (before T050)
 
 Complete T104-T112 first. Using the same producer credential, submit valid events for multiple IDs
