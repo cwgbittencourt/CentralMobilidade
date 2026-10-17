@@ -1,4 +1,16 @@
 # Development only. Load explicitly alongside compose.yaml; base-only commands stay unchanged.
+x-app-runtime: &app-runtime
+  restart: unless-stopped
+  read_only: true
+  user: "1654:1654"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  cpus: 1
+  mem_limit: 1g
+  pids_limit: 512
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777
+
 services:
   postgres:
     ports:
@@ -22,6 +34,7 @@ services:
       - "127.0.0.1:${LOKI_PORT:-3100}:3100"
 
   api:
+    <<: *app-runtime
     profiles: [app]
     image: centralmobilidade-api:dev
     build:
@@ -43,8 +56,18 @@ services:
         condition: service_healthy
       quarantine-init:
         condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, /bin/busybox, wget, -q, -O, /dev/null, http://127.0.0.1:8080/health/live]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    stop_grace_period: 60s
 
   worker:
+    <<: *app-runtime
+    cpus: 2
+    mem_limit: 2g
     profiles: [app]
     image: centralmobilidade-worker:dev
     build:
@@ -69,9 +92,20 @@ services:
         condition: service_completed_successfully
     # Default host shutdown budget is 45s, including a 30s processing drain.
     stop_grace_period: 60s
-    restart: "no"
+    healthcheck:
+      test: [CMD, /bin/busybox, wget, -q, -O, /dev/null, http://127.0.0.1:9464/health/live]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
 
   pubsub-emulator:
+    <<: *app-runtime
+    user: "65532:65532"
+    mem_limit: 1g
+    environment:
+      HOME: /tmp
+      CLOUDSDK_CONFIG: /tmp/gcloud
     profiles: [pubsub-emulator]
     image: gcr.io/google.com/cloudsdktool/google-cloud-cli:588.0.0-emulators
     command: [gcloud, beta, emulators, pubsub, start, "--host-port=0.0.0.0:8085", "--project=${PUBSUB_PROJECT_ID:-centralmobilidade-local}", --quiet]

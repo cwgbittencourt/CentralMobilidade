@@ -1,7 +1,7 @@
 param()
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$keys = @('POSTGRES_PASSWORD', 'RABBITMQ_PASSWORD', 'GRAFANA_ADMIN_PASSWORD', 'INFLUXDB_GRAFANA_READ_TOKEN', 'INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE', 'INFLUXDB_PENDING_ADMIN_TOKEN_FILE')
+$keys = @('POSTGRES_PASSWORD_FILE', 'RABBITMQ_PASSWORD', 'GRAFANA_ADMIN_PASSWORD_FILE', 'INFLUXDB_GRAFANA_READ_TOKEN_FILE', 'INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE', 'INFLUXDB_PENDING_ADMIN_TOKEN_FILE')
 $saved = @{}
 foreach ($key in $keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process') }
 function Assert-Topology($condition, $message) {
@@ -10,12 +10,13 @@ function Assert-Topology($condition, $message) {
 try {
     # Resolve configuration only. Never load the user's .env, print resolved secrets, or start services.
     foreach ($key in $keys[0..3]) { [Environment]::SetEnvironmentVariable($key, [guid]::NewGuid().ToString('N'), 'Process') }
+    foreach ($key in @('POSTGRES_PASSWORD_FILE', 'GRAFANA_ADMIN_PASSWORD_FILE', 'INFLUXDB_GRAFANA_READ_TOKEN_FILE')) { [Environment]::SetEnvironmentVariable($key, (Join-Path $root '.env.example'), 'Process') }
     [Environment]::SetEnvironmentVariable('INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE', (Join-Path $root '.env.example'), 'Process')
     [Environment]::SetEnvironmentVariable('INFLUXDB_PENDING_ADMIN_TOKEN_FILE', $null, 'Process')
     foreach ($development in @($false, $true)) {
         $arguments = @('compose', '--env-file', (Join-Path $root '.env.example'), '-f', (Join-Path $root 'deploy/compose.yaml'))
         if ($development) { $arguments += @('-f', (Join-Path $root 'deploy/compose.override.yaml'), '--profile', 'app', '--profile', 'pubsub-emulator') }
-        $json = & docker @arguments config --format json 2>$null
+        $json = & docker @arguments config --format json --no-env-resolution 2>$null
         Assert-Topology ($LASTEXITCODE -eq 0) 'Compose configuration failed; no resolved configuration was printed.'
         $config = ($json -join "`n") | ConvertFrom-Json
         $services = @($config.services.PSObject.Properties.Name)

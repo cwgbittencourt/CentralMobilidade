@@ -12,10 +12,10 @@ through a separate organization-1 provider in the Platform Operations folder.
 Its [panel guide](dashboards/platform-operations.md) defines the metrics and
 limitations; it is excluded from the viewer directory/reconciler.
 
-Supply `INFLUXDB_GRAFANA_READ_TOKEN` privately as a read-only token for the telemetry
+Set `INFLUXDB_GRAFANA_READ_TOKEN_FILE` to a private UTF-8 file containing a read-only token for the telemetry
 database, separate from the offline Influx admin token and worker write token.
 Compose mounts it as a secret; the image wrapper reads the configured secret file
-into the provisioning environment before invoking Grafana's original entrypoint.
+into `INFLUXDB_GRAFANA_READ_TOKEN` in the provisioning environment before invoking Grafana's original entrypoint.
 Missing files fail startup with a generic message. The token is never baked into
 the image/YAML or printed. Existing data volumes and catalog identities remain
 unchanged. Set secrets before starting Compose; reconciliation does not start it.

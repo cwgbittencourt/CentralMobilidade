@@ -17,6 +17,29 @@ namespace CentralMobilidade.Telemetry.IntegrationTests.Deployment;
 public sealed class ComposeRecoveryTests(ComposeRecoveryFixture fixture) : IClassFixture<ComposeRecoveryFixture>
 {
     [Fact]
+    public async Task Every_profile_has_explicit_runtime_limits_and_restricted_filesystems()
+    {
+        await using var project = fixture.Project();
+        var model = await project.ModelAsync(development: true, monitoring: true);
+        foreach (var (name, service) in model["services"]!.AsObject())
+        {
+            var job = name is "influxdb-init" or "quarantine-init";
+            service!["restart"].ShouldNotBeNull(name).GetValue<string>().ShouldBe(job ? "no" : "unless-stopped", name);
+            service["read_only"]!.GetValue<bool>().ShouldBeTrue(name);
+            long.Parse(service["mem_limit"]!.ToString(), System.Globalization.CultureInfo.InvariantCulture).ShouldBeGreaterThan(0, name);
+            service["cpus"]!.GetValue<double>().ShouldBeGreaterThan(0, name);
+            service["pids_limit"]!.GetValue<int>().ShouldBeGreaterThan(0, name);
+            if (name == "quarantine-init")
+                service["user"]!.GetValue<string>().ShouldBe("0:0"); // Bounded ownership initialization only.
+            else
+                service["user"]!.GetValue<string>().Split(':')[0].ShouldNotBeOneOf("0", "root", "");
+            service["security_opt"]!.AsArray().ShouldContain(v => v!.GetValue<string>() == "no-new-privileges:true");
+            service["cap_drop"]!.AsArray().ShouldContain(v => v!.GetValue<string>() == "ALL");
+            if (!job)
+                service["healthcheck"]!["test"]!.AsArray().ShouldNotBeEmpty(name);
+        }
+    }
+    [Fact]
     public async Task Production_models_require_seven_named_volumes_health_probes_and_initializer_dependencies()
     {
         await using var project = fixture.Project();
@@ -53,6 +76,7 @@ public sealed class ComposeRecoveryTests(ComposeRecoveryFixture fixture) : IClas
         await using var project = fixture.Project();
         await project.UpAsync();
         await project.AssertHealthyAsync();
+        await project.AssertHardenedAsync(ComposeRecoveryFixture.Servers);
         var marker = Guid.NewGuid().ToString("N");
         await project.ComposeOkAsync("exec", "-T", "postgres", "psql", "-U", "telemetry", "-d", "telemetry_control", "-v", "ON_ERROR_STOP=1", "-c", $"CREATE TABLE t078_proof(value text PRIMARY KEY); INSERT INTO t078_proof VALUES ('{marker}');");
         await project.VolumeMarkersAsync(marker, write: true);
@@ -60,6 +84,10 @@ public sealed class ComposeRecoveryTests(ComposeRecoveryFixture fixture) : IClas
         points.Output.ShouldContain("t078-a");
         points.Output.ShouldContain("t078-b");
         await project.PublishProofAsync(marker);
+        await VerifyAsync();
+        // In-container shutdown is not a Docker manual stop; Engine must restart the broker.
+        await project.ComposeOkAsync("exec", "-T", "rabbitmq", "rabbitmqctl", "stop");
+        await project.AwaitEngineRestartAsync("rabbitmq");
         await VerifyAsync();
         await project.ComposeOkAsync(new[] { "restart", "--timeout", "10" }.Concat(ComposeRecoveryFixture.Servers).ToArray());
         await project.UpAsync();
@@ -76,6 +104,21 @@ public sealed class ComposeRecoveryTests(ComposeRecoveryFixture fixture) : IClas
             (await project.ComposeOkAsync("exec", "-T", "influxdb", "sh", "/validation/influx-proof.sh", "verify")).Output.Trim().ShouldBe(points.Output.Trim());
             await project.VerifyProofMessageAsync(marker);
             await project.VolumeMarkersAsync(marker, write: false);
+        }
+    }
+
+    [Fact]
+    public async Task App_emulator_and_exporter_profiles_start_with_their_actual_restrictions()
+    {
+        await using var project = fixture.Project();
+        await project.EnableProfilesAsync();
+        await project.ComposeOkAsync("build", "api", "worker");
+        await project.ComposeOkAsync("up", "-d", "--no-build", "--wait", "--wait-timeout", "240", "api", "worker", "pubsub-emulator", "postgres-exporter", "node-exporter");
+        await project.AssertHardenedAsync(["api", "worker", "pubsub-emulator", "postgres-exporter", "node-exporter"]);
+        foreach (var (service, port) in new[] { ("api", "8080"), ("worker", "9464") })
+        {
+            await project.ComposeOkAsync("exec", "-T", service, "/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:" + port + "/health/live");
+            await project.ComposeOkAsync("exec", "-T", service, "sh", "-ec", "test -w /quarantine/rejections; test \"$(stat -c %a /quarantine/rejections)\" = 700");
         }
     }
 
@@ -131,17 +174,34 @@ public sealed class ComposeRecoveryFixture : IAsyncLifetime
     private readonly Dictionary<string, string> environment = new();
     private readonly List<string> secrets = [];
     internal string RabbitPassword => environment["RABBITMQ_PASSWORD"];
+    internal string ControlConnection => "Host=postgres;Database=telemetry_control;Username=telemetry;Password=" + environment["POSTGRES_PASSWORD"];
+    internal string AdminToken
+    {
+        get
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(environment["INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE"]));
+            return document.RootElement.GetProperty("token").GetString()!;
+        }
+    }
     public async Task InitializeAsync()
     {
         executable = FindDocker();
         DirectoryPath = Path.Combine(Root, "artifacts/validation/T078", owner);
         Directory.CreateDirectory(DirectoryPath);
-        foreach (var key in new[] { "POSTGRES_PASSWORD", "RABBITMQ_PASSWORD", "GRAFANA_ADMIN_PASSWORD", "INFLUXDB_GRAFANA_READ_TOKEN" })
+        foreach (var key in new[] { "POSTGRES_PASSWORD", "RABBITMQ_PASSWORD", "GRAFANA_ADMIN_PASSWORD", "INFLUXDB_GRAFANA_READ_TOKEN", "POSTGRES_METRICS_PASSWORD" })
         {
             environment[key] = "t078-" + Guid.NewGuid().ToString("N");
             secrets.Add(environment[key]);
+            if (key != "RABBITMQ_PASSWORD")
+            {
+                var secretFile = Path.Combine(DirectoryPath, key + ".txt");
+                await File.WriteAllTextAsync(secretFile, environment[key]);
+                environment[key + "_FILE"] = secretFile;
+            }
         }
         environment["GRAFANA_PORT"] = "0";
+        foreach (var key in new[] { "POSTGRES_PORT", "RABBITMQ_PORT", "RABBITMQ_MANAGEMENT_PORT", "INFLUXDB_QUERYABLE_PORT", "PROMETHEUS_PORT", "LOKI_PORT", "API_PORT", "PUBSUB_EMULATOR_PORT" })
+            environment[key] = "0";
         environment["INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE"] = Path.Combine(DirectoryPath, "queryable.json");
         (await DockerAsync("run", "--rm", "--network", "none", "--mount", $"type=bind,source={DirectoryPath},target=/tokens", "influxdb:3.11.6-core", "influxdb3", "create", "token", "--admin", "--offline", "--name", "t078-bootstrap", "--output-file", "/tokens/queryable.json")).ExitCode.ShouldBe(0, "Offline bootstrap failed; no token output is printed.");
         using (var token = JsonDocument.Parse(await File.ReadAllTextAsync(environment["INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE"])))
@@ -192,12 +252,19 @@ public sealed class ComposeRecoveryFixture : IAsyncLifetime
                 stderr = stderr.Replace(secret, "[REDACTED]", StringComparison.Ordinal);
             await File.AppendAllTextAsync(Path.Combine(DirectoryPath, "failures.log"), stderr + "\n");
         }
-        return new(process.ExitCode, stdout);
+        return new(process.ExitCode, arguments[0] == "logs" ? stdout + stderr : stdout);
+    }
+    internal async Task CaptureAsync(string id)
+    {
+        var output = (await DockerAsync("logs", "--tail", "80", id)).Output;
+        foreach (var secret in secrets)
+            output = output.Replace(secret, "[REDACTED]", StringComparison.Ordinal);
+        await File.WriteAllTextAsync(Path.Combine(DirectoryPath, id + "-logs.txt"), output);
     }
     public async Task DisposeAsync()
     {
         if (!string.IsNullOrEmpty(executable) && Directory.Exists(DirectoryPath))
-            foreach (var service in new[] { "grafana", "loki" })
+            foreach (var service in new[] { "grafana", "loki", "api", "worker" })
                 if ((await DockerAsync("image", "inspect", Image(service))).ExitCode == 0)
                     (await DockerAsync("image", "rm", Image(service))).ExitCode.ShouldBe(0, "Could not remove a test-owned image tag.");
     }
@@ -256,9 +323,72 @@ internal sealed class ComposeProject : IAsyncDisposable
         files.Add(path);
     }
     internal Task<ComposeRecoveryFixture.CommandResult> ComposeAsync(params string[] arguments) => fixture.DockerAsync(Arguments(arguments));
+    internal async Task EnableProfilesAsync()
+    {
+        files.Add(Path.Combine(fixture.Root, "deploy/compose.override.yaml"));
+        files.Add(Path.Combine(fixture.Root, "deploy/compose.monitoring.yaml"));
+        var reset = Path.Combine(fixture.DirectoryPath, Name + "-env-reset.yaml");
+        await File.WriteAllTextAsync(reset, "services:\n  worker:\n    env_file: !reset []\n");
+        files.Add(reset); // Never load the user's optional .env.worker.
+        var environment = new JsonObject
+        {
+            ["ConnectionStrings__TelemetryControl"] = fixture.ControlConnection,
+            ["Queue__RabbitMq__Password"] = fixture.RabbitPassword,
+            ["InfluxDb__Queryable__Token"] = fixture.AdminToken,
+            ["Processing__DiagnosticKey"] = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)),
+            ["BatchInspection__CursorKey"] = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
+        };
+        await OverrideAsync(new JsonObject
+        {
+            ["services"] = new JsonObject
+            {
+                ["api"] = new JsonObject { ["image"] = fixture.Image("api"), ["environment"] = environment.DeepClone() },
+                ["worker"] = new JsonObject { ["image"] = fixture.Image("worker"), ["environment"] = environment.DeepClone(), ["env_file"] = new JsonArray() }
+            }
+        });
+    }
+    internal async Task AssertHardenedAsync(string[] services)
+    {
+        foreach (var service in services)
+        {
+            var id = (await ComposeOkAsync("ps", "-q", service)).Output.Trim();
+            var inspected = await fixture.DockerAsync("inspect", id);
+            inspected.ExitCode.ShouldBe(0);
+            using var document = JsonDocument.Parse(inspected.Output);
+            var host = document.RootElement[0].GetProperty("HostConfig");
+            host.GetProperty("ReadonlyRootfs").GetBoolean().ShouldBeTrue(service);
+            host.GetProperty("Memory").GetInt64().ShouldBeGreaterThan(0, service);
+            host.GetProperty("NanoCpus").GetInt64().ShouldBeGreaterThan(0, service);
+            host.GetProperty("PidsLimit").GetInt64().ShouldBeGreaterThan(0, service);
+            host.GetProperty("CapDrop").EnumerateArray().ShouldContain(value => value.GetString() == "ALL");
+            host.GetProperty("SecurityOpt").EnumerateArray().ShouldContain(value => value.GetString() == "no-new-privileges:true");
+            host.GetProperty("RestartPolicy").GetProperty("Name").GetString().ShouldBe("unless-stopped");
+            var command = service == "loki" ? new[] { "exec", "-T", service, "/bin/busybox", "sh", "-ec", "test \"$(/bin/busybox id -u)\" -ne 0; /bin/busybox touch /tmp/t086-proof; /bin/busybox rm /tmp/t086-proof" }
+                : new[] { "exec", "-T", service, "sh", "-ec", "test \"$(id -u)\" -ne 0; touch /tmp/t086-proof; rm /tmp/t086-proof" };
+            await ComposeOkAsync(command);
+        }
+    }
+    internal async Task AwaitEngineRestartAsync(string service)
+    {
+        var timer = Stopwatch.StartNew();
+        while (timer.Elapsed < TimeSpan.FromSeconds(90))
+        {
+            var id = (await ComposeOkAsync("ps", "-aq", service)).Output.Trim();
+            using var json = JsonDocument.Parse((await fixture.DockerAsync("inspect", id)).Output);
+            var container = json.RootElement[0];
+            if (container.GetProperty("RestartCount").GetInt32() > 0 &&
+                container.GetProperty("State").GetProperty("Health").GetProperty("Status").GetString() == "healthy")
+                return;
+            await Task.Delay(1000);
+        }
+        Assert.Fail("Engine did not restart the test broker into a healthy state.");
+    }
     internal async Task<ComposeRecoveryFixture.CommandResult> ComposeOkAsync(params string[] arguments)
     {
         var result = await ComposeAsync(arguments);
+        if (result.ExitCode != 0 && arguments.Contains("up", StringComparer.Ordinal))
+            foreach (var row in await RowsAsync())
+                await fixture.CaptureAsync(row.GetProperty("ID").GetString()!);
         result.ExitCode.ShouldBe(0, "Compose operation failed; inspect the private T078 failure log.");
         return result;
     }
@@ -271,10 +401,17 @@ internal sealed class ComposeProject : IAsyncDisposable
         list.AddRange(arguments);
         return list.ToArray();
     }
-    internal async Task<JsonNode> ModelAsync(bool development = false)
+    internal async Task<JsonNode> ModelAsync(bool development = false, bool monitoring = false)
     {
-        var args = development ? new[] { "-f", Path.Combine(fixture.Root, "deploy/compose.override.yaml"), "--profile", "app", "--profile", "pubsub-emulator", "config", "--format", "json", "--no-env-resolution" } : new[] { "config", "--format", "json" };
-        return JsonNode.Parse((await ComposeOkAsync(args)).Output)!;
+        var args = new List<string>();
+        if (development)
+            args.AddRange(["-f", Path.Combine(fixture.Root, "deploy/compose.override.yaml"), "--profile", "app", "--profile", "pubsub-emulator"]);
+        if (monitoring)
+            args.AddRange(["-f", Path.Combine(fixture.Root, "deploy/compose.monitoring.yaml"), "--profile", "host-metrics"]);
+        args.AddRange(["config", "--format", "json"]);
+        if (development)
+            args.Add("--no-env-resolution");
+        return JsonNode.Parse((await ComposeOkAsync(args.ToArray())).Output)!;
     }
     internal Task UpAsync() => ComposeOkAsync("up", "-d", "--no-build", "--wait", "--wait-timeout", "240");
     internal async Task<JsonElement[]> RowsAsync()
@@ -342,7 +479,7 @@ internal sealed class ComposeProject : IAsyncDisposable
     {
         try
         {
-            await ComposeOkAsync("down", "--timeout", "10", "--remove-orphans");
+            await ComposeOkAsync("--profile", "*", "down", "--timeout", "10", "--remove-orphans");
         }
         finally
         {

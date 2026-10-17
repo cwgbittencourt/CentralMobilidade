@@ -27,7 +27,8 @@ For an existing or fresh database, run the reviewed
 [`monitoring-role.sql`](../postgres/monitoring-role.sql) using an owner `psql`
 session connected to `telemetry_control`, then use `\password telemetry_monitor`
 to set a generated secret interactively. Supply the same secret as
-`POSTGRES_METRICS_PASSWORD` through the deployment secret environment. The script
+the contents of a protected UTF-8 file referenced by the absolute deployment
+`POSTGRES_METRICS_PASSWORD_FILE` path. The script
 is repeatable and never sets or prints a password. It grants `pg_monitor` and
 database CONNECT, with no business table grants. Check existing PUBLIC grants and
 role memberships before reusing an existing role; role creation does not revoke
@@ -41,10 +42,11 @@ docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml -f deploy/
 
 The PostgreSQL password is mounted as a Compose secret and read using
 `DATA_SOURCE_PASS_FILE`; it is absent from the exporter URI and command arguments.
-Compose environment-backed secrets still depend on protection of the deployment
-environment. Exporter images are pinned. Neither exporter creates a data volume.
+Compose file-backed secrets require protection and container-readable ownership of
+the source file. Exporter images are pinned. Neither exporter creates a data volume.
 
-The `host-metrics` profile mounts the **Linux host root read-only** and uses the
+The `host-metrics` profile mounts the **Linux host root read-only** with private
+propagation (compatible with Docker Desktop's non-shared root) and uses the
 host PID namespace. Enable it only on a trusted monitoring host. Filesystem
 collection includes root and explicit operational `/data`, `/srv`,
 `/var/lib/docker`, `/var/lib/containers` mounts; add approved mount points when the

@@ -1,6 +1,19 @@
 # Add after compose.yaml (and compose.override.yaml when running the app profile).
+x-exporter-runtime: &exporter-runtime
+  restart: unless-stopped
+  read_only: true
+  user: "65534:65534"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  cpus: 0.25
+  mem_limit: 128m
+  pids_limit: 128
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+
 services:
   postgres-exporter:
+    <<: *exporter-runtime
     image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
     environment:
       DATA_SOURCE_URI: postgres:5432/telemetry_control?sslmode=disable
@@ -21,8 +34,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:9187/metrics]
+      interval: 15s
+      timeout: 10s
+      retries: 4
+      start_period: 15s
 
   node-exporter:
+    <<: *exporter-runtime
     image: prom/node-exporter:v1.12.1
     profiles: [host-metrics]
     pid: host
@@ -41,9 +61,16 @@ services:
       # Only operational root/data mounts; never user home or container paths.
       - --collector.filesystem.mount-points-include=^/(|var/lib/docker|var/lib/containers|data|srv)$$
     volumes:
-      - /:/host:ro,rslave
+      # Private propagation also works when Docker Desktop's root mount is not shared.
+      - /:/host:ro
     networks: [backend]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:9100/metrics]
+      interval: 15s
+      timeout: 10s
+      retries: 4
+      start_period: 15s
 
 secrets:
   postgres_metrics_password:
-    environment: POSTGRES_METRICS_PASSWORD
+    file: ${POSTGRES_METRICS_PASSWORD_FILE:?Set the absolute monitoring password file path}

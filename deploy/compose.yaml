@@ -1,9 +1,29 @@
 name: centralmobilidade
 
+# Local Engine limits (not Swarm-only deploy limits). See hardening.md for budgets.
+x-runtime: &runtime
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  cpus: 0.5
+  mem_limit: 512m
+  pids_limit: 256
+  stop_grace_period: 60s
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+
 # Supply secrets through the shell or an untracked .env. There are no default passwords.
-# Paths to offline InfluxDB admin-token JSON files must be absolute.
+# Secret file paths must be absolute; only the offline InfluxDB admin token is JSON.
 services:
   postgres:
+    <<: *runtime
+    user: "999:999"
+    cpus: 1
+    mem_limit: 1g
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=16m,uid=999,gid=999,mode=3775
     image: postgres:17.11-bookworm
     environment:
       POSTGRES_DB: telemetry_control
@@ -20,6 +40,11 @@ services:
       retries: 20
 
   rabbitmq:
+    <<: *runtime
+    user: "100:101"
+    cpus: 1
+    mem_limit: 1g
+    pids_limit: 512
     image: rabbitmq:4.3.6-management-alpine
     hostname: rabbitmq
     environment:
@@ -38,9 +63,14 @@ services:
       retries: 20
 
   influxdb:
+    <<: *runtime
+    user: "1500:1500"
+    cpus: 2
+    mem_limit: 4g
+    pids_limit: 512
     # Keep node-id and volume identity when reusing the existing queryable catalog.
     image: influxdb:3.11.6-core
-    command: [influxdb3, serve, --node-id, queryable, --object-store, file, --data-dir, /var/lib/influxdb3/data, --admin-token-file, /run/secrets/influxdb_admin_token, --disable-authz, "health,ping,metrics"]
+    command: [influxdb3, serve, --node-id, queryable, --object-store, file, --data-dir, /var/lib/influxdb3/data, --admin-token-file, /run/secrets/influxdb_admin_token, --disable-authz, "health,ping,metrics", --disable-package-management]
     secrets:
       - source: influxdb_queryable_admin_token
         target: influxdb_admin_token
@@ -55,6 +85,10 @@ services:
       start_period: 10s
 
   influxdb-init:
+    <<: *runtime
+    user: "1500:1500"
+    mem_limit: 256m
+    pids_limit: 64
     image: influxdb:3.11.6-core
     entrypoint: [sh, /init-database.sh]
     environment:
@@ -72,6 +106,9 @@ services:
     restart: "no"
 
   prometheus:
+    <<: *runtime
+    user: "65534:65534"
+    mem_limit: 768m
     image: prom/prometheus:v3.15.0-busybox
     command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=30d]
     volumes:
@@ -85,6 +122,9 @@ services:
       retries: 20
 
   loki:
+    <<: *runtime
+    user: "10001:10001"
+    mem_limit: 768m
     image: centralmobilidade-loki:3.7.0-busybox-1.37.0
     build:
       context: ..
@@ -102,6 +142,8 @@ services:
       start_period: 20s
 
   grafana:
+    <<: *runtime
+    user: "472:0"
     image: centralmobilidade-grafana:12.2.5-infinity-4.1.1
     build:
       context: ./grafana
@@ -140,6 +182,13 @@ services:
       retries: 30
 
   quarantine-init:
+    <<: *runtime
+    # Only this terminating ownership job needs root, with narrowly restored capabilities.
+    user: "0:0"
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    cpus: 0.25
+    mem_limit: 64m
+    pids_limit: 32
     image: alpine:3.23.4
     # API/Worker images use UID 1654. Mount this same volume in the app profile (T009).
     command: [sh, -ec, "mkdir -p /quarantine/rejections; chown 1654:1654 /quarantine/rejections; chmod 700 /quarantine/rejections"]
@@ -150,11 +199,11 @@ services:
 
 secrets:
   postgres_password:
-    environment: POSTGRES_PASSWORD
+    file: ${POSTGRES_PASSWORD_FILE:?Set the absolute PostgreSQL password file path}
   grafana_admin_password:
-    environment: GRAFANA_ADMIN_PASSWORD
+    file: ${GRAFANA_ADMIN_PASSWORD_FILE:?Set the absolute Grafana password file path}
   influxdb_grafana_read_token:
-    environment: INFLUXDB_GRAFANA_READ_TOKEN
+    file: ${INFLUXDB_GRAFANA_READ_TOKEN_FILE:?Set the absolute Grafana read-token file path}
   influxdb_queryable_admin_token:
     file: ${INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE:?Set the absolute offline token JSON path}
 

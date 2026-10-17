@@ -3,10 +3,10 @@
 `ComposeRecoveryTests` executes the repository's real `deploy/compose.yaml` with
 Docker Compose. It does not replace dependency services with health stubs or a
 test-only equivalent composition. The development override is also resolved to
-check API/worker mount and dependency declarations; application processes are not
-started by this suite.
+check API/worker mount and dependency declarations. T086 additionally starts the
+actual API/worker images, emulator and exporters to validate their runtime restrictions.
 
-Seven cases cover:
+The original seven cases cover:
 
 - The seven named persistent volumes, writable service mount targets, six native
   server health probes, initializer completion gates and app-profile quarantine/
@@ -53,7 +53,7 @@ containers. Each command has a bounded outer timeout; service readiness also has
 Compose deadlines. The first run may need to acquire pinned images/plugins.
 
 Every case uses a fresh `t078-<UUID>` project overriding the default project name.
-Docker builds create uniquely tagged Grafana/Loki test images from the actual
+Docker builds create uniquely tagged Grafana/Loki/API/worker test images from the actual
 Dockerfiles. Test overrides change only those image tags, ephemeral loopback
 RabbitMQ/Grafana ports, the read-only validation-script mount, and explicit fault
 injections. They never select an existing user project or its fixed ports.
@@ -92,10 +92,32 @@ readiness, API/worker acknowledgement-boundary tests or complete ingestion proof
 
 These are ordinary restart/recreation tests on one Docker host. They do not prove
 host-loss recovery, backup restore, HA, seven-day queue retention, 60-day expiry,
-five-year capacity or the later 100,000-event gate. Production deployment hardening
-remains T086 and backup/restore procedures T087. Never apply test fault overrides
+five-year capacity or the later 100,000-event gate. T086 runtime controls are
+documented in [the hardening guide](../../../deploy/hardening.md); backup/restore procedures remain T087. Never apply test fault overrides
 or test cleanup commands to an existing deployment.
 
 - [Compose up and mounted-volume preservation](https://docs.docker.com/reference/cli/docker/compose/up/)
 - [Named/external volume semantics and ownership labels](https://docs.docker.com/reference/compose-file/volumes/)
 - [Production deployment contract](../../../deploy/README.md)
+
+## T086 runtime checks
+
+Two added cases resolve restrictions across all profiles and start the real app,
+emulator and exporters. The base recovery case also inspects Engine memory/CPU/PID
+limits, read-only roots, capability drops and no-new-privileges; checks non-root
+execution and temporary writes; and shuts down the broker internally to prove
+automatic Engine restart before rechecking the confirmed message and database data.
+File-backed synthetic secrets support the read-only roots. App builds use unique
+image tags, private synthetic runtime settings and an explicit env-file reset so
+the user's `.env.worker` is never read. Cleanup enables all profiles before removing
+the exact test project, preventing optional containers from retaining its volumes.
+The separate model-only topology script uses `--no-env-resolution` too.
+
+App health checks validate liveness and app-owned mode-0700 quarantine access;
+they do not claim complete ingestion readiness on the test's empty control schema.
+Exporter HTTP health does not establish monitoring-role authorization. Initial
+runtime checks exposed environment-secret/read-only incompatibility, Influx Python
+package initialization and Docker Desktop's non-shared host mount. Production
+configuration now uses file-backed secrets, disabled Python package management and
+private read-only host-mount propagation, respectively. Loki's minimal image uses
+explicit BusyBox applets in the runtime assertions.

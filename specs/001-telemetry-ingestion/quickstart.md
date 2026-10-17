@@ -22,6 +22,10 @@ Credential rotation, scope changes and audit review are covered by the
 ## 1. Configure local secrets
 
 From the repository root, copy `.env.example` to an untracked `.env` and fill its blank secret values.
+T086 requires absolute private `*_FILE` paths for PostgreSQL/Grafana/read-token
+Compose secrets; each file contains the existing raw UTF-8 secret. Follow the
+[hardening configuration](../../deploy/hardening.md) for ownership, memory budgets,
+the optional monitoring secret and health/restart semantics before recreating services.
 The example file must contain no working credentials. Producer and operator bearer tokens are distinct,
 must be stored as hashes/secret references, and must not be passed on command lines in shared
 environments. Seed at least one scoped operator and one explicit cross-company administrator for

@@ -4,7 +4,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $project = 'centralmobilidade-t112-' + [guid]::NewGuid().ToString('N').Substring(0, 10)
 $output = Join-Path $root "artifacts/validation/foundation-single-influx/$project"
 [IO.Directory]::CreateDirectory($output) | Out-Null
-$keys = @('POSTGRES_PASSWORD','RABBITMQ_PASSWORD','GRAFANA_ADMIN_PASSWORD','INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE','GRAFANA_PORT')
+$keys = @('POSTGRES_PASSWORD_FILE','RABBITMQ_PASSWORD','GRAFANA_ADMIN_PASSWORD_FILE','INFLUXDB_GRAFANA_READ_TOKEN_FILE','INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE','GRAFANA_PORT')
 $saved = @{}
 foreach ($key in $keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process') }
 $log = Join-Path $output 'private-docker.log'
@@ -23,7 +23,12 @@ function Compose {
 function Check($condition, $message) { if (-not $condition) { throw $message } }
 $started = $false
 try {
-    foreach ($key in $keys[0..2]) { [Environment]::SetEnvironmentVariable($key,[guid]::NewGuid().ToString('N'),'Process') }
+    [Environment]::SetEnvironmentVariable('RABBITMQ_PASSWORD',[guid]::NewGuid().ToString('N'),'Process')
+    foreach ($key in @('POSTGRES_PASSWORD_FILE','GRAFANA_ADMIN_PASSWORD_FILE','INFLUXDB_GRAFANA_READ_TOKEN_FILE')) {
+        $secretPath = Join-Path $output ($key + '.txt')
+        [IO.File]::WriteAllText($secretPath, [guid]::NewGuid().ToString('N'))
+        [Environment]::SetEnvironmentVariable($key,$secretPath,'Process')
+    }
     [Environment]::SetEnvironmentVariable('GRAFANA_PORT','0','Process')
     $tokenPath = Join-Path $output 'queryable.json'
     [Environment]::SetEnvironmentVariable('INFLUXDB_QUERYABLE_ADMIN_TOKEN_FILE',$tokenPath,'Process')

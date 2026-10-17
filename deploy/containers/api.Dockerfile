@@ -1,5 +1,6 @@
 # Build from the repository root:
 # docker build -f deploy/containers/api.Dockerfile -t centralmobilidade-api .
+FROM busybox:1.37.0-musl AS probe
 FROM mcr.microsoft.com/dotnet/sdk:10.0.401-noble AS build
 WORKDIR /source
 
@@ -22,5 +23,6 @@ WORKDIR /app
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 COPY --from=build /app/publish ./
+COPY --from=probe /bin/busybox /bin/busybox
 USER $APP_UID
 ENTRYPOINT ["dotnet", "CentralMobilidade.Telemetry.Api.dll"]

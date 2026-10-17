@@ -1,5 +1,6 @@
 # Build from the repository root:
 # docker build -f deploy/containers/worker.Dockerfile -t centralmobilidade-worker .
+FROM busybox:1.37.0-musl AS probe
 FROM mcr.microsoft.com/dotnet/sdk:10.0.401-noble AS build
 WORKDIR /source
 
@@ -21,5 +22,6 @@ RUN dotnet publish src/CentralMobilidade.Telemetry.Worker/CentralMobilidade.Tele
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.12-noble AS final
 WORKDIR /app
 COPY --from=build /app/publish ./
+COPY --from=probe /bin/busybox /bin/busybox
 USER $APP_UID
 ENTRYPOINT ["dotnet", "CentralMobilidade.Telemetry.Worker.dll"]

@@ -5,9 +5,14 @@ InfluxDB, Prometheus, Loki, Grafana, and rejection quarantine in separate named 
 The base file publishes only Grafana, on `127.0.0.1:3000`. Load the development override explicitly
 to publish dependency ports and enable optional application/emulator profiles.
 
-Set `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, and `GRAFANA_ADMIN_PASSWORD` in the shell or an untracked
-root `.env`. Use distinct secrets. `GRAFANA_ADMIN_USER` defaults to `admin`; `GRAFANA_PORT` defaults to
-`3000`. PostgreSQL and Grafana receive their passwords through Docker Compose secrets.
+Set `RABBITMQ_PASSWORD` and the absolute private file paths `POSTGRES_PASSWORD_FILE`,
+`GRAFANA_ADMIN_PASSWORD_FILE` and `INFLUXDB_GRAFANA_READ_TOKEN_FILE` in the shell or
+an untracked root `.env`. Each UTF-8 file contains its distinct secret value, not
+JSON. File-backed Compose secrets support the read-only roots. For an existing
+stack, copy the existing values into protected files; changing the source does not
+rotate database passwords or Grafana credentials. `GRAFANA_ADMIN_USER` defaults to
+`admin`; `GRAFANA_PORT` defaults to `3000`. See [runtime hardening](hardening.md) for
+permissions, resource budgets and health/restart semantics.
 
 For a fresh installation, create one offline InfluxDB admin token file in an untracked directory, for example:
 
