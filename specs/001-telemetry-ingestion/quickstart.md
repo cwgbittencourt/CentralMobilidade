@@ -177,8 +177,9 @@ and optional CPF suffix and produces an audit event.
 T076 provides the [shared queue contract suite](../../tests/CentralMobilidade.Telemetry.ContractTests/Queue/README.md)
 and an executable real-RabbitMQ binding. T077 adds the emulator binding and four
 real-SDK controls; T080 now implements the adapter and resolves its 22 original
-failures, with 14 additional integration safety cases. Runtime provider selection
-and host wiring remain T081. See the
+failures, with 14 additional integration safety cases. T081 now supplies runtime
+provider selection and host wiring; follow the [queue configuration contract](../../src/CentralMobilidade.Telemetry.Infrastructure/DependencyInjection/README.md)
+for existing resources, credentials, explicit emulator mode and startup checks. See the
 [emulator evidence and limitations](../../tests/CentralMobilidade.Telemetry.IntegrationTests/Queue/README.md).
 A passing RabbitMQ run or emulator SDK probe alone does not establish parity.
 

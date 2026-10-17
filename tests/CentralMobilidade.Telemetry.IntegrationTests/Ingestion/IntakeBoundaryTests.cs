@@ -239,7 +239,8 @@ public sealed class IntakeBoundaryTests
         return result.ToArray();
     }
 
-    private sealed class IntakeFixture(long maxCompressedBytes = 1024, TimeSpan? uploadTimeout = null, bool forbidCompanyLookup = false) : WebApplicationFactory<ProducerBearerHandler>
+    private sealed class IntakeFixture(long maxCompressedBytes = 1024, TimeSpan? uploadTimeout = null, bool forbidCompanyLookup = false)
+        : Fixtures.ConfiguredApiFactory(new Dictionary<string, string?> { ["Queue:RabbitMq:Password"] = "synthetic-unused-test-password" })
     {
         private static readonly string Token = OpaqueBearerTokens.Generate(BearerCredentialKind.Producer);
         private static readonly BearerTokenHash Hash = BearerTokenHash.Create(Token);
@@ -253,6 +254,7 @@ public sealed class IntakeBoundaryTests
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["AllowedHosts"] = "localhost",
+                ["Queue:RabbitMq:Password"] = "synthetic-unused-test-password",
                 ["Cadastral:CompanyVisibilityUrl"] = forbidCompanyLookup ? "http://127.0.0.1:1/obsolete-company-lookup" : null,
                 ["ConnectionStrings:TelemetryControl"] = "",
                 ["Telemetry:MaxCompressedBytes"] = maxCompressedBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),

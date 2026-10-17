@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using CentralMobilidade.Telemetry.Infrastructure.Observability;
 using Serilog;
@@ -26,7 +27,8 @@ public sealed class PrivacyLoggingTests
     [Fact]
     public async Task Api_host_still_starts_through_standard_integration_host_tooling()
     {
-        await using var factory = new WebApplicationFactory<CentralMobilidade.Telemetry.Api.Security.ProducerBearerHandler>();
+        await using var factory = new Fixtures.ConfiguredApiFactory(
+            new Dictionary<string, string?> { ["Queue:RabbitMq:Password"] = "synthetic-unused-test-password" });
         using var client = factory.CreateClient();
         (await client.GetStringAsync("/")).ShouldBe("Central Mobilidade Telemetry API");
     }

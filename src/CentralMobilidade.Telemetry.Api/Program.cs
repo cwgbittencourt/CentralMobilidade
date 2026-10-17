@@ -12,7 +12,7 @@ using CentralMobilidade.Telemetry.Infrastructure.Cadastral;
 using CentralMobilidade.Telemetry.Infrastructure.Presentation;
 using CentralMobilidade.Telemetry.Infrastructure.Observability;
 using CentralMobilidade.Telemetry.Infrastructure.Persistence;
-using CentralMobilidade.Telemetry.Infrastructure.Queue.RabbitMq;
+using CentralMobilidade.Telemetry.Infrastructure.DependencyInjection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -64,15 +64,7 @@ try
         builder.Services.AddTelemetryControlPersistence(controlConnection).AddTelemetryBatchInspection(builder.Configuration);
         builder.Services.AddTelemetryPresentation(builder.Configuration);
     }
-    if (string.Equals(builder.Configuration["Queue:Provider"], "RabbitMq", StringComparison.OrdinalIgnoreCase))
-    {
-        builder.Services.AddSingleton<RabbitMqTopology>();
-        builder.Services.AddSingleton<RabbitMqConnectionManager>();
-        builder.Services.AddSingleton<IDurableBatchQueue>(services =>
-            RabbitMqBatchPublisher.CreateAsync(
-                services.GetRequiredService<RabbitMqConnectionManager>(),
-                services.GetRequiredService<IConfiguration>()).GetAwaiter().GetResult());
-    }
+    builder.Services.AddTelemetryQueue(builder.Configuration, builder.Environment);
     await using var app = builder.Build();
     app.UseExceptionHandler();
     app.UseForwardedHeaders();

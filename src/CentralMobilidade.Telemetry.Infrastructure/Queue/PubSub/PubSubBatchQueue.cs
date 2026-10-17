@@ -86,50 +86,89 @@ public sealed class PubSubBatchQueue : IDurableBatchQueue, IAsyncDisposable
         }
     }
 
-    public async IAsyncEnumerable<IQueueDelivery> ConsumeAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+    public IAsyncEnumerable<IQueueDelivery> ConsumeAsync(CancellationToken cancellationToken) => ConsumeCore(null, TimeSpan.FromSeconds(5), cancellationToken);
+
+    public IAsyncEnumerable<IQueueDelivery> ConsumeAsync(Action<bool> reportAvailability, TimeSpan heartbeatInterval, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reportAvailability);
+        if (heartbeatInterval < TimeSpan.FromMilliseconds(100) || heartbeatInterval > TimeSpan.FromMinutes(1))
+            throw new ArgumentOutOfRangeException(nameof(heartbeatInterval));
+        return ConsumeCore(reportAvailability, heartbeatInterval, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<IQueueDelivery> ConsumeCore(Action<bool>? reportAvailability, TimeSpan heartbeatInterval,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var session = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
-        while (true)
+        var monitoring = reportAvailability is null ? Task.CompletedTask : Monitor(reportAvailability, heartbeatInterval, session);
+        try
         {
-            session.Token.ThrowIfCancellationRequested();
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-            var response = await Pull(session.Token);
-            if (response is null || response.ReceivedMessages.Count == 0)
+            while (true)
             {
-                await Task.Delay(20, session.Token);
-                continue;
-            }
-            // MaxMessages=1 is also a memory/backpressure boundary; never buffer an unbounded inbox.
-            if (response.ReceivedMessages.Count != 1)
-                throw Failure();
-            var received = response.ReceivedMessages[0];
-            if (string.IsNullOrEmpty(received.AckId) || received.Message is null || received.Message.Data.Length > MaxBody)
-                throw InvalidEnvelope(); // No ACK of an unbounded or unidentifiable message.
-            await using var delivery = new Delivery(this, received);
-            outstanding.TryAdd(delivery, 0);
-            var yielded = false;
-            try
-            {
-                await delivery.StartLease(session.Token);
-                if (!delivery.Valid)
-                    await delivery.DeadLetterAsync("INVALID_ENVELOPE", session.Token);
-                else if (delivery.DeliveryAttempt > options.MaxAttempts || delivery.Metadata.ReceivedAt.AddDays(7) <= DateTimeOffset.UtcNow)
-                    await delivery.DeadLetterAsync("RETRY_EXHAUSTED", session.Token);
-                else
+                session.Token.ThrowIfCancellationRequested();
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+                var response = await Pull(session.Token);
+                if (response is null || response.ReceivedMessages.Count == 0)
                 {
-                    yielded = true;
-                    yield return delivery;
-                    await delivery.Finished.Task.WaitAsync(session.Token);
-                    delivery.CheckLease();
+                    await Task.Delay(20, session.Token);
+                    continue;
+                }
+                // MaxMessages=1 is also a memory/backpressure boundary; never buffer an unbounded inbox.
+                if (response.ReceivedMessages.Count != 1)
+                    throw Failure();
+                var received = response.ReceivedMessages[0];
+                if (string.IsNullOrEmpty(received.AckId) || received.Message is null || received.Message.Data.Length > MaxBody)
+                    throw InvalidEnvelope(); // No ACK of an unbounded or unidentifiable message.
+                await using var delivery = new Delivery(this, received);
+                outstanding.TryAdd(delivery, 0);
+                var yielded = false;
+                try
+                {
+                    await delivery.StartLease(session.Token);
+                    if (!delivery.Valid)
+                        await delivery.DeadLetterAsync("INVALID_ENVELOPE", session.Token);
+                    else if (delivery.DeliveryAttempt > options.MaxAttempts || delivery.Metadata.ReceivedAt.AddDays(7) <= DateTimeOffset.UtcNow)
+                        await delivery.DeadLetterAsync("RETRY_EXHAUSTED", session.Token);
+                    else
+                    {
+                        yielded = true;
+                        yield return delivery;
+                        await delivery.Finished.Task.WaitAsync(session.Token);
+                        delivery.CheckLease();
+                    }
+                }
+                finally
+                {
+                    if (yielded && !delivery.Finished.Task.IsCompleted && options.DrainTimeout > TimeSpan.Zero)
+                        await Task.WhenAny(delivery.Finished.Task, Task.Delay(options.DrainTimeout));
+                    outstanding.TryRemove(delivery, out _);
                 }
             }
-            finally
+        }
+        finally
+        {
+            await session.CancelAsync();
+            await monitoring;
+        }
+    }
+
+    private async Task Monitor(Action<bool> report, TimeSpan interval, CancellationTokenSource session)
+    {
+        try
+        {
+            while (true)
             {
-                if (yielded && !delivery.Finished.Task.IsCompleted && options.DrainTimeout > TimeSpan.Zero)
-                    await Task.WhenAny(delivery.Finished.Task, Task.Delay(options.DrainTimeout));
-                outstanding.TryRemove(delivery, out _);
+                var subscription = await Invoke(settings => subscriber.GetSubscriptionAsync(
+                    new GetSubscriptionRequest { Subscription = options.Subscription }, settings), session.Token);
+                if (subscription.Topic != options.Topic || subscription.Detached)
+                    throw Failure();
+                if (!session.IsCancellationRequested)
+                    report(true);
+                await Task.Delay(interval, session.Token);
             }
         }
+        catch (Exception) { await session.CancelAsync(); }
+        finally { report(false); }
     }
 
     private async Task<PullResponse?> Pull(CancellationToken token)

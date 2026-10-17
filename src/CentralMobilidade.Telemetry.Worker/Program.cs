@@ -6,7 +6,7 @@ using CentralMobilidade.Telemetry.Application.LineProtocol;
 using CentralMobilidade.Telemetry.Application.Processing;
 using CentralMobilidade.Telemetry.Infrastructure.Influx;
 using CentralMobilidade.Telemetry.Infrastructure.Quarantine;
-using CentralMobilidade.Telemetry.Infrastructure.Queue.RabbitMq;
+using CentralMobilidade.Telemetry.Infrastructure.DependencyInjection;
 using CentralMobilidade.Telemetry.Infrastructure.Persistence;
 using CentralMobilidade.Telemetry.Infrastructure.Observability;
 using CentralMobilidade.Telemetry.Infrastructure.Health;
@@ -26,7 +26,7 @@ public static class Program
         try
         {
             var builder = Host.CreateApplicationBuilder(args);
-            ConfigureServices(builder.Services, builder.Configuration);
+            ConfigureServices(builder.Services, builder.Configuration, builder.Environment);
             var host = builder.Build();
             try
             {
@@ -47,14 +47,14 @@ public static class Program
         }
     }
 
-    public static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
+    public static void ConfigureServices(IServiceCollection services, IConfiguration configuration, IHostEnvironment? environment = null)
     {
         var connection = configuration.GetConnectionString("TelemetryControl");
         if (string.IsNullOrWhiteSpace(connection))
             throw new InvalidOperationException("Worker control storage configuration is required.");
-        if (!string.Equals(configuration["Queue:Provider"], "RabbitMq", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("The worker currently requires the RabbitMq queue provider.");
-        var runtime = new WorkerRuntimeOptions(configuration);
+        var queue = QueueRuntimeOptions.Read(configuration, environment?.EnvironmentName ?? Environments.Production);
+        services.AddTelemetryQueue(queue);
+        var runtime = new WorkerRuntimeOptions(configuration, queue);
         services.AddSingleton(runtime);
         services.AddPrivacyLogging(TelemetryServiceRole.Worker);
         services.AddTelemetryOptions(configuration);
@@ -69,9 +69,6 @@ public static class Program
         services.AddSingleton<IQuarantineStore, FileSystemQuarantineStore>();
         services.AddSingleton<TelemetryLineProtocolV1Parser>();
         services.AddScoped<ProcessTelemetryBatchHandler>();
-        services.AddSingleton<RabbitMqTopology>();
-        services.AddSingleton<RabbitMqConnectionManager>();
-        services.AddSingleton<RabbitMqBatchConsumer>();
         services.AddSingleton<IWorkerBatchProcessor, ScopedWorkerBatchProcessor>();
         services.Configure<HostOptions>(options => options.ShutdownTimeout = runtime.DrainTimeout + runtime.PublishTimeout + TimeSpan.FromSeconds(10));
         services.AddHostedService<TelemetryProcessingWorker>();

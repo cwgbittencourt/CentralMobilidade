@@ -3,9 +3,9 @@
 `PubSubBatchQueue` implements `IDurableBatchQueue` using injected
 `PublisherServiceApiClient`, `SubscriberServiceApiClient` and `IConfiguration`.
 It never creates topics/subscriptions, discovers credentials, chooses an endpoint,
-or shuts down injected clients/channels. Provider registration, authenticated cloud
-versus explicit local emulator construction and application wiring belong to T081;
-the running application still uses its existing RabbitMQ wiring.
+or shuts down injected clients/channels. T081 now supplies [provider selection,
+owned transport, startup validation and host wiring](../../DependencyInjection/README.md).
+RabbitMQ remains the shipped default; Pub/Sub is selected explicitly.
 
 ## Publish and metadata
 

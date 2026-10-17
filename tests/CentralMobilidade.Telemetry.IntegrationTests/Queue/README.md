@@ -193,3 +193,25 @@ Veja [opções, ACK, retry e limites do adaptador](../../../src/CentralMobilidad
 O comando PubSub acima agora deve passar integralmente. Relatórios atuais estão
 em `artifacts/validation/T080/`, ignorados. Permanecem os limites de sessão do
 emulador, a necessidade de validação gerenciada e os gates de cutover/capacidade.
+
+## T081 — composição dos hosts por configuração
+
+`QueueProviderHostTests` executa nove casos com a composição de produção: API HTTP
+com autenticação e confirmação Pub/Sub, worker com parser e PostgreSQL/Influx reais,
+lote misto e readiness do worker; três falhas de recursos na inicialização;
+concorrência limitada e heartbeat durante backpressure; drain/ACK ou cancelamento/
+reentrega; perda e recuperação da assinatura; e gzip acima de 4 MiB no transporte.
+Somente os cenários de ciclo de vida usam um processador controlado; o lote misto
+usa o handler de produção e confere os resultados persistidos. Nenhuma fila em
+memória substitui os adaptadores. Credenciais e recursos são sintéticos e isolados.
+
+`ConfiguredApiFactory` fornece a configuração antecipada necessária ao Program.cs
+da API mínima, por ConfigureHostConfiguration; a autenticação sintética é aplicada
+na configuração normal de teste. Isso mantém a validação estrita de produção.
+O teste de bytes grandes prova o transporte, sem afirmar validade Line Protocol.
+Trinta e três testes unitários verificam seleção/isolamento, configurações inválidas,
+política TLS/emulador e snapshot. Os hosts RabbitMQ existentes também são reexecutados.
+
+Veja [configuração, permissões, limites e health](../../../src/CentralMobilidade.Telemetry.Infrastructure/DependencyInjection/README.md).
+Os relatórios ficam ignorados em `artifacts/validation/T081/`. Validação gerenciada,
+retenção física, capacidade e troca operacional de provedor continuam gates separados.

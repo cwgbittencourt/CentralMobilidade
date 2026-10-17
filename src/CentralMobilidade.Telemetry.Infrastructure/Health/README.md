@@ -38,8 +38,9 @@ and the deployment grant policy separately. Local durability does not imply prot
 `IDurablePublicationProbe` is an adapter hook for the actual ingestion route. Its four flags require
 connection, durable route, confirmation capability and publish permission. A management/TCP ping,
 another queue/topic or a connected non-confirming channel cannot report ready. Missing/failed/timed-out
-probes fail closed. The RabbitMQ publisher registers its real probe through the API composition; future Pub/Sub support
-must preserve the same contract. Missing configuration or a failed route produces 503 even if the
+probes fail closed. Queue selection/startup validation does not currently register a publication
+probe; without that hook the API publication check remains unhealthy. Metadata/connectivity success
+is not substituted for actual durable publication. Missing configuration or a failed route produces 503 even if the
 broker process is running. The health check does not publish placeholder business batches.
 
 Influx checks require configured URL/token and perform authenticated GET `/health` with bounded

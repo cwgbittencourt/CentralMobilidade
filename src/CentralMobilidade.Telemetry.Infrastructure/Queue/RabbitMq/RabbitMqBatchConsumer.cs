@@ -20,7 +20,7 @@ using RabbitMQ.Client.Events;
 namespace CentralMobilidade.Telemetry.Infrastructure.Queue.RabbitMq;
 
 /// <summary>Each enumeration owns a channel. Unsettled deliveries are requeued on channel close.</summary>
-public sealed class RabbitMqBatchConsumer
+public sealed class RabbitMqBatchConsumer : IMonitoredBatchConsumer
 {
     private readonly RabbitMqConnectionManager connections;
     private readonly RabbitMqTopology topology;

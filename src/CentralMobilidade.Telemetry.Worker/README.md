@@ -1,6 +1,6 @@
 # Worker T053
 
-Program.ConfigureServices compõe o consumidor RabbitMQ, PostgreSQL, guard de identidade,
+Program.ConfigureServices compõe o consumidor selecionado, PostgreSQL, guard de identidade,
 writer do InfluxDB único, parser e quarentena. O handler recebe um scope por entrega,
 seguindo o [ciclo de vida dos hosted services](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/host/hosted-services?view=aspnetcore-10.0).
 Não há consulta cadastral para decidir a empresa nem migração automática do banco.
@@ -8,7 +8,8 @@ Não há consulta cadastral para decidir a empresa nem migração automática do
 Antes de iniciar, aplique as migrações com a identidade apropriada e forneça:
 
 - `ConnectionStrings:TelemetryControl`: conexão de runtime com as permissões documentadas.
-- `Queue:Provider=RabbitMq` e endpoint, virtual host, usuário e senha do RabbitMQ.
+- `Queue:Provider=RabbitMq` e endpoint, virtual host, usuário e senha do RabbitMQ,
+  ou `PubSub` com os recursos e o transporte descritos na [composição T081](../CentralMobilidade.Telemetry.Infrastructure/DependencyInjection/README.md).
 - `InfluxDb:Queryable:Url`, `Database` e token com permissão de escrita no banco único.
 - `Quarantine:Path`: diretório privado gravável, em volume persistente.
 - `Processing:DiagnosticKey`: chave Base64 persistente com pelo menos 32 bytes aleatórios.
@@ -16,16 +17,22 @@ Antes de iniciar, aplique as migrações com a identidade apropriada e forneça:
 
 Configuração obrigatória inválida falha antes de assinar a fila. Indisponibilidade transitória
 do broker mantém o host vivo, com consumidor indisponível, e inicia reconexão com backoff/jitter
-limitado a 30 segundos. A modalidade PubSub ainda falha explicitamente; sua paridade é uma tarefa futura.
+limitado a 30 segundos. A T081 também permite PubSub; seus recursos devem existir e
+passar pela validação de inicialização antes do início do consumo.
 
 | Configuração | Padrão | Regra |
 |---|---|---|
-| Worker:Concurrency | 4 | 1–64, até Queue:RabbitMq:Prefetch |
+| Worker:Concurrency | 4 | 1–64, até Prefetch do RabbitMQ ou ConcurrentDeliveries do Pub/Sub |
 | Queue:RabbitMq:Prefetch | 8 | 1–64 por assinatura |
 | Worker:HeartbeatInterval | 00:00:05 | 100 ms–10 s, menor que Health:WorkerMaxAge |
 | Worker:RecoveryDelay | 00:00:01 | 100 ms–30 s, base do backoff de reconexão |
 | Queue:RabbitMq:DrainTimeout | 00:00:30 | 0–5 minutos |
 | Queue:RabbitMq:PublishTimeout | 00:00:05 | positivo, até 1 minuto |
+
+DrainTimeout e PublishTimeout usam o bloco do provedor selecionado; os valores da
+tabela continuam sendo os padrões. Pub/Sub usa até ConcurrentDeliveries canais de
+pull limitados, com monitoramento RPC da assinatura e ACK/retry da T080. Não há
+seleção de provedor no handler de domínio nem fallback entre filas.
 
 O número de tarefas em processamento nunca excede Concurrency. As entregas restantes ficam
 no buffer limitado pelo prefetch do consumidor. Cada entrega possui corpo e resultado próprios;

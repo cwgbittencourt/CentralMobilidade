@@ -8,7 +8,8 @@ using CentralMobilidade.Telemetry.Application.Processing;
 using CentralMobilidade.Telemetry.Contracts.Errors;
 using CentralMobilidade.Telemetry.Infrastructure.Health;
 using CentralMobilidade.Telemetry.Infrastructure.Observability;
-using CentralMobilidade.Telemetry.Infrastructure.Queue.RabbitMq;
+using CentralMobilidade.Telemetry.Infrastructure.Queue;
+using CentralMobilidade.Telemetry.Infrastructure.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -38,14 +39,14 @@ public sealed class WorkerRuntimeOptions
     {
         get;
     }
-    public WorkerRuntimeOptions(IConfiguration configuration)
+    public WorkerRuntimeOptions(IConfiguration configuration, QueueRuntimeOptions queue)
     {
         Concurrency = configuration.GetValue("Worker:Concurrency", 4);
         HeartbeatInterval = configuration.GetValue("Worker:HeartbeatInterval", TimeSpan.FromSeconds(5));
         RecoveryDelay = configuration.GetValue("Worker:RecoveryDelay", TimeSpan.FromSeconds(1));
-        DrainTimeout = configuration.GetValue("Queue:RabbitMq:DrainTimeout", TimeSpan.FromSeconds(30));
-        PublishTimeout = configuration.GetValue("Queue:RabbitMq:PublishTimeout", TimeSpan.FromSeconds(5));
-        var prefetch = configuration.GetValue("Queue:RabbitMq:Prefetch", 8);
+        DrainTimeout = queue.DrainTimeout;
+        PublishTimeout = queue.PublishTimeout;
+        var prefetch = queue.ConcurrentDeliveries;
         var freshness = configuration.GetValue("Health:WorkerMaxAge", TimeSpan.FromSeconds(30));
         if (Concurrency is < 1 or > 64 || Concurrency > prefetch || prefetch is < 1 or > 64
             || HeartbeatInterval < TimeSpan.FromMilliseconds(100) || HeartbeatInterval > TimeSpan.FromSeconds(10) || HeartbeatInterval >= freshness
@@ -78,7 +79,7 @@ public sealed class ScopedWorkerBatchProcessor : IWorkerBatchProcessor
     }
 }
 
-public sealed class TelemetryProcessingWorker(RabbitMqBatchConsumer consumer, IWorkerBatchProcessor processor,
+public sealed class TelemetryProcessingWorker(IMonitoredBatchConsumer consumer, IWorkerBatchProcessor processor,
     WorkerRuntimeOptions options, WorkerProgress progress, ILogger<TelemetryProcessingWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
