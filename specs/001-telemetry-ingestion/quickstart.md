@@ -209,7 +209,7 @@ For future GCS storage and five-year retention, follow the [T089 migration prere
 
 ```powershell
 dotnet test CentralMobilidade.slnx --filter Category=Integration
-dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario steady-5000-eps
+dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario steady-5000-eps --config C:/caminho-privado/steady.json
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario reconnect-burst
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario influx-outage
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario dedup-strategy
@@ -219,6 +219,10 @@ Expected reports include p50/p95/p99 latency, events/s, compressed/decompressed 
 memory, disk growth, queue depth and oldest age, Influx write latency, rejection rate, and deduplication
 storage/lookup cost. The conflict detector cannot be selected or production-approved without passing
 the target-load experiment.
+
+The [T091 steady-state runner guide](../../tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/README.md)
+defines private configuration, required monitoring, the 8-vCPU/16-GiB profile and report limits.
+The steady runner is implemented; burst/outage CLI modes above remain future tasks.
 
 ## 10. Prove 100,000-event ingestion and Grafana visualization
 
