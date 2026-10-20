@@ -18,10 +18,10 @@
   ],
   "properties": {
     "schemaVersion": { "const": "1" },
-    "batchId": { "type": "string", "format": "uuid" },
+    "batchId": { "type": "string", "format": "uuid", "pattern": "^(?!00000000-0000-0000-0000-000000000000$)", "description": "Nonempty UUID; the all-zero UUID is rejected by runtime validation." },
     "traceId": { "type": "string", "minLength": 16, "maxLength": 64 },
     "producerId": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "receivedAt": { "type": "string", "format": "date-time" },
+    "receivedAt": { "type": "string", "format": "date-time", "description": "The JSON model uses date-time. Provider publishers encode UTC using .NET round-trip O format with seven fractional digits; consumers require that provider encoding." },
     "contractVersion": { "const": "v1" },
     "contentType": { "const": "text/plain; charset=utf-8" },
     "contentEncoding": { "const": "gzip" },

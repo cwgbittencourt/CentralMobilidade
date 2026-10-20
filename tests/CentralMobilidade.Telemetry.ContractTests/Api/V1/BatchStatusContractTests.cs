@@ -24,8 +24,8 @@ public sealed class BatchStatusContractTests
 
     [Theory]
     [InlineData(Status, "getTelemetryBatch", "200,401,404")]
-    [InlineData(Rejections, "listTelemetryBatchRejections", "200,400,401,404")]
-    [InlineData(Raw, "getQuarantinedRejectionContent", "200,401,403,404,503")]
+    [InlineData(Rejections, "listTelemetryBatchRejections", "200,400,401,404,500")]
+    [InlineData(Raw, "getQuarantinedRejectionContent", "200,401,403,404,500,503")]
     public async Task Read_operations_have_exact_documented_outcomes(string route, string id, string outcomes)
     {
         var document = await Contract.Value;

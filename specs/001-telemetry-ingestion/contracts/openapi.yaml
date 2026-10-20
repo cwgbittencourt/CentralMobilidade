@@ -147,6 +147,8 @@ paths:
             maximum: 200
             default: 50
       responses:
+        '500':
+          $ref: '#/components/responses/InternalFailure'
         '400':
           description: Invalid page limit or malformed, tampered, expired, or out-of-context cursor.
           content:
@@ -185,6 +187,8 @@ paths:
             type: string
             format: uuid
       responses:
+        '500':
+          $ref: '#/components/responses/InternalFailure'
         '200':
           description: Original rejected Line Protocol line before its 30-day deletion deadline.
           content:
@@ -249,6 +253,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           description: Caller is not authorized for this company or identity.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           description: Driver is unavailable or not found.
   /api/v1/presentation/telemetry/latest:
@@ -425,6 +433,7 @@ components:
       name: empresaId
       in: query
       required: true
+      description: Nonblank company identifier; at most 128 UTF-16 code units and 256 UTF-8 bytes, without control characters or malformed Unicode. Presentation limits are narrower than the ingestion identifier limit.
       schema:
         type: string
         maxLength: 128
@@ -445,6 +454,12 @@ components:
         type: string
         format: date-time
   responses:
+    InternalFailure:
+      description: Unexpected administrative provider failure before the response starts. A safe INTERNAL_ERROR problem is returned without provider diagnostics; an already-started raw transfer can instead terminate.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     PresentationFailure:
       description: Presentation backend failed. No provider diagnostics or partial data are returned.
       content:

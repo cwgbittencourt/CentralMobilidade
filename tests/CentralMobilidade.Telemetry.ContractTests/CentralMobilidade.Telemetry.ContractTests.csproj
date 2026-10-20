@@ -28,5 +28,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="../../specs/001-telemetry-ingestion/contracts/openapi.yaml" Link="Contracts/openapi.yaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../specs/001-telemetry-ingestion/contracts/queue-envelope.schema.json" Link="Contracts/queue-envelope.schema.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../specs/001-telemetry-ingestion/contracts/line-protocol-v1.md" Link="Contracts/line-protocol-v1.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
