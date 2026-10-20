@@ -5,6 +5,7 @@ Artifacts and ephemeral credentials remain under artifacts/validation/T094/<run>
 """
 import argparse
 import base64
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ import subprocess
 import threading
 import time
 import urllib.request
+import urllib.error
 import urllib.parse
 import traceback
 import sys
@@ -31,10 +33,11 @@ def main():
     parser.add_argument("--soak-duration", type=int, default=1800)
     parser.add_argument("--storage-measurement", action="store_true", help="T095 isolated component/storage sample; no load or soak approval")
     parser.add_argument("--quickstart-smoke", action="store_true", help="T098 small real intake/partial/restart scenario, not final 100k proof")
+    parser.add_argument("--final-proof-preflight", action="store_true", help="T102 real readiness gate only; no final corpus or Grafana proof")
     args = parser.parse_args()
-    if args.storage_measurement and args.quickstart_smoke:
+    if sum((args.storage_measurement, args.quickstart_smoke, args.final_proof_preflight)) > 1:
         raise ValueError("Select only one special measurement mode")
-    if args.storage_measurement or args.quickstart_smoke:
+    if args.storage_measurement or args.quickstart_smoke or args.final_proof_preflight:
         args.vehicles = 100000
     if not 60 <= args.duration <= 3600:
         raise ValueError("Duration must be between 60 and 3600 seconds")
@@ -51,7 +54,7 @@ def main():
             failures.append(result.returncode)
         return 1 if any(failures) else 0
     run = uuid.uuid4().hex
-    task = "T098" if args.quickstart_smoke else "T095" if args.storage_measurement else "T094"
+    task = "T102" if args.final_proof_preflight else "T098" if args.quickstart_smoke else "T095" if args.storage_measurement else "T094"
     private = ROOT / "artifacts/validation" / task / run
     private.mkdir(parents=True)
     (private / "collector").mkdir()
@@ -59,6 +62,7 @@ def main():
     docker = shutil.which("docker") or str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/DockerDesktop/resources/bin/docker.exe")
     project = "cm-" + task.lower() + "-" + run[:12]
     summary = {"run": run, "project": project, "durationSeconds": args.duration, "results": [], "capacityApproved": False}
+    summary["startedUtc"] = datetime.now(timezone.utc).isoformat()
     summary["sourceFilesSha256"] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
                                      for path in [Path(__file__).resolve(), *sorted((ROOT / "tests/CentralMobilidade.Telemetry.LoadTests").rglob("*.cs"))]
                                      if "obj" not in path.parts and "bin" not in path.parts}
@@ -118,6 +122,8 @@ def main():
         common["InfluxDb"] = {"Queryable": {"Url": "http://influxdb:8181", "Database": "telemetry", "Token": influx_token}}
         api_config = json.loads(json.dumps(common))
         api_config.update({"AllowedHosts": "*", "Authentication": {"Producers": [{"CredentialId": "capacity", "ProducerId": "capacity", "Hash": credential_hash}]}})
+        if args.final_proof_preflight:
+            api_config["BatchInspection"] = {"CursorKey": base64.b64encode(secrets.token_bytes(32)).decode()}
         if args.quickstart_smoke:
             from quickstart_smoke import configure
             smoke_identity = configure(api_config, run)
@@ -235,6 +241,25 @@ def main():
         (private / "preflight.json").write_text(json.dumps(checks, indent=2), encoding="utf-8")
         (private / "prometheus-targets.json").write_text(json.dumps(get(prom_url + "/api/v1/targets"), indent=2), encoding="utf-8")
         dc("logs", "--tail", "20", "collector")
+        if args.final_proof_preflight:
+            def public_health(path):
+                try:
+                    response = urllib.request.urlopen(api_url + path, timeout=10)
+                except urllib.error.HTTPError as error:
+                    response = error
+                with response:
+                    return {"status": response.status, "body": json.loads(response.read())}
+            gate = {"live": public_health("/health/live"), "ready": public_health("/health/ready"),
+                    "postgresDurability": sql("SELECT current_setting('fsync') || '/' || current_setting('synchronous_commit')"),
+                    "completedWarmupBatches": int(sql('SELECT count(*) FROM ingestion_batches WHERE "State"=\'Completed\'')),
+                    "finalNamespaceCount": get(f"http://127.0.0.1:{influx_port}/api/v3/query_sql", "Bearer " + influx_token,
+                        {"db": "telemetry", "q": f"SELECT count(*) AS n FROM telemetria WHERE empresa_id LIKE 'fp-{run}-%'", "format": "json"})[0]["n"],
+                    "finalScenarioInvoked": False, "finalEventsSubmitted": 0, "grafanaProvisioned": False}
+            summary["finalProofPreflight"] = gate
+            summary["dotnetSdk"] = command(["dotnet", "--version"], "sdk").stdout.strip()
+            summary["composeVersion"] = command([docker, "compose", "version", "--short"], "compose-version").stdout.strip()
+            summary["status"] = "readiness gate observed only; final scenario and Grafana remain unexecuted"
+            return 0 if gate["ready"]["status"] == 200 else 1
         if args.storage_measurement:
             from storage_capacity_measurement import measure
             summary["storage"] = measure(private, dc, sql, get, api_url, producer_token, influx_port, influx_token, rabbit_port, rabbit_auth, port)
@@ -278,6 +303,7 @@ def main():
         if thread: thread.join(timeout=30)
         if collector: collector.shutdown()
         if compose.exists(): dc("down", "--timeout", "60", check=False)  # Preserve named volumes.
+        summary["finishedUtc"] = datetime.now(timezone.utc).isoformat()
         (private / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
         print("Evidence: " + str(private / "summary.json"), flush=True)
     return 0 if len(summary["results"]) == 1 and all(item.get("passed") for item in summary["results"]) else 1

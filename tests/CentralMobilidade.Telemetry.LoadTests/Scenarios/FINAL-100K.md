@@ -14,6 +14,22 @@ existente (um warmup fora do namespace basta). O runner não cria serviços,
 cadastros, datasources, dashboards nem tokens; não modifica/deleta stores ou volumes.
 Não aponte para produção ou instalação compartilhada.
 
+Para verificar primeiro a readiness em uma fixture nova com os stores reais:
+
+```powershell
+py -3 scripts/Run-CapacityGates.py --final-proof-preflight
+```
+
+O comando usa as imagens locais `centralmobilidade-api:t094` e
+`centralmobilidade-worker:t094`; confirme que correspondem à fonte candidata.
+Ele aplica migrations, envia dois warmups fora do namespace final, registra health,
+durabilidade PostgreSQL e count SQL, depois remove só seus containers/rede sem
+apagar volumes. Saída privada em `artifacts/validation/T102/<uuid>/summary.json`.
+Exit 1 indica readiness reprovada/incompletude; exit 0 aprova **somente esse gate**.
+O modo não provisiona Grafana, não invoca a CLI final nem envia o corpus de 100.000
+eventos. O [registro T102](../../../artifacts/validation/100k-final-proof/README.md)
+separa o resultado desse gate das etapas de aceitação ainda não executadas.
+
 Desative/deixe indisponível o lookup cadastral de empresas na fixture. Todos os
 IDs `fp-<namespace>-00` a `-09` devem ser novos e ausentes de cadastros. O pipeline
 deve aceitá-los com a mesma credencial de produtor sem cadastrar/allowlistar empresas.

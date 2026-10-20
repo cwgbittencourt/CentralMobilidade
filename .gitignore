@@ -40,6 +40,9 @@ artifacts/*
 artifacts/validation/*
 !artifacts/validation/contract-conformance.md
 !artifacts/validation/quickstart-results.md
+!artifacts/validation/100k-final-proof/
+artifacts/validation/100k-final-proof/*
+!artifacts/validation/100k-final-proof/README.md
 !artifacts/validation/foundation-single-influx/
 artifacts/validation/foundation-single-influx/*
 !artifacts/validation/foundation-single-influx/README.md
