@@ -92,7 +92,7 @@ internal static class FinalProofGrafana
                     {
                         var forbidden = Variables(o, 1, DateTimeOffset.UtcNow);
                         forbidden["limit"] = "500";
-                        var denied = await Query(forbidden);
+                        var denied = await Query(forbidden, deniedQuery: true);
                         Rows(denied, true);
                         await wire.Save("viewer-unauthorized.json", denied, ct);
                     }
@@ -106,7 +106,7 @@ internal static class FinalProofGrafana
                     await File.WriteAllBytesAsync(Path.Combine(o.ReportDirectory, audience + "-" + kind + ".png"), png, ct);
                 }
 
-                async Task<JsonElement> Query(Dictionary<string, string> variables)
+                async Task<JsonElement> Query(Dictionary<string, string> variables, bool deniedQuery = false)
                 {
                     using var body = new StringContent(JsonSerializer.Serialize(new
                     {
@@ -115,7 +115,9 @@ internal static class FinalProofGrafana
                         to = variables["to"]
                     }), Encoding.UTF8, "application/json");
                     using var queryResponse = await wire.Send(o.Grafana, "api/ds/query", credential, ct, body, org);
-                    return await ProofHttp.Json(queryResponse, ct);
+                    // Grafana wraps Infinity's expected upstream 404 in HTTP 400.
+                    // Rows still requires that exact upstream status and zero returned rows.
+                    return await ProofHttp.Json(queryResponse, ct, deniedQuery);
                 }
             }
         ProofHttp.Require(internalTotal == 100000, "grafana_total_mismatch");
@@ -217,7 +219,7 @@ internal static class FinalProofGrafana
             var vehicleName = row["vehicleId"].GetString()!;
             var vehicle = vehicleName == Final100kGrafanaProofScenario.TripVehicle ? 0 : int.Parse(vehicleName.AsSpan(1), CultureInfo.InvariantCulture);
             var expected = Final100kGrafanaProofScenario.Event(o.Namespace, o.EventStart, vehicle, trip ? index : 99);
-            var time = row["eventTime"].ValueKind == JsonValueKind.Number ? DateTimeOffset.FromUnixTimeMilliseconds(row["eventTime"].GetInt64()) : row["eventTime"].GetDateTimeOffset();
+            var time = row["eventTime"].ValueKind == JsonValueKind.Number ? DateTimeOffset.FromUnixTimeMilliseconds(row["eventTime"].GetInt64()) : ProofHttp.UtcTimestamp(row["eventTime"]);
             var ignition = row["ignition"].ValueKind is JsonValueKind.True or JsonValueKind.False ? row["ignition"].GetBoolean() : bool.Parse(row["ignition"].GetString()!);
             ProofHttp.Require(vehicle is >= 0 and < 1000 && vehicle % 10 == company && (trip ? vehicle == 0 : seen.Add(vehicleName)) &&
                 vehicleName == expected.Vehicle && row["empresaId"].GetString() == expected.Company && time == expected.Time &&

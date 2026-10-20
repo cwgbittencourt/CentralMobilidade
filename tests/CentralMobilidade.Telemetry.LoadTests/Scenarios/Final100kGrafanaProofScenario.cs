@@ -179,7 +179,7 @@ public static class Final100kGrafanaProofScenario
                 {
                     var name = row.GetProperty("veiculo_id").GetString()!;
                     var vehicle = name == TripVehicle ? 0 : int.Parse(name.AsSpan(1), CultureInfo.InvariantCulture);
-                    var time = row.GetProperty("time").GetDateTimeOffset();
+                    var time = ProofHttp.UtcTimestamp(row.GetProperty("time"));
                     var delta = time.ToUnixTimeMilliseconds() - options.EventStart.ToUnixTimeMilliseconds();
                     var sample = checked((int)(delta / 20000));
                     ProofHttp.Require(vehicle is >= 0 and < 1000 && sample is >= 0 and < 100 && delta % 20000 == 0 && seen.Add((vehicle, sample)), "stored_identity_mismatch");
@@ -246,9 +246,9 @@ internal sealed class ProofHttp(HttpClient http, FinalProofOptions options, Fina
             request.Headers.Add("X-Contract-Version", "v1");
         return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
     }
-    internal static async Task<byte[]> Bytes(HttpResponseMessage response, CancellationToken ct)
+    internal static async Task<byte[]> Bytes(HttpResponseMessage response, CancellationToken ct, bool deniedQuery = false)
     {
-        Require(response.IsSuccessStatusCode, "http_failure");
+        Require(response.IsSuccessStatusCode || deniedQuery && response.StatusCode == HttpStatusCode.BadRequest, "http_failure");
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var output = new MemoryStream();
         var buffer = new byte[16384];
@@ -260,9 +260,9 @@ internal sealed class ProofHttp(HttpClient http, FinalProofOptions options, Fina
         }
         return output.ToArray();
     }
-    internal static async Task<JsonElement> Json(HttpResponseMessage response, CancellationToken ct)
+    internal static async Task<JsonElement> Json(HttpResponseMessage response, CancellationToken ct, bool deniedQuery = false)
     {
-        using var json = JsonDocument.Parse(await Bytes(response, ct));
+        using var json = JsonDocument.Parse(await Bytes(response, ct, deniedQuery));
         return json.RootElement.Clone();
     }
     internal async Task<JsonElement> Sql(string query, CancellationToken ct)
@@ -278,4 +278,8 @@ internal sealed class ProofHttp(HttpClient http, FinalProofOptions options, Fina
     }
     internal Task Save(string name, object value, CancellationToken ct) =>
         File.WriteAllTextAsync(Path.Combine(options.ReportDirectory, name), JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }), ct);
+
+    // Influx SQL serializes its UTC timestamps without an offset. Never assume the runner's local zone.
+    internal static DateTimeOffset UtcTimestamp(JsonElement value) =>
+        DateTimeOffset.Parse(value.GetString()!, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
 }

@@ -34,12 +34,13 @@ def main():
     parser.add_argument("--storage-measurement", action="store_true", help="T095 isolated component/storage sample; no load or soak approval")
     parser.add_argument("--quickstart-smoke", action="store_true", help="T098 small real intake/partial/restart scenario, not final 100k proof")
     parser.add_argument("--final-proof-preflight", action="store_true", help="T102 real readiness gate only; no final corpus or Grafana proof")
+    parser.add_argument("--final-proof", action="store_true", help="T102 isolated real pipeline, Grafana and final 100k CLI")
     parser.add_argument("--api-image", default="centralmobilidade-api:t094", help="Explicit local API candidate image; historical default preserved")
     parser.add_argument("--worker-image", default="centralmobilidade-worker:t094", help="Explicit local worker candidate image")
     args = parser.parse_args()
-    if sum((args.storage_measurement, args.quickstart_smoke, args.final_proof_preflight)) > 1:
+    if sum((args.storage_measurement, args.quickstart_smoke, args.final_proof_preflight, args.final_proof)) > 1:
         raise ValueError("Select only one special measurement mode")
-    if args.storage_measurement or args.quickstart_smoke or args.final_proof_preflight:
+    if args.storage_measurement or args.quickstart_smoke or args.final_proof_preflight or args.final_proof:
         args.vehicles = 100000
     if not 60 <= args.duration <= 3600:
         raise ValueError("Duration must be between 60 and 3600 seconds")
@@ -57,7 +58,7 @@ def main():
             failures.append(result.returncode)
         return 1 if any(failures) else 0
     run = uuid.uuid4().hex
-    task = "T102" if args.final_proof_preflight else "T098" if args.quickstart_smoke else "T095" if args.storage_measurement else "T094"
+    task = "T102" if args.final_proof_preflight or args.final_proof else "T098" if args.quickstart_smoke else "T095" if args.storage_measurement else "T094"
     private = ROOT / "artifacts/validation" / task / run
     private.mkdir(parents=True)
     (private / "collector").mkdir()
@@ -127,6 +128,10 @@ def main():
         api_config.update({"AllowedHosts": "*", "Authentication": {"Producers": [{"CredentialId": "capacity", "ProducerId": "capacity", "Hash": credential_hash}]}})
         if args.final_proof_preflight:
             api_config["BatchInspection"] = {"CursorKey": base64.b64encode(secrets.token_bytes(32)).decode()}
+        if args.final_proof:
+            import final_proof_fixture
+            proof_identity = final_proof_fixture.configure(api_config, run)
+            summary["sourceFilesSha256"]["scripts/final_proof_fixture.py"] = hashlib.sha256((ROOT / "scripts/final_proof_fixture.py").read_bytes()).hexdigest()
         if args.quickstart_smoke:
             from quickstart_smoke import configure
             smoke_identity = configure(api_config, run)
@@ -161,6 +166,8 @@ def main():
         services["prometheus"] = {"image": "prom/prometheus:v3.15.0-busybox", "cpus": 0.5, "mem_limit": "512m", "ports": ["127.0.0.1::9090"], "volumes": [f"{private / 'prometheus.json'}:/etc/prometheus/prometheus.yml:ro"]}
         (private / "prometheus.json").write_text("{}", encoding="utf-8")
         volume_names = ["postgres", "rabbitmq", "influx", "quarantine"] + (["loki"] if args.storage_measurement else [])
+        if args.final_proof:
+            final_proof_fixture.services(ROOT, private, services, volume_names, proof_identity, influx_token)
         compose.write_text(json.dumps({"services": services, "volumes": {name: {} for name in volume_names}}), encoding="utf-8")
         command(["dotnet", "ef", "migrations", "script", "--project", "src/CentralMobilidade.Telemetry.Infrastructure", "--no-build", "--output", str(private / "migration.sql")], "migration")
         dc("run", "--rm", "--no-deps", "--user", "0", "--entrypoint", "/bin/sh", "influxdb", "-c", "chown 1500:1500 /data")
@@ -244,6 +251,9 @@ def main():
         (private / "preflight.json").write_text(json.dumps(checks, indent=2), encoding="utf-8")
         (private / "prometheus-targets.json").write_text(json.dumps(get(prom_url + "/api/v1/targets"), indent=2), encoding="utf-8")
         dc("logs", "--tail", "20", "collector")
+        if args.final_proof:
+            summary["finalProof"] = final_proof_fixture.execute(ROOT, private, run, dc, port, api_url, influx_port, influx_token, producer_token, proof_identity, sql)
+            return 0 if summary["finalProof"]["passed"] else 1
         if args.final_proof_preflight:
             def public_health(path):
                 try:

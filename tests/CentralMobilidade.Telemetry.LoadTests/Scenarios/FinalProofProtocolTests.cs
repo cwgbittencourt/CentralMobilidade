@@ -20,6 +20,17 @@ namespace CentralMobilidade.Telemetry.LoadTests.Scenarios;
 // Protocol controls only. No simulated response is a real T102 acceptance result.
 public sealed class FinalProofProtocolTests
 {
+    [Theory]
+    [InlineData("2026-10-20T17:35:41.197")]
+    [InlineData("2026-10-20T17:35:41.197Z")]
+    [InlineData("2026-10-20T14:35:41.197-03:00")]
+    public void Provider_timestamp_preserves_the_UTC_instant_independently_of_local_zone(string text)
+    {
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(text));
+        ProofHttp.UtcTimestamp(json.RootElement).ShouldBe(new DateTimeOffset(2026, 10, 20, 17, 35, 41, 197, TimeSpan.Zero));
+        ProofHttp.UtcTimestamp(json.RootElement).Offset.ShouldBe(TimeSpan.Zero);
+    }
+
     private static readonly FinalProofSecrets Secrets = new("producer-secret", "influx-secret", "internal-secret", "viewer-secret");
     private static FinalProofOptions Options() => new(new("http://api.test/"), new("http://influx.test/"), new("http://grafana.test/"),
         Path.Combine(FinalProofGrafana.Root(), "artifacts/validation/T101/protocol-" + Guid.NewGuid().ToString("N")),
@@ -341,7 +352,7 @@ public sealed class FinalProofProtocolTests
                         frames = new[] { new { schema = new { fields = fields.Select(name => new { name }), meta = new { custom = new { responseCodeFromServer = status } } }, data = new { values } } }
                     }
                 }
-            });
+            }, status == 404 ? HttpStatusCode.BadRequest : HttpStatusCode.OK);
         private static HttpResponseMessage Reply(object body, HttpStatusCode status = HttpStatusCode.OK) =>
             new(status)
             {

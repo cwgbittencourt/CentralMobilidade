@@ -1,134 +1,124 @@
 # Prova final de 100.000 eventos — T102
 
-**Tentativa inicial de 2026-10-20 — BLOQUEADA no gate de readiness. T102 permanece `[ ]`.**
-Foi executado um preflight real em uma nova fixture Docker. A CLI
-`final-100k-grafana` **não foi invocada** e nenhum evento do corpus final foi
-enviado. Não há reconciliação de 100.000 eventos, prova Grafana ou revisão de
-renders aprovada nesta tentativa.
+**PASS em 2026-10-20.** A CLI `final-100k-grafana` executou a prova real completa:
+200 lotes gzip, 100.000 eventos, reconciliação integral no InfluxDB, queries dos
+dashboards de produção e seis renders Grafana revisados visualmente.
 
-**Atualização T113 (2026-10-20):** o probe RabbitMQ foi implementado e um novo
-preflight com imagens `:t113` retornou **live 200 / ready 200**, dois warmups
-Completed e namespace final vazio. Run final privado `e455a7c50a8f42ce806a9f5e8cb6aac5`,
-15:21:36–15:23:19 UTC−03:00, já com a correção do timeout de limpeza do canal.
-Isso resolve o gate de readiness nessa fixture;
-a T102 continua pendente de preparação Grafana e execução/revisão completa dos
-100.000 eventos. O relato de falha abaixo é histórico e foi preservado.
-Ver [implementação/limites de readiness](../../../docs/operations/publication-readiness.md).
+## Execução e origem
 
-## Origem, comando e ambiente
+- Run/namespace: `439c1fc655a14757b19cbd756d22efb2`.
+- Projeto Docker exclusivo: `cm-t102-439c1fc655a1`, volumes novos e portas loopback
+  efêmeras; nenhum deployment existente ou catálogo foi alterado.
+- CLI: **18:54:11.987–19:00:27.944 UTC**, ou **15:54:11–16:00:27 UTC−03:00**.
+  Os tempos incluem a prova funcional, sem interpretação como throughput de capacidade.
+- Base de produção `01408d8` (T113), com preparador T102 e correções do runner
+  neste commit; nenhuma alteração em `src/`. O manifesto privado guarda os hashes
+  das fontes do runner e do preparador usadas em cada tentativa.
+- Python 3.14.6, .NET SDK 10.0.401, Docker Engine 29.8.2 Linux x86_64,
+  Compose 5.6.0, VM 16 CPUs/31,3 GiB; API 2 CPUs/4 GiB, worker 6 CPUs/12 GiB.
+- PostgreSQL `17.11-bookworm`, RabbitMQ `4.3.6-management-alpine`,
+  InfluxDB `3.11.6-core`, database `telemetry`, retenção 60 dias.
+- Grafana `12.2.5`, Infinity assinado `4.1.1`, renderer `v4.0.17`.
 
-- Base: `26e18e943ab0f173cce4712a2e777e1a5759a6e0` (T101), com o novo modo de
-  preflight no preparador. Nenhuma mudança em `src/` nesta tentativa.
-- Projeto próprio: `cm-t102-456c4e106159`; run/namespace reservado:
-  `456c4e106159428ba0ac4c0e96941d52`.
-- Janela completa, incluindo preparação/cleanup: **14:50:35–14:52:23 UTC−03:00**
-  (America/Sao_Paulo). O manifesto bruto registra timestamps ISO UTC.
-- Comandos, da raiz do repositório:
+| Imagem | ID SHA-256 |
+| --- | --- |
+| API `:t113` | `8a53b74ccbdb33db8b4ea587d77e2b42d9def8103f619920d89ad66beedd5636` |
+| Worker `:t113` | `3a370caa275a2ba4a85dfa80d1fa452052dd398029b71da6eedfd168bc0006d6` |
+| Grafana `:12.2.5-infinity-4.1.1` | `2acbb8ba4742e534838052648986c100cc9a19ea1eef923ff21d6bdeaa744115` |
+| Renderer `:v4.0.17` | `f5211dfc79628c2269fcc67367b0d6c1db98140e036969d064b9123c335a9955` |
 
-  ```powershell
-  py -3 -m py_compile scripts/Run-CapacityGates.py
-  py -3 scripts/Run-CapacityGates.py --final-proof-preflight
-  ```
-
-- Sintaxe Python aprovada; preflight terminou com **exit 1**, por readiness 503,
-  sem falha de preparação/exception registrada.
-- Python **3.14.6**, .NET SDK **10.0.401**, Docker Engine **29.8.2** Linux x86_64,
-  Compose **5.6.0**; VM Docker com 16 CPUs lógicas e 33.608.839.168 bytes de RAM.
-- Stores: PostgreSQL `17.11-bookworm`, RabbitMQ `4.3.6-management-alpine`, InfluxDB
-  `3.11.6-core`/file/database `telemetry`/60 dias; Prometheus `v3.15.0-busybox`,
-  observador Alpine `3.23.4`. Grafana/renderer não foram iniciados.
-- API `centralmobilidade-api:t094`, imagem
-  `sha256:881a0c1ab82c02f1057711fd987b383be208c6eb7011a50c8e74fe9929dd5c06`;
-  worker `centralmobilidade-worker:t094`, imagem
-  `sha256:5362e95f5efb544b53f23d7e809df0faabbcf7eb1eb61d79ab33581c599d9004`.
-  Imagens Release do source `520f8ed`; `git diff --stat 520f8ed HEAD -- src`
-  confirmou ausência de alterações de produção até a base revisada.
-- Quotas inspecionadas: API 2 CPUs/4 GiB, worker 6 CPUs/12 GiB. Dependências e
-  coletor ficam fora desse orçamento. Isso não é medição de throughput/capacidade.
-- Credenciais efêmeras, hashes de produtor e chave de cursor privados; migrations
-  reais aplicadas em volumes novos. O uso de bootstrap dos stores não comprova
-  hardening/privilégios mínimos de produção. Nenhum deployment existente foi usado.
-
-## Resultados observados
-
-| Verificação | Evidência direta | Resultado |
-| --- | --- | --- |
-| API `/health/live` | HTTP 200, `{"status":"healthy"}` | Processo ativo |
-| API `/health/ready` | HTTP 503, `{"status":"unhealthy"}` | **FAIL**, bloqueia início do cenário T101 |
-| PostgreSQL durável | `current_setting('fsync')` / `current_setting('synchronous_commit')` = `on/on` | Observado |
-| Warmup real | Dois lotes gzip, fora do namespace final, chegaram a `Completed` | Aquecimento apenas; não é reconciliação do corpus |
-| Namespace reservado no Influx | SQL independente abaixo retornou `n=0` | Vazio antes do cenário, não prova final |
-| Envio dos 100.000 eventos / status terminais | `finalScenarioInvoked=false`, `finalEventsSubmitted=0` | **Não executado** |
-| Reconciliação das 100.000 identidades/campos | Nenhum corpus submetido | **Não executada** |
-| Grafana API health e isolamento interno/viewer | `grafanaProvisioned=false` | **Não executados** |
-| Queries latest/trip/ingestion-total | Nenhuma query Grafana desta tentativa | **Não executadas** |
-| Seis PNGs e revisão visual | Nenhum render desta tentativa | **Não executados** |
-| Cleanup próprio | Zero containers remanescentes; quatro volumes preservados | Confirmado às 14:53:09 UTC−03:00 |
-
-Consulta independente enviada pelo preparador à API SQL real do Influx:
-
-```sql
-SELECT count(*) AS n
-FROM telemetria
-WHERE empresa_id LIKE 'fp-456c4e106159428ba0ac4c0e96941d52-%'
+```powershell
+dotnet build tests/CentralMobilidade.Telemetry.LoadTests --no-restore
+py -3 scripts/Run-CapacityGates.py --final-proof --api-image centralmobilidade-api:t113 --worker-image centralmobilidade-worker:t113
 ```
 
-Resultado: `[{"n":0}]`. Não interpretar esse zero como perda de eventos: os
-100.000 eventos nunca foram enviados. Os dois pontos de aquecimento usam outro
-prefixo e não foram contados como parte da prova.
+O preparador aplica migrations, aquece fora do namespace final, provisiona os
+templates reais internos e executa `Provision-GrafanaOrganizations.ps1` para o
+viewer. A CLI recebe credenciais distintas de produtor, Influx e dois service
+accounts Grafana Viewer, um por organização. Bootstrap só participa da preparação.
+O viewer API tem apenas `telemetry.read`, organização 2 e empresa `fp-<run>-00`.
+Não há lookup cadastral conectado nem allowlist de empresas do produtor.
 
-## Causa e condição para retomar
+## Evidência e resultados
 
-A [T101](../../../tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/Final100kGrafanaProofScenario.cs)
-exige readiness 200 antes do count/preflight Grafana e de qualquer POST do corpus.
-O problema já observado na [T098](../quickstart-results.md) persiste nesta fixture.
-Inspeção atual de `src/` encontra a interface `IDurablePublicationProbe` e o health
-check, mas não uma implementação/registro runtime. Sem o serviço,
-`DurablePublicationHealthCheck` retorna Unhealthy. Veja os contratos de
-[health](../../../src/CentralMobilidade.Telemetry.Infrastructure/Health/README.md) e
-[seleção de provider](../../../src/CentralMobilidade.Telemetry.Infrastructure/DependencyInjection/README.md).
+| Verificação | Resultado real |
+| --- | --- |
+| API ready / Grafana health | HTTP 200 / `database=ok`, versão 12.2.5 |
+| PostgreSQL | `fsync=on`, `synchronous_commit=on` |
+| Corpus | 10 empresas novas, 1.000 veículos, 100 pontos/veículo, intervalos de 20 s |
+| Chegada | Amostras 50–99, depois 0–49 atrasadas; viagem `proof-trip` preservada |
+| Intake | 200 respostas 202 com UUIDs distintos, 500 linhas/lote |
+| Terminais | 200 Completed; total/accepted=100.000; rejected/replayed=0 |
+| Influx | Count inicial 0, final 100.000 e repetido após leitura; 100 páginas de 1.000 |
+| Reconciliação integral | 100.000 identidades únicas, empresa/veículo/timestamp e todos os campos comparados |
+| Interno latest | 100 veículos por empresa nas 10 empresas, posição da amostra 99 |
+| Interno trip | 100 pontos ordenados de `proof-trip`, inclusive os recebidos atrasados |
+| Interno health | 10.000 por empresa; soma das dez empresas = 100.000 |
+| Viewer latest/trip/health | Empresa 00: 100 posições, 100 pontos da viagem, 10.000 aceitos e 0 rejeitados |
+| Isolamento viewer | Somente datasource Infinity; empresa 01 retorna upstream 404 e zero linhas |
+| Renders | Seis PNGs reais 1000×600, revisados; tabelas com dados e sem erro/empty panel |
 
-O aquecimento confirma fluxo básico real; não substitui o hook de capacidade da
-rota de publicação durável. Não se trocou readiness por liveness, não se registrou
-probe falso e não se modificou o runner T101 para contornar o gate.
-Não houve correção de produto nesta tentativa.
+O Grafana retorna HTTP 400 quando Infinity encapsula o 404 esperado da API na
+consulta negada. Somente essa consulta permite HTTP 400, e ainda exige metadata
+upstream 404 e nenhuma linha. Demais falhas HTTP continuam reprovando a prova.
+Health interno agrega por tempo do evento; viewer agrega por tempo de processamento.
 
-Após a reprovação, novos cenários foram interrompidos conforme
-[`speckit-implement`](../../../.agents/skills/speckit-implement/SKILL.md):
-**“Halt execution if any non-parallel task fails”**. Somente documentação e
-verificação de preservação/cleanup continuaram.
+Consulta independente sem filtro temporal, executada antes e após o corpus:
 
-Para retomar:
+```sql
+SELECT count(*) AS n FROM telemetria
+WHERE empresa_id LIKE 'fp-439c1fc655a14757b19cbd756d22efb2-%'
+```
 
-1. Implementar/registrar o probe real na seleção da fila e verificar capacidade
-   da rota, confirmação e falhas de conexão/permissão/topologia, sem transformar
-   conectividade ou outra rota em prova de publicação. Testar a correção.
-2. Revalidar readiness com imagens correspondentes ao novo source, sem usar as
-   aliases antigas como se contivessem a correção.
-3. Preparar toda a fixture T102 com Grafana/renderer reais, organização interna e
-   viewer restrito à empresa 00; cadastro ausente/indisponível, namespaces novos e
-   credenciais distintas. Seguir o [guia completo T101](../../../tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/FINAL-100K.md).
-4. Invocar `final-100k-grafana` e salvar manifest, recibos/status, contagem e páginas
-   independentes, frames, isolamento, totais e seis renders. Revisar pixels/layout
-   e registrar versões, fonte, configuração, horários e hashes dessa nova execução.
-5. Só concluir a T102 com exatamente 100.000 eventos reconciliados e todos os
-   caminhos Grafana aprovados. T094/capacidade, segurança, LGPD, T098 e readiness
-   de implantação permanecem gates próprios, não são aprovados por uma prova funcional.
+Resultados `[{"n":0}]` e `[{"n":100000}]`. A paginação usa ordenação por
+`empresa_id,veiculo_id,time`, `LIMIT 1000 OFFSET ...`; a conferência de todos os
+campos/identidades evita aprovar apenas pela igualdade do count.
 
-## Evidência privada e preservação
+- [200 status terminais completos, sintéticos](reviewed/batches.json).
+- [Resultados de todos os dashboards: campos e colunas das frames](reviewed/dashboard-results.json).
+  Metadados de provider/configuração não foram publicados.
+- [Manifesto revisado, report, health, totais e hashes SHA-256 da evidência bruta](reviewed/evidence.json).
+- Corpus SHA-256: `6bf7cba2d1f969beac1b22c1ff279e830799ad5024fa6eeb3bf63301da21863c`.
 
-Raiz ignorada: `artifacts/validation/T102/456c4e106159428ba0ac4c0e96941d52/`.
-`summary.json` contém timestamps, source hashes do preparador/cenários, engine,
-imagens/quotas e os resultados acima. SHA-256 do arquivo bruto:
-`2ac09bd6f771e6e2a3c47865f86927e6a7624fd16f57da8a2d6e255892d513da`.
-Há também `cleanup.json`, scripts/migrations, métricas e logs de comandos privados.
+| Painel | Interno | Viewer |
+| --- | --- | --- |
+| Última posição | [PNG](reviewed/internal-latest-vehicle-position.png) | [PNG](reviewed/viewer-latest-vehicle-position.png) |
+| Viagem | [PNG](reviewed/internal-vehicle-trip.png) | [PNG](reviewed/viewer-vehicle-trip.png) |
+| Ingestão | [PNG](reviewed/internal-company-ingestion-health.png) | [PNG](reviewed/viewer-company-ingestion-health.png) |
 
-Configurações e tokens podem estar nos arquivos brutos; não publicá-los.
-`docker compose --project-name cm-t102-456c4e106159 -f <compose.json privado> down --timeout 60`
-removeu somente containers/rede próprios, **sem `--volumes`**. Nenhum dado de usuário,
-catálogo ou secret de uma instalação existente foi alterado. Apenas este README
-revisado possui exceção no `.gitignore`; subdiretórios/evidências futuras continuam privados.
+Revisão visual: latest mostra velocidade 99 e ignição desligada; viagem começa na
+amostra 0 e avança a cada 20 s; health viewer mostra 10.000/0. A viewport corta os
+IDs longos de empresa e mostra só as primeiras linhas; valores completos e todas
+as linhas foram conferidos nas frames, sem inferir 100.000 pontos apenas do PNG.
+Os arquivos publicados contêm somente dados sintéticos e resultados revisados.
 
-Não foram repetidos os testes de protocolo da T101 nem usados seus PNGs simulados
-como evidência real. Esta entrega valida sintaxe, executa o gate Docker descrito,
-confere referências e whitespace e registra a T102 ainda pendente.
+## Tentativas preservadas e correções
+
+- Preflight histórico `456c4e106159428ba0ac4c0e96941d52`: readiness 503, corpus não
+  enviado. T113 corrigiu o probe RabbitMQ; preflight `e455a7c50a8f42ce806a9f5e8cb6aac5`
+  observou ready 200, sem executar a prova completa.
+- Tentativa `6ccd446dc5a94e208772a66ed9537f6a`: 200 Completed e count 100.000;
+  runner interpretou UTC sem offset do SQL como horário local do Windows e falhou
+  em `stored_identity_mismatch`. Consulta diagnóstica confirmou os timestamps.
+  Correção: assumir UTC explicitamente, com três testes de formatos/fuso.
+- Tentativa `2c548205590c4a62abdbfa6597c16125`: reconciliação integral e três renders
+  internos passaram; runner bloqueou o HTTP 400 da negação viewer. Correção de
+  protocolo acima, mantendo verificação de upstream 404/zero linhas.
+- Cada repetição usou namespace/volumes novos. Nenhuma tentativa parcial foi
+  promovida a PASS nem reutilizou corpus para contornar o count inicial zero.
+- Build sem erros/avisos; **40/40 testes** de corpus/protocolo passaram após as
+  duas correções. Sintaxe Python e whitespace verificados.
+
+## Preservação e limites
+
+Configurações privadas, tokens, logs e respostas completas permanecem ignorados em
+`artifacts/validation/T102/<run>/` e `100k-final-proof/<run>/`. Ao concluir, o
+preparador remove apenas seus containers/rede e preserva os cinco volumes de cada
+tentativa, sem prune/reset/remoção de dados existentes.
+
+InfluxDB Core nesta versão oferece apenas token administrativo; a fixture não
+aprova privilégios mínimos de produção. Prometheus serve ao observador auxiliar;
+não foi iniciado Loki e não se aprova o dashboard de plataforma com esta prova.
+`CapacityApproved=false`: esta execução funcional não aprova 5.000 eventos/s,
+soak, cinco anos de armazenamento, perda física de host, segurança/LGPD ou release.
+T094/T096/T097/T098/T103 continuam com seus próprios critérios e pendências.

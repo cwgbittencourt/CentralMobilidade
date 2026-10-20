@@ -43,6 +43,17 @@ artifacts/validation/*
 !artifacts/validation/100k-final-proof/
 artifacts/validation/100k-final-proof/*
 !artifacts/validation/100k-final-proof/README.md
+!artifacts/validation/100k-final-proof/reviewed/
+artifacts/validation/100k-final-proof/reviewed/*
+!artifacts/validation/100k-final-proof/reviewed/batches.json
+!artifacts/validation/100k-final-proof/reviewed/dashboard-results.json
+!artifacts/validation/100k-final-proof/reviewed/evidence.json
+!artifacts/validation/100k-final-proof/reviewed/internal-company-ingestion-health.png
+!artifacts/validation/100k-final-proof/reviewed/internal-latest-vehicle-position.png
+!artifacts/validation/100k-final-proof/reviewed/internal-vehicle-trip.png
+!artifacts/validation/100k-final-proof/reviewed/viewer-company-ingestion-health.png
+!artifacts/validation/100k-final-proof/reviewed/viewer-latest-vehicle-position.png
+!artifacts/validation/100k-final-proof/reviewed/viewer-vehicle-trip.png
 !artifacts/validation/foundation-single-influx/
 artifacts/validation/foundation-single-influx/*
 !artifacts/validation/foundation-single-influx/README.md

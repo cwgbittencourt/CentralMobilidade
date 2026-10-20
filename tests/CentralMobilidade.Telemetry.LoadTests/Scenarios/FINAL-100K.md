@@ -33,6 +33,24 @@ O modo não provisiona Grafana, não invoca a CLI final nem envia o corpus de 10
 eventos. O [registro T102](../../../artifacts/validation/100k-final-proof/README.md)
 separa o resultado desse gate das etapas de aceitação ainda não executadas.
 
+Para preparar também o Grafana real, renderer, organizações e credenciais e
+invocar a CLI completa em uma fixture nova:
+
+```powershell
+py -3 scripts/Run-CapacityGates.py --final-proof --api-image centralmobilidade-api:t113 --worker-image centralmobilidade-worker:t113
+```
+
+O preparador usa os templates de produção e o reconciliador real de organizações.
+O runner recebe service accounts Grafana com papel Viewer, separados por organização;
+bootstrap fica restrito à preparação. O viewer da API tem apenas `telemetry.read`
+e escopo na empresa 00. A fixture não configura catálogo nem allowlist do produtor.
+InfluxDB Core oferece somente token administrativo nesta versão: essa limitação
+da fixture deve constar no relatório e não aprova privilégio mínimo de produção.
+Configurações, credenciais e respostas brutas ficam ignoradas; ao sair, apenas
+containers/rede próprios são removidos, preservando os cinco volumes. Exit 0
+valida os checks automatizados; a T102 ainda exige revisar visualmente os seis
+PNGs e publicar a evidência revisada, sem segredos, antes de marcar `[X]`.
+
 Desative/deixe indisponível o lookup cadastral de empresas na fixture. Todos os
 IDs `fp-<namespace>-00` a `-09` devem ser novos e ausentes de cadastros. O pipeline
 deve aceitá-los com a mesma credencial de produtor sem cadastrar/allowlistar empresas.
