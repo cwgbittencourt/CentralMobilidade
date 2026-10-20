@@ -39,6 +39,7 @@ artifacts/*
 !artifacts/validation/
 artifacts/validation/*
 !artifacts/validation/contract-conformance.md
+!artifacts/validation/implementation-test-traceability.md
 !artifacts/validation/quickstart-results.md
 !artifacts/validation/100k-final-proof/
 artifacts/validation/100k-final-proof/*
