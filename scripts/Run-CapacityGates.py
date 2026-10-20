@@ -34,6 +34,8 @@ def main():
     parser.add_argument("--storage-measurement", action="store_true", help="T095 isolated component/storage sample; no load or soak approval")
     parser.add_argument("--quickstart-smoke", action="store_true", help="T098 small real intake/partial/restart scenario, not final 100k proof")
     parser.add_argument("--final-proof-preflight", action="store_true", help="T102 real readiness gate only; no final corpus or Grafana proof")
+    parser.add_argument("--api-image", default="centralmobilidade-api:t094", help="Explicit local API candidate image; historical default preserved")
+    parser.add_argument("--worker-image", default="centralmobilidade-worker:t094", help="Explicit local worker candidate image")
     args = parser.parse_args()
     if sum((args.storage_measurement, args.quickstart_smoke, args.final_proof_preflight)) > 1:
         raise ValueError("Select only one special measurement mode")
@@ -46,9 +48,10 @@ def main():
     if args.vehicles is None:
         failures = []
         for vehicles in (10000, 100000):
-            result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--duration", str(args.duration), "--vehicles", str(vehicles)], cwd=ROOT)
+            candidate = ["--api-image", args.api_image, "--worker-image", args.worker_image]
+            result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--duration", str(args.duration), "--vehicles", str(vehicles), *candidate], cwd=ROOT)
             if result.returncode == 0:
-                result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--duration", str(args.soak_duration), "--vehicles", str(vehicles)], cwd=ROOT)
+                result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--duration", str(args.soak_duration), "--vehicles", str(vehicles), *candidate], cwd=ROOT)
             else:
                 print(f"Soak {vehicles}: blocked by failed load/preflight gate; not a passing soak.", flush=True)
             failures.append(result.returncode)
@@ -144,7 +147,7 @@ def main():
                          "environment": {"INFLUXDB3_AUTH_TOKEN": influx_token, "INFLUXDB3_HOST_URL": "http://localhost:8181"}},
         }
         for name, cpus, memory, exposed in (("api", 2, "4g", 8080), ("worker", 6, "12g", 9464)):
-            services[name] = {"image": "centralmobilidade-" + name + ":t094", "cpus": cpus, "mem_limit": memory,
+            services[name] = {"image": args.api_image if name == "api" else args.worker_image, "cpus": cpus, "mem_limit": memory,
                               "environment": {"DOTNET_ENVIRONMENT": "Capacity", "ASPNETCORE_ENVIRONMENT": "Capacity"},
                               "ports": [f"127.0.0.1::{exposed}"], "volumes": [f"{private / (name + '.json')}:/app/appsettings.Capacity.json:ro", "quarantine:/quarantine"]}
         services["observer"] = {"image": "alpine:3.23.4", "entrypoint": ["sleep", "infinity"], "volumes": ["postgres:/observe/postgres:ro", "rabbitmq:/observe/rabbitmq:ro", "influx:/observe/influx:ro"]}
@@ -154,7 +157,7 @@ def main():
             services["loki"] = {"image": "centralmobilidade-loki:3.7.0-busybox-1.37.0", "command": ["-config.file=/etc/loki/local-config.yaml"],
                                 "ports": ["127.0.0.1::3100"], "volumes": ["loki:/loki", f"{ROOT / 'deploy/loki/loki-config.yaml'}:/etc/loki/local-config.yaml:ro"]}
             services["observer"]["volumes"] += ["quarantine:/observe/quarantine:ro", "loki:/observe/loki:ro"]
-        services["collector"] = {"image": "centralmobilidade-api:t094", "entrypoint": ["/bin/busybox"], "command": ["httpd", "-f", "-p", "9101", "-h", "/collector"], "volumes": [f"{private / 'collector'}:/collector:ro"]}
+        services["collector"] = {"image": args.api_image, "entrypoint": ["/bin/busybox"], "command": ["httpd", "-f", "-p", "9101", "-h", "/collector"], "volumes": [f"{private / 'collector'}:/collector:ro"]}
         services["prometheus"] = {"image": "prom/prometheus:v3.15.0-busybox", "cpus": 0.5, "mem_limit": "512m", "ports": ["127.0.0.1::9090"], "volumes": [f"{private / 'prometheus.json'}:/etc/prometheus/prometheus.yml:ro"]}
         (private / "prometheus.json").write_text("{}", encoding="utf-8")
         volume_names = ["postgres", "rabbitmq", "influx", "quarantine"] + (["loki"] if args.storage_measurement else [])

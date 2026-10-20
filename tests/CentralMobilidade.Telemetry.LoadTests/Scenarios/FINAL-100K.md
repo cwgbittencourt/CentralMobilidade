@@ -22,6 +22,9 @@ py -3 scripts/Run-CapacityGates.py --final-proof-preflight
 
 O comando usa as imagens locais `centralmobilidade-api:t094` e
 `centralmobilidade-worker:t094`; confirme que correspondem à fonte candidata.
+Essas imagens históricas não contêm a correção T113. Para validá-la, use imagens
+novas de API/worker com `--api-image centralmobilidade-api:t113 --worker-image centralmobilidade-worker:t113`,
+conforme o [guia de readiness](../../../docs/operations/publication-readiness.md).
 Ele aplica migrations, envia dois warmups fora do namespace final, registra health,
 durabilidade PostgreSQL e count SQL, depois remove só seus containers/rede sem
 apagar volumes. Saída privada em `artifacts/validation/T102/<uuid>/summary.json`.
@@ -124,8 +127,9 @@ O uso desses metadados de teste não é um padrão de buffering para a API de pr
 
 1. Exigir API ready 200, Grafana com database saudável, organizações e tipos de
    datasource corretos, e SQL count zero para todo o namespace (sem filtro de tempo).
-   A readiness 503 observada na T098 continua bloqueando uma execução real: não
-   substituir por liveness nem registrar probe fictício.
+   Se readiness retornar 503, bloquear a execução: não substituir por liveness
+   nem registrar probe fictício. A T113 corrige o provider RabbitMQ; exige rebuild
+   de API e worker e não conclui a prova final automaticamente.
 2. Exigir `202`, UUIDs distintos, estado accepted, `receivedAt` UTC e statusUrl/Location
    relativos exatos; não seguir URL arbitrária de recibo. Cada lote precisa terminar
    completed com total/accepted=500, rejected/replayed=0. Failed, expired, rejeição,

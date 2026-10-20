@@ -38,10 +38,19 @@ and the deployment grant policy separately. Local durability does not imply prot
 `IDurablePublicationProbe` is an adapter hook for the actual ingestion route. Its four flags require
 connection, durable route, confirmation capability and publish permission. A management/TCP ping,
 another queue/topic or a connected non-confirming channel cannot report ready. Missing/failed/timed-out
-probes fail closed. Queue selection/startup validation does not currently register a publication
-probe; without that hook the API publication check remains unhealthy. Metadata/connectivity success
-is not substituted for actual durable publication. Missing configuration or a failed route produces 503 even if the
-broker process is running. The health check does not publish placeholder business batches.
+probes fail closed. T113 registers the RabbitMQ implementation. It publishes a persistent,
+mandatory, confirm-tracked **operational control** on the configured ingestion exchange/routing key,
+after the same canonical topology declaration as runtime publishers. This may recreate missing owned
+resources/bindings; incompatible topology or denied permissions fails. No management ping is substituted.
+The worker ACKs only the exact versioned control before business delivery, without batch state,
+telemetry, quarantine or business counters. Messages have no PII and use the queue's existing TTL.
+Observations (including failures) are coalesced for at most five seconds per process: at most one
+control per five seconds/instance, even under concurrent health polls. Broker changes may take that
+long to be observed. If the worker is unavailable, controls remain queued alongside work and count
+toward broker depth/retention; they are not evidence of processed telemetry or a zero backlog.
+Publish/connect waits use the health deadline; missing, failed or timed-out checks return 503.
+Pub/Sub still has no publication probe and remains fail-closed. The health check never publishes
+placeholder **business** batches. See the [operational wire contract](../../../docs/operations/publication-readiness.md).
 
 Influx checks require configured URL/token and perform authenticated GET `/health` with bounded
 timeouts, redirects/cookies disabled and response bodies ignored. API checks queryable storage;

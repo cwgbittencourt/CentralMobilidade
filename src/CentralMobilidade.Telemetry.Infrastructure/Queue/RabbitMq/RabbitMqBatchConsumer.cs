@@ -159,6 +159,20 @@ public sealed class RabbitMqBatchConsumer : IMonitoredBatchConsumer
         {
             if (Volatile.Read(ref stopped) != 0 || Volatile.Read(ref failed) != 0)
                 return;
+            if (PublicationProbeControl.IsControl(args.BasicProperties, args.Body.Span))
+            {
+                try
+                {
+                    await io.WaitAsync(lifetime.Token);
+                    try
+                    {
+                        await channel.BasicAckAsync(args.DeliveryTag, false, lifetime.Token);
+                    }
+                    finally { io.Release(); }
+                }
+                catch (Exception) { Fail(); }
+                return;
+            }
             // RabbitMQ v7 owns the callback memory: snapshot before returning from this callback.
             if (args.Body.Length > 8 * 1024 * 1024)
             {

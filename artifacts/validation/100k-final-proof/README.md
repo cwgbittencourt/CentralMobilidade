@@ -1,10 +1,19 @@
 # Prova final de 100.000 eventos — T102
 
-**2026-10-20 — BLOQUEADA no gate de readiness. T102 permanece `[ ]`.**
+**Tentativa inicial de 2026-10-20 — BLOQUEADA no gate de readiness. T102 permanece `[ ]`.**
 Foi executado um preflight real em uma nova fixture Docker. A CLI
 `final-100k-grafana` **não foi invocada** e nenhum evento do corpus final foi
 enviado. Não há reconciliação de 100.000 eventos, prova Grafana ou revisão de
 renders aprovada nesta tentativa.
+
+**Atualização T113 (2026-10-20):** o probe RabbitMQ foi implementado e um novo
+preflight com imagens `:t113` retornou **live 200 / ready 200**, dois warmups
+Completed e namespace final vazio. Run final privado `e455a7c50a8f42ce806a9f5e8cb6aac5`,
+15:21:36–15:23:19 UTC−03:00, já com a correção do timeout de limpeza do canal.
+Isso resolve o gate de readiness nessa fixture;
+a T102 continua pendente de preparação Grafana e execução/revisão completa dos
+100.000 eventos. O relato de falha abaixo é histórico e foi preservado.
+Ver [implementação/limites de readiness](../../../docs/operations/publication-readiness.md).
 
 ## Origem, comando e ambiente
 

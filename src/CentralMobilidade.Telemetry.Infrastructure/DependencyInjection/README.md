@@ -100,10 +100,12 @@ and reusable queue tests remain part of regression.
 
 Worker readiness continues to require real storage and consumer freshness.
 Selecting a provider or passing metadata validation does not itself make API
-publication readiness healthy: its existing `IDurablePublicationProbe` hook fails
-closed when absent. This composition does not substitute a connectivity/metadata
-probe for proof of actual durable publication and does not publish fake business
-batches as health checks. Successful intake still requires the real provider's
+publication readiness healthy. T113 now registers `IDurablePublicationProbe` for
+RabbitMQ using persistent mandatory confirmed operational controls on the ingestion
+route, excluded from business processing. Pub/Sub's hook remains absent/fail-closed.
+See [publication readiness](../../../docs/operations/publication-readiness.md).
+This composition does not substitute connectivity/metadata for publication or
+publish fake business batches. Successful intake still requires the real provider's
 confirmation before `202`. Managed-service permission/durability/capacity and the
 cutover gates require separate evidence. Reports are ignored under
 `artifacts/validation/T081/`; no existing deployment or cloud project is changed.

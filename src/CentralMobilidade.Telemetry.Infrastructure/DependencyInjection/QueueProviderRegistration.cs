@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using CentralMobilidade.Telemetry.Application.Abstractions;
 using CentralMobilidade.Telemetry.Contracts.Messaging.V1;
 using CentralMobilidade.Telemetry.Infrastructure.Queue;
+using CentralMobilidade.Telemetry.Infrastructure.Health;
 using CentralMobilidade.Telemetry.Infrastructure.Queue.PubSub;
 using CentralMobilidade.Telemetry.Infrastructure.Queue.RabbitMq;
 using Google.Apis.Auth.OAuth2;
@@ -150,6 +151,8 @@ public static class QueueProviderRegistration
             services.AddSingleton(sp => new RabbitMqBatchConsumer(sp.GetRequiredService<RabbitMqConnectionManager>(), options.Configuration));
             services.AddSingleton<IMonitoredBatchConsumer>(sp => sp.GetRequiredService<RabbitMqBatchConsumer>());
             services.AddSingleton<IDurableBatchQueue, RabbitMqQueue>();
+            services.AddSingleton<IDurablePublicationProbe>(sp => new RabbitMqDurablePublicationProbe(
+                sp.GetRequiredService<RabbitMqConnectionManager>(), options.Configuration, sp.GetService<TimeProvider>()));
         }
         else
         {

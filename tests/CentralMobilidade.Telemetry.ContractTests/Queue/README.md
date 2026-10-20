@@ -1,5 +1,9 @@
 # Reusable durable queue contracts — T076
 
+T113 adds a separate [RabbitMQ operational control type](../../../docs/operations/publication-readiness.md)
+for publication readiness. It is not a telemetry envelope or fake batch; its exact
+signature is consumed outside the business-delivery port. Pub/Sub does not gain that probe.
+
 `DurableBatchQueueContractTests` is an abstract xUnit suite with 16 inherited cases.
 It depends only on the application queue/delivery ports and envelope/error contracts,
 not RabbitMQ or Pub/Sub SDK types. Its source is linked into IntegrationTests through
