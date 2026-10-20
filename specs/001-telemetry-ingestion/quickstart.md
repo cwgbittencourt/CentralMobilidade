@@ -2,14 +2,19 @@
 
 This guide includes current startup and future acceptance scenarios. The
 [T112 foundation gate](../../artifacts/validation/foundation-single-influx/README.md) passed; T050–T053 processing and RabbitMQ worker wiring are implemented, including a mixed-batch host test with real storage. Status/presentation endpoints, Grafana
-provisioning, Pub/Sub parity and load/final-proof commands below are not all implemented. Sections
-4–10 are acceptance targets, not obtained results. Check tasks.md before running task-specific scripts;
+provisioning, Pub/Sub parity and steady/burst/outage runners are implemented. The exact
+100,000-event final proof still depends on T101/T102. Sections 4–10 are acceptance targets,
+not obtained results. Check tasks.md before running task-specific scripts;
 `Provision-GrafanaOrganizations.ps1` is implemented in T071. The latest-position
 dashboards and their query/render proof are implemented in T072, and the bounded
 single-vehicle trip dashboards in T073; health/driver dashboards are implemented in T074.
 Follow [the configuration contract](../../deploy/grafana/README.md).
 Credential rotation, scope changes and audit review are covered by the
 [T075 access operations runbook](../../docs/operations/grafana-access.md).
+
+See the [T098 execution record](../../artifacts/validation/quickstart-results.md) for
+dated results, fixture coverage and blocked acceptance gates. A passing functional
+suite alone does not complete this quickstart.
 
 ## Prerequisites
 
@@ -90,7 +95,7 @@ Include your private override if using app containers; the checked-in templates 
 
 ```powershell
 dotnet restore CentralMobilidade.slnx
-dotnet test CentralMobilidade.slnx --filter Category=Contract
+dotnet test tests/CentralMobilidade.Telemetry.ContractTests
 docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml --profile app up -d --build --wait
 ```
 
@@ -147,6 +152,18 @@ Expected:
 - Protected quarantine contains the rejected raw lines and records their deletion deadline.
 
 ## 6. Validate restart recovery
+
+For a fresh disposable small HTTP/recovery fixture, run
+`py -3 scripts/Run-CapacityGates.py --quickstart-smoke` from the repository root.
+It creates a UUID Compose project with private ephemeral credentials and retained volumes;
+it never attaches to an existing deployment. It checks valid/partial batches, direct API
+company scopes, audited raw access and an API/worker restart while InfluxDB is stopped.
+This fixture uses bootstrap store credentials and the local `centralmobilidade-api:t094` /
+`centralmobilidade-worker:t094` images from the capacity preparer. Verify their source revision
+before use. It does not prove production hardening, Grafana rendering, exact oldest-message
+age, target load or the final 100,000-event scenario.
+The T098 attempt currently stops at the real API readiness gate; see the execution record
+before treating any later check as executed.
 
 For a coordinated backup and restore into new volumes, use the
 [T087 backup/restore runbook](../../docs/runbooks/backup-restore.md) and its isolated
@@ -208,17 +225,22 @@ durability claim.
 For future GCS storage and five-year retention, follow the [T089 migration prerequisites and capacity gate](../../docs/runbooks/gcs-migration.md). Current option validation and database initialization still enforce the local 60-day profile; no GCS migration or five-year capacity result is claimed.
 
 ```powershell
-dotnet test CentralMobilidade.slnx --filter Category=Integration
+dotnet test tests/CentralMobilidade.Telemetry.IntegrationTests
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario steady-5000-eps --config C:/caminho-privado/steady.json
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario reconnect-burst --config C:/caminho-privado/steady.json
 dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario influx-outage --config C:/caminho-privado/outage.json
-dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario dedup-strategy
+dotnet test tests/CentralMobilidade.Telemetry.LoadTests --filter FullyQualifiedName~IdentityGuardBenchmarkTests
 ```
 
 Expected reports include p50/p95/p99 latency, events/s, compressed/decompressed throughput, CPU,
 memory, disk growth, queue depth and oldest age, Influx write latency, rejection rate, and deduplication
 storage/lookup cost. The conflict detector cannot be selected or production-approved without passing
 the target-load experiment.
+
+The project commands include tests without a `Category` trait; filtering the solution by
+`Category=Integration` or `Category=Contract` does not execute every test in those projects.
+`dedup-strategy` is not a supported runner scenario. The benchmark above measures a SQL
+prototype; its result does not establish actual pipeline throughput or approve the selected adapter.
 
 The [T091 steady-state runner guide](../../tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/README.md)
 defines private configuration, required monitoring, the 8-vCPU/16-GiB profile and report limits.

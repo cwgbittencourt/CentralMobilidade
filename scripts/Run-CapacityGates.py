@@ -30,8 +30,11 @@ def main():
     parser.add_argument("--vehicles", type=int, choices=(10000, 100000))
     parser.add_argument("--soak-duration", type=int, default=1800)
     parser.add_argument("--storage-measurement", action="store_true", help="T095 isolated component/storage sample; no load or soak approval")
+    parser.add_argument("--quickstart-smoke", action="store_true", help="T098 small real intake/partial/restart scenario, not final 100k proof")
     args = parser.parse_args()
-    if args.storage_measurement:
+    if args.storage_measurement and args.quickstart_smoke:
+        raise ValueError("Select only one special measurement mode")
+    if args.storage_measurement or args.quickstart_smoke:
         args.vehicles = 100000
     if not 60 <= args.duration <= 3600:
         raise ValueError("Duration must be between 60 and 3600 seconds")
@@ -48,7 +51,7 @@ def main():
             failures.append(result.returncode)
         return 1 if any(failures) else 0
     run = uuid.uuid4().hex
-    task = "T095" if args.storage_measurement else "T094"
+    task = "T098" if args.quickstart_smoke else "T095" if args.storage_measurement else "T094"
     private = ROOT / "artifacts/validation" / task / run
     private.mkdir(parents=True)
     (private / "collector").mkdir()
@@ -61,6 +64,9 @@ def main():
                                      if "obj" not in path.parts and "bin" not in path.parts}
     if args.storage_measurement:
         module_path = ROOT / "scripts/storage_capacity_measurement.py"
+        summary["sourceFilesSha256"][str(module_path.relative_to(ROOT))] = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if args.quickstart_smoke:
+        module_path = ROOT / "scripts/quickstart_smoke.py"
         summary["sourceFilesSha256"][str(module_path.relative_to(ROOT))] = hashlib.sha256(module_path.read_bytes()).hexdigest()
 
     def command(argv, name="commands", check=True):
@@ -112,6 +118,9 @@ def main():
         common["InfluxDb"] = {"Queryable": {"Url": "http://influxdb:8181", "Database": "telemetry", "Token": influx_token}}
         api_config = json.loads(json.dumps(common))
         api_config.update({"AllowedHosts": "*", "Authentication": {"Producers": [{"CredentialId": "capacity", "ProducerId": "capacity", "Hash": credential_hash}]}})
+        if args.quickstart_smoke:
+            from quickstart_smoke import configure
+            smoke_identity = configure(api_config, run)
         worker_config = json.loads(json.dumps(common))
         worker_config["Worker"] = {"Concurrency": 4}
         for name, data in (("api", api_config), ("worker", worker_config)):
@@ -230,6 +239,11 @@ def main():
             from storage_capacity_measurement import measure
             summary["storage"] = measure(private, dc, sql, get, api_url, producer_token, influx_port, influx_token, rabbit_port, rabbit_auth, port)
             summary["status"] = "storage sample measured; projections are conditional, not aged-retention or production capacity approval"
+            return 0
+        if args.quickstart_smoke:
+            from quickstart_smoke import execute
+            summary["quickstart"] = execute(private, dc, sql, get, api_url, producer_token, influx_port, influx_token, rabbit_port, rabbit_auth, worker_port, smoke_identity)
+            summary["status"] = "small quickstart smoke complete; Grafana/capacity/final-proof gates remain separate"
             return 0
         environment = dict(os.environ, TELEMETRY_LOAD_PRODUCER_TOKEN=producer_token)
         for vehicles in (args.vehicles,):

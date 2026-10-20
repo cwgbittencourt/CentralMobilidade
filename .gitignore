@@ -39,6 +39,7 @@ artifacts/*
 !artifacts/validation/
 artifacts/validation/*
 !artifacts/validation/contract-conformance.md
+!artifacts/validation/quickstart-results.md
 !artifacts/validation/foundation-single-influx/
 artifacts/validation/foundation-single-influx/*
 !artifacts/validation/foundation-single-influx/README.md
