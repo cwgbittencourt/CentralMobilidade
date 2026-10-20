@@ -1,5 +1,8 @@
 # Steady state — T091
 
+Para o cenário funcional final, consulte [100.000 eventos e Grafana — T101](FINAL-100K.md).
+Ele é independente dos gates de throughput abaixo; sua execução real é a T102.
+
 O runner `steady-5000-eps` envia 500 eventos por gzip a cada 100 ms, durante 600 s
 por padrão. São 100 empresas sintéticas e 100.000 veículos, um evento por veículo
 a cada 20 s; cada execução usa namespace novo para não contar replay como carga.

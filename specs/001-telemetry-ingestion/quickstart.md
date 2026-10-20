@@ -3,7 +3,8 @@
 This guide includes current startup and future acceptance scenarios. The
 [T112 foundation gate](../../artifacts/validation/foundation-single-influx/README.md) passed; T050–T053 processing and RabbitMQ worker wiring are implemented, including a mixed-batch host test with real storage. Status/presentation endpoints, Grafana
 provisioning, Pub/Sub parity and steady/burst/outage runners are implemented. The exact
-100,000-event final proof still depends on T101/T102. Sections 4–10 are acceptance targets,
+100,000-event final runner is documented in [T101](../../tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/FINAL-100K.md);
+its real acceptance execution remains T102. Sections 4–10 are acceptance targets,
 not obtained results. Check tasks.md before running task-specific scripts;
 `Provision-GrafanaOrganizations.ps1` is implemented in T071. The latest-position
 dashboards and their query/render proof are implemented in T072, and the bounded
@@ -251,6 +252,16 @@ Burst requires DurationSeconds=600 and continues normal traffic through its addi
 1,200-second recovery window; the shared guide explains its cohort/deadline assertions.
 
 ## 10. Prove 100,000-event ingestion and Grafana visualization
+
+Prepare the isolated target and private credentials following the
+[T101 final scenario guide](../../tests/CentralMobilidade.Telemetry.LoadTests/Scenarios/FINAL-100K.md), then run:
+
+```powershell
+dotnet run --project tests/CentralMobilidade.Telemetry.LoadTests -- --scenario final-100k-grafana --config data/final-100k.json
+```
+
+T102 records the real run and visual review. The T101 simulated-protocol controls
+do not satisfy this step; current API readiness and other release gates still apply.
 
 Before stopping, run the final acceptance scenario from the load-test project. It must generate exactly
 100,000 deterministic valid events spanning at least 10 valid producer-supplied company IDs, 1,000 vehicles, delayed and
