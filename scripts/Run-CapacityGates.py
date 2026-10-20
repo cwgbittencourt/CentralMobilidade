@@ -29,7 +29,10 @@ def main():
     parser.add_argument("--duration", type=int, default=600)
     parser.add_argument("--vehicles", type=int, choices=(10000, 100000))
     parser.add_argument("--soak-duration", type=int, default=1800)
+    parser.add_argument("--storage-measurement", action="store_true", help="T095 isolated component/storage sample; no load or soak approval")
     args = parser.parse_args()
+    if args.storage_measurement:
+        args.vehicles = 100000
     if not 60 <= args.duration <= 3600:
         raise ValueError("Duration must be between 60 and 3600 seconds")
     if not 600 <= args.soak_duration <= 3600:
@@ -45,16 +48,20 @@ def main():
             failures.append(result.returncode)
         return 1 if any(failures) else 0
     run = uuid.uuid4().hex
-    private = ROOT / "artifacts/validation/T094" / run
+    task = "T095" if args.storage_measurement else "T094"
+    private = ROOT / "artifacts/validation" / task / run
     private.mkdir(parents=True)
     (private / "collector").mkdir()
     (private / "collector/metrics").write_text("", encoding="utf-8")
     docker = shutil.which("docker") or str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/DockerDesktop/resources/bin/docker.exe")
-    project = "cm-t094-" + run[:12]
+    project = "cm-" + task.lower() + "-" + run[:12]
     summary = {"run": run, "project": project, "durationSeconds": args.duration, "results": [], "capacityApproved": False}
     summary["sourceFilesSha256"] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
                                      for path in [Path(__file__).resolve(), *sorted((ROOT / "tests/CentralMobilidade.Telemetry.LoadTests").rglob("*.cs"))]
                                      if "obj" not in path.parts and "bin" not in path.parts}
+    if args.storage_measurement:
+        module_path = ROOT / "scripts/storage_capacity_measurement.py"
+        summary["sourceFilesSha256"][str(module_path.relative_to(ROOT))] = hashlib.sha256(module_path.read_bytes()).hexdigest()
 
     def command(argv, name="commands", check=True):
         result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -126,10 +133,17 @@ def main():
                               "environment": {"DOTNET_ENVIRONMENT": "Capacity", "ASPNETCORE_ENVIRONMENT": "Capacity"},
                               "ports": [f"127.0.0.1::{exposed}"], "volumes": [f"{private / (name + '.json')}:/app/appsettings.Capacity.json:ro", "quarantine:/quarantine"]}
         services["observer"] = {"image": "alpine:3.23.4", "entrypoint": ["sleep", "infinity"], "volumes": ["postgres:/observe/postgres:ro", "rabbitmq:/observe/rabbitmq:ro", "influx:/observe/influx:ro"]}
+        if args.storage_measurement:
+            # Short-sample snapshot profile, never applied to deployments or the reference load gate.
+            services["influxdb"]["command"] += ["--gen1-duration", "1m", "--wal-files-per-snapshot", "10", "--force-snapshot-max-age", "30s"]
+            services["loki"] = {"image": "centralmobilidade-loki:3.7.0-busybox-1.37.0", "command": ["-config.file=/etc/loki/local-config.yaml"],
+                                "ports": ["127.0.0.1::3100"], "volumes": ["loki:/loki", f"{ROOT / 'deploy/loki/loki-config.yaml'}:/etc/loki/local-config.yaml:ro"]}
+            services["observer"]["volumes"] += ["quarantine:/observe/quarantine:ro", "loki:/observe/loki:ro"]
         services["collector"] = {"image": "centralmobilidade-api:t094", "entrypoint": ["/bin/busybox"], "command": ["httpd", "-f", "-p", "9101", "-h", "/collector"], "volumes": [f"{private / 'collector'}:/collector:ro"]}
         services["prometheus"] = {"image": "prom/prometheus:v3.15.0-busybox", "cpus": 0.5, "mem_limit": "512m", "ports": ["127.0.0.1::9090"], "volumes": [f"{private / 'prometheus.json'}:/etc/prometheus/prometheus.yml:ro"]}
         (private / "prometheus.json").write_text("{}", encoding="utf-8")
-        compose.write_text(json.dumps({"services": services, "volumes": {name: {} for name in ("postgres", "rabbitmq", "influx", "quarantine")}}), encoding="utf-8")
+        volume_names = ["postgres", "rabbitmq", "influx", "quarantine"] + (["loki"] if args.storage_measurement else [])
+        compose.write_text(json.dumps({"services": services, "volumes": {name: {} for name in volume_names}}), encoding="utf-8")
         command(["dotnet", "ef", "migrations", "script", "--project", "src/CentralMobilidade.Telemetry.Infrastructure", "--no-build", "--output", str(private / "migration.sql")], "migration")
         dc("run", "--rm", "--no-deps", "--user", "0", "--entrypoint", "/bin/sh", "influxdb", "-c", "chown 1500:1500 /data")
         dc("up", "-d", "postgres", "rabbitmq", "influxdb", "observer")
@@ -212,6 +226,11 @@ def main():
         (private / "preflight.json").write_text(json.dumps(checks, indent=2), encoding="utf-8")
         (private / "prometheus-targets.json").write_text(json.dumps(get(prom_url + "/api/v1/targets"), indent=2), encoding="utf-8")
         dc("logs", "--tail", "20", "collector")
+        if args.storage_measurement:
+            from storage_capacity_measurement import measure
+            summary["storage"] = measure(private, dc, sql, get, api_url, producer_token, influx_port, influx_token, rabbit_port, rabbit_auth, port)
+            summary["status"] = "storage sample measured; projections are conditional, not aged-retention or production capacity approval"
+            return 0
         environment = dict(os.environ, TELEMETRY_LOAD_PRODUCER_TOKEN=producer_token)
         for vehicles in (args.vehicles,):
             config = {"Api": api_url + "/", "Prometheus": prom_url + "/", "ReportDirectory": str(private / str(vehicles)), "Queries": names,

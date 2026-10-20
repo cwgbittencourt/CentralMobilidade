@@ -45,3 +45,4 @@ artifacts/validation/foundation-single-influx/*
 !artifacts/performance/
 artifacts/performance/*
 !artifacts/performance/telemetry-capacity-report.md
+!artifacts/performance/storage-capacity-report.md
